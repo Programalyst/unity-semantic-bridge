@@ -1,0 +1,17 @@
+{
+  "name": "com.gamenami.unity-scemantic-bridge",
+  "version": "1.0.0",
+  "author": {
+    "name": "Leonard Lin",
+    "url": "https://www.linkedin.com/in/leonard-lin/"
+  },
+  "displayName": "Unity Semantic Bridge",
+  "description": "Allows LLMs to understand Unity scenes efficiently through a structured representation of the scene graph based on the required use case.",
+  "unity": "2022.3",
+  "documentationUrl": "https://github.com/Programalyst/unity-scemantic-bridge/blob/main/README.md",
+  "changelogUrl": "https://github.com",
+  "licensesUrl": "https://github.com/Programalyst/unity-scemantic-bridge/blob/main/LICENSE.md",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  }
+}

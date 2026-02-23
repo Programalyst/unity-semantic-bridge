@@ -1,0 +1,1 @@
+Create a .env file with key GEMINI_API_KEY=YOUR-API-KEY
