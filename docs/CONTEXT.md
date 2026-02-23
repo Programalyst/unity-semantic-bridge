@@ -1,4 +1,4 @@
-This summary covers the development of the Semantic Unity Scene package. It is a bridge between Unity and LLMs, specifically Google Gemini, for "Spatial Intelligence." 
+This summary covers the development of the Unity Semantic Bridge package. It is a bridge between Unity and LLMs, specifically Google Gemini, for "Spatial Intelligence." 
 
 Core Architecture: "Sense-Think-Act"
 The system is designed as a modular bridge that enables an LLM to "see" the game (Vision) and "understand" its logic (Hierarchy/Components).
@@ -42,6 +42,6 @@ Model Context Protocol (MCP) Integration: Formally wrap this system as a Model C
 
 Key Files to Inspect:
 SemanticSceneGenerator.cs (Hierarchy to JSON logic)
-SemanticSceneWindow.cs (Editor UI & Chat)
+SemanticBridgeWindow.cs (Editor UI & Chat)
 EditorMpeBridge.cs (Socket & Handshake logic)
 HeuristicFilters.cs (Culling & Significance logic)

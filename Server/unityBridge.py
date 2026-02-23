@@ -16,6 +16,12 @@ async def handle_unity_payload(websocket, payload_string):
     data = json.loads(payload_string)
     msg_type = data.get("type")
 
+    # If this is a scene update and a future is waiting
+    if msg_type == "chat" and "scene" in data:
+        import main # Access the future
+        if main.scene_future and not main.scene_future.done():
+            main.scene_future.set_result(data["scene"])
+
     # --- ROUTE 1: DEV CHAT (Editor) ---
     if msg_type == "chat":
         user_text = data.get("message")

@@ -12,7 +12,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class EditorMpeBridge
     {
-        private const string ChannelName = "sus-agent-channel";
+        private const string ChannelName = "usb-agent-channel";
         private const string PythonHandshakeUrl = "ws://127.0.0.1:8765";
         
         public static bool IsActive => ChannelService.IsRunning() && HasActiveChannel();
