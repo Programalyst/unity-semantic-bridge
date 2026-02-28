@@ -1,28 +1,29 @@
 import logging
 import json
 import asyncio
-from imageAnalysis import gemini_image_analysis
-from sceneAnalysis import gemini_scene_analysis
+from image_analysis import gemini_image_analysis
+from scene_analysis import gemini_scene_analysis
+from shared_state import SharedState
 
 logger = logging.getLogger(__name__)
 # prevent 1002 protocol error due to Unity sending a large buffer (sceneJson+image) with a Continuation Frame 
 # without an Initial Frame, or it might not set the "FIN" (Final) bit correctly
 processing_lock = asyncio.Lock() 
 
-async def handle_unity_payload(websocket, payload_string):
+async def handle_unity_message(websocket, payload_string, state_container):
     """
     Main logic hub: Parses JSON, calls Gemini, and sends tools back.
     """
     data = json.loads(payload_string)
     msg_type = data.get("type")
 
-    # If this is a scene update and a future is waiting
-    if msg_type == "chat" and "scene" in data:
-        import main # Access the future
-        if main.scene_future and not main.scene_future.done():
-            main.scene_future.set_result(data["scene"])
-
-    # --- ROUTE 1: DEV CHAT (Editor) ---
+    # Message from Unity -> Respond to MCP
+    if msg_type == "mcp_response":
+        if state_container.unity_res_future and not state_container.unity_res_future.done():
+            state_container.unity_res_future.set_result(data)
+        return
+    
+    # Message from Unity -> Gemini image analysis -> back to Unity
     if msg_type == "chat":
         user_text = data.get("message")
         scene_json = data.get("scene")
@@ -37,7 +38,7 @@ async def handle_unity_payload(websocket, payload_string):
         }))
         return
     
-    # --- ROUTE 2: PLAY MODE LOOP ---
+    # PLAY MODE LOOP: Message from Unity -> Gemini image analysis -> back to Unity
     # Only apply the lock here to prevent frame-spamming
     if processing_lock.locked():
         return

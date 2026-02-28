@@ -1,41 +1,42 @@
 import asyncio
 import websockets
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 import logging
 import os
 import json
-from unityBridge import handle_unity_payload
+from unity_bridge import handle_unity_message
+from shared_state import SharedState
+
+state = SharedState()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# 1. Global reference to the active Unity MPE socket
+# Global reference to the active Unity MPE socket
 unity_ws = None 
-# 2. A Future to help the MCP agent 'wait' for the specific scene JSON
-scene_future = None
 
-async def handle_external_request(websocket, data):
+async def handle_mcp_request(websocket, data):
     """Handles requests coming from the MCP Server agent."""
-    global unity_ws, scene_future
+    global unity_ws
     
-    msg_type = data.get("type")
-    
-    if msg_type == "request_scene":
-        if unity_ws:
-            logging.info("MCP requested scene. Forwarding to Unity...")
-            # Create a fresh Future to wait for the incoming result
-            scene_future = asyncio.get_event_loop().create_future()
-            
-            # Ask Unity for the export
-            await unity_ws.send(json.dumps({"type": "request_export"}))
-            
-            # Wait for Unity to send the JSON back (handled in unityBridge)
-            try:
-                # 5-second timeout in case Unity is busy
-                result = await asyncio.wait_for(scene_future, timeout=5.0)
-                await websocket.send(json.dumps({"type": "scene_data", "scene": result}))
-            except asyncio.TimeoutError:
-                await websocket.send(json.dumps({"error": "Unity timeout"}))
-        else:
-            await websocket.send(json.dumps({"error": "Unity not connected"}))
+    if unity_ws:
+        # Create a Future to await the response from Unity
+        state.unity_res_future = asyncio.get_event_loop().create_future()
+        await unity_ws.send(json.dumps({
+            "type": "mcp_message", 
+            "content": data["content"] # remove the "content" key from MCP
+            }))
+        
+        # Wait for Unity to send response (handled in EditorMpeBridge)
+        try:
+            # 5-second timeout in case Unity is busy
+            result = await asyncio.wait_for(state.unity_res_future, timeout=5.0)
+            await websocket.send(json.dumps({"type": "unity_mcp_result", "content": result}))
+        except asyncio.TimeoutError:
+            await websocket.send(json.dumps({"error": "Unity timeout"}))
+        finally:
+            state.unity_res_future = None # Cleanup
+    else:
+        await websocket.send(json.dumps({"error": "Unity not connected"}))
 
 async def connect_to_unity_mpe(unity_port):
     """This is the persistent data channel."""
@@ -60,12 +61,12 @@ async def connect_to_unity_mpe(unity_port):
                     # "Catch" numeric Unity ClientID and ignore without an error
                     continue 
 
-                await handle_unity_payload(websocket, payload)
-
+                await handle_unity_message(websocket, payload, state)
+                
     except Exception as e:
         logging.error(f"Failed to connect to Unity MPE: {e}")
     finally:
-            unity_ws = None
+        unity_ws = None
 
 async def handle_handshake(websocket):
     """This handles the initial 'mpe_init' from Unity."""
@@ -85,7 +86,7 @@ async def handle_handshake(websocket):
 
             # ROUTE B: MCP Agent Request
             else:
-                await handle_external_request(websocket, data)
+                await handle_mcp_request(websocket, data)
             
     except Exception as e:
         logging.error(f"Handshake error: {e}")
