@@ -14,17 +14,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Global reference to the active Unity MPE socket
 unity_ws = None 
 
-async def handle_mcp_request(websocket, data):
+async def handle_mcp_request(websocket, message):
     """Handles requests coming from the MCP Server agent."""
     global unity_ws
     
     if unity_ws:
         # Create a Future to await the response from Unity
         state.unity_res_future = asyncio.get_event_loop().create_future()
-        await unity_ws.send(json.dumps({
-            "type": "mcp_message", 
-            "content": data["content"] # remove the "content" key from MCP
-            }))
+        await unity_ws.send(message)
         
         # Wait for Unity to send response (handled in EditorMpeBridge)
         try:
@@ -86,7 +83,7 @@ async def handle_handshake(websocket):
 
             # ROUTE B: MCP Agent Request
             else:
-                await handle_mcp_request(websocket, data)
+                await handle_mcp_request(websocket, message)
             
     except Exception as e:
         logging.error(f"Handshake error: {e}")

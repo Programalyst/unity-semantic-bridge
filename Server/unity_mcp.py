@@ -15,11 +15,13 @@ async def get_unity_hierarchy() -> str:
     Use this to understand the project structure before writing code.
     """
     try:
-        # 1. Connect to your Main Bridge
+        # 1. Connect to Main Bridge
         async with websockets.connect(BRIDGE_URI) as ws:
             # 2. Send a request that main.py will forward to Unity
-            request = {"content": "MCP_REQUEST_SCENE"}
-            await ws.send(json.dumps(request))
+            payload = {
+                "action": "MCP_REQUEST_SCENE",
+            }
+            await ws.send(json.dumps(payload))
             
             # 3. Wait for the response (The JSON Scene)
             response = await ws.recv()
@@ -33,20 +35,34 @@ async def get_unity_hierarchy() -> str:
 async def notify_unity(text: str) -> str:
     """Sends a message to the Unity Editor chat window."""
     async with websockets.connect(BRIDGE_URI) as ws:
-        await ws.send(json.dumps({"content": f"IDE Agent: {text}"}))
+        payload = {
+            "action": "MCP_NOTIFY",
+            "message": f"IDE Agent: {text}",
+        }
+        await ws.send(json.dumps(payload))
         response = await ws.recv() 
-        data = json.loads(response)
-        return data.get("content", "Notification sent.")
+        return response
 
 @mcp.tool()
-async def search_unity_assets(filter_query: str) -> str:
+async def search_unity_assets(filter_query: str, limit: int = 10, searchInFolders: list[str] = ["Assets"]) -> str:
     """
     Unity equivalent of 'glob'. Searches for assets by type, name, or label.
-    Example filters: 't:Prefab Player', 't:Script health', 'l:UI_Assets'
+    Uses UnityEditor.AssetDatabase.FindAssets(filter, searchInFolders)
+    Example filters: 
+    By type: 't:Prefab Player', 't:Script health'
+    By label: 'l:UI_Assets'
+    'limit' acts like 'head' to set a limit on search results
+    'folders' is a list of paths to search in (e.g. ["Assets/Scripts", "Assets/Prefabs"]).
+    Defaults to ["Assets"] to exclude Packages.
     """
     async with websockets.connect(BRIDGE_URI) as ws:
-        # Forwarding the glob-style filter to Unity's AssetDatabase.FindAssets
-        await ws.send(json.dumps({"content": f"MCP_GLOB:{filter_query}"}))
+        payload = {
+            "action": "MCP_GLOB",
+            "filter": filter_query,
+            "limit": limit,
+            "searchInFolders": searchInFolders
+        }
+        await ws.send(json.dumps(payload))
         response = await ws.recv()
         return response
 
@@ -57,7 +73,11 @@ async def get_project_tree(folder_path: str = "Assets") -> str:
     Use this to see where scripts, prefabs, and materials are stored.
     """
     async with websockets.connect(BRIDGE_URI) as ws:
-        await ws.send(json.dumps({"content": f"MCP_TREE:{folder_path}"}))
+        payload = {
+            "action": "MCP_TREE",
+            "content": folder_path
+        }
+        await ws.send(json.dumps(payload))
         response = await ws.recv()
         return response
 
@@ -68,26 +88,34 @@ async def find_asset_references(asset_path: str) -> str:
     Useful for seeing which Prefabs use a specific Script.
     """
     async with websockets.connect(BRIDGE_URI) as ws:
-        await ws.send(json.dumps({"content": f"MCP_GREP:{asset_path}"}))
+        payload = {
+            "action": "MCP_GREP",
+            "asset_path": asset_path,
+        }
+        await ws.send(json.dumps(payload))
         response = await ws.recv()
         return response
 
 
 @mcp.tool()
-async def find_unity_files(filter_query: str, limit: int = 5) -> str:
+async def find_unity_files(filter_query: str, limit: int = 10) -> str:
     """
     Unity equivent of 'find'. Finds assets and immediately returns their file paths.
-    'limit' acts like 'head' to keep context clean.
+    'limit' acts like 'head' to set a limit on search results
     Filter examples: 't:Prefab', 't:Script Player', 'l:Gold_Master'
     Returns a JSON list of paths like ["Assets/Scripts/Player.cs", ...]
     """
     async with websockets.connect(BRIDGE_URI) as ws:
-        # We send a specific combined request type
-        await ws.send(json.dumps({"content": f"MCP_SEARCH_LIMIT:{limit}|{filter_query}"}))
+        # Doesn't just return GUIDs, converts to names first
+        payload = {
+            "action": "MCP_SEARCH_LIMIT",
+            "filter": filter_query,
+            "limit": limit
+        }
+        await ws.send(json.dumps(payload))
         
         response = await ws.recv()
         return response
-
 
 if __name__ == "__main__":
     mcp.run()

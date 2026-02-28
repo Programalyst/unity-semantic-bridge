@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -6,7 +7,6 @@ using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.MPE;
 using UnityEngine;
-using Gamenami.UnitySemanticBridge;
 using Newtonsoft.Json.Linq;
 
 namespace Gamenami.UnitySemanticBridge.Editor
@@ -109,6 +109,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             string json = Encoding.UTF8.GetString(data);
             var message = JsonConvert.DeserializeObject<dynamic>(json);
+            //Debug.Log($"[MPE] Received: {json}");
             if (message.type == "function_call")
             {
                 foreach (var call in message.content)
@@ -126,7 +127,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         SemanticBridgeWindow.Instance.AddAgentMessage(text);
                 };
             }
-            else if (message.type == "mcp_message")
+            else if (message.action != null) // all MCP messages have an action field
             {
                 HandleMcpMessage(message);
             }
@@ -138,48 +139,44 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void HandleMcpMessage(JObject contentObj)
         {
-            Debug.Log($"[MPE] Raw JObject {contentObj}");
-            var requestString = contentObj["content"]?.ToString();
-            if (string.IsNullOrEmpty(requestString)) return;
-            //Debug.Log($"[MPE] MCP request {requestString}");
+            //Debug.Log($"[MPE] Raw JObject {contentObj}");
+            var action = contentObj["action"]?.ToString();
             
-            // --- 1. HANDLE SEARCH (GLOB) ---
-            if (requestString.StartsWith("MCP_GLOB:"))
+            switch (action)
             {
-                var filter = requestString.Replace("MCP_GLOB:", "");
-                Debug.Log($"[MPE] Searching Unity for: {filter}");
-        
-                // Use Unity's AssetDatabase to find assets
-                // Documentation: https://docs.unity3d.com
-                string[] guids = UnityEditor.AssetDatabase.FindAssets(filter);
-                var paths = new System.Collections.Generic.List<string>();
+                case "MCP_GLOB":
+                    var filtered = contentObj["filter"]?.ToString();
+                    var limit = Convert.ToInt32(contentObj["limit"]?.ToString());
+                    string[] searchFolders = contentObj["folders"]?.ToObject<string[]>() ?? new string[] { "Assets" };
+                    var guids = AssetDatabase.FindAssets(filtered, searchFolders);
+                    var paths = new List<string>();
+                    foreach (var guid in guids) 
+                    {
+                        paths.Add(AssetDatabase.GUIDToAssetPath(guid));
+                    }
+                    // Limit results to prevent context overflow (mimicking 'head -n 10')
+                    var resultList = paths.Count > limit ? paths.GetRange(0, limit) : paths;
+                    var resultText = resultList.Count > 0 
+                        ? string.Join("\n", resultList) 
+                        : "No assets found matching that query.";
 
-                foreach (var guid in guids) 
-                {
-                    paths.Add(UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
-                }
-
-                // Limit results to prevent context overflow (mimicking 'head -n 10')
-                var resultList = paths.Count > 10 ? paths.GetRange(0, 10) : paths;
-                string resultText = resultList.Count > 0 
-                    ? string.Join("\n", resultList) 
-                    : "No assets found matching that query.";
-
-                // Send back the response
-                SendToAgent(JsonConvert.SerializeObject(new {
-                    type = "mcp_response",
-                    content = resultText
-                }));
+                    // Send back the response
+                    SendToAgent(JsonConvert.SerializeObject(new {
+                        type = "mcp_response",
+                        content = resultText
+                    }));
+                    break;
+                
+                case "MCP_NOTIFY":
+                    var message = contentObj["message"]?.ToString();
+                    Debug.Log($"<color=cyan>[Claude]</color> {message}");
+                    SendToAgent(JsonConvert.SerializeObject(new {
+                         type = "mcp_response",
+                         content = "Notification displayed."
+                    }));
+                    break;
             }
-            // --- 2. HANDLE NOTIFY ---
-            else if (requestString.StartsWith("IDE Agent:"))
-            {
-                Debug.Log($"<color=cyan>[Claude]</color> {requestString}");
-                SendToAgent(JsonConvert.SerializeObject(new {
-                    type = "mcp_response",
-                    content = "Notification displayed."
-                }));
-            }
+            
         }
 
         private static void HandleRuntimeRequest(string json, byte[] image)
