@@ -19,14 +19,13 @@ async def get_unity_hierarchy() -> str:
         async with websockets.connect(BRIDGE_URI) as ws:
             # 2. Send a request that main.py will forward to Unity
             payload = {
-                "action": "MCP_REQUEST_SCENE",
+                "action": "MCP_GET_SCENE",
             }
             await ws.send(json.dumps(payload))
             
             # 3. Wait for the response (The JSON Scene)
             response = await ws.recv()
-            data = json.loads(response)
-            return json.dumps(data.get("scene", {}), indent=2)
+            return response
             
     except Exception as e:
         return f"Failed to reach Unity Bridge: {e}. Ensure main.py is running."
@@ -101,14 +100,14 @@ async def find_asset_references(asset_path: str) -> str:
 async def find_unity_files(filter_query: str, limit: int = 10) -> str:
     """
     Unity equivent of 'find'. Finds assets and immediately returns their file paths.
+    Use this instead of search_unity_assets to get a file (likely a script) to read the code.
     'limit' acts like 'head' to set a limit on search results
     Filter examples: 't:Prefab', 't:Script Player', 'l:Gold_Master'
     Returns a JSON list of paths like ["Assets/Scripts/Player.cs", ...]
     """
     async with websockets.connect(BRIDGE_URI) as ws:
-        # Doesn't just return GUIDs, converts to names first
         payload = {
-            "action": "MCP_SEARCH_LIMIT",
+            "action": "MCP_FIND",
             "filter": filter_query,
             "limit": limit
         }

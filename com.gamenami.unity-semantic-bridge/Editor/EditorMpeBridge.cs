@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -137,43 +136,43 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
         }
 
-        private static void HandleMcpMessage(JObject contentObj)
+        private static void HandleMcpMessage(JObject mcpMessage)
         {
             //Debug.Log($"[MPE] Raw JObject {contentObj}");
-            var action = contentObj["action"]?.ToString();
-            
+            var action = mcpMessage["action"]?.ToString();
+
+            string resultText;
             switch (action)
             {
                 case "MCP_GLOB":
-                    var filtered = contentObj["filter"]?.ToString();
-                    var limit = Convert.ToInt32(contentObj["limit"]?.ToString());
-                    string[] searchFolders = contentObj["folders"]?.ToObject<string[]>() ?? new string[] { "Assets" };
-                    var guids = AssetDatabase.FindAssets(filtered, searchFolders);
-                    var paths = new List<string>();
-                    foreach (var guid in guids) 
-                    {
-                        paths.Add(AssetDatabase.GUIDToAssetPath(guid));
-                    }
-                    // Limit results to prevent context overflow (mimicking 'head -n 10')
-                    var resultList = paths.Count > limit ? paths.GetRange(0, limit) : paths;
-                    var resultText = resultList.Count > 0 
-                        ? string.Join("\n", resultList) 
-                        : "No assets found matching that query.";
-
-                    // Send back the response
-                    SendToAgent(JsonConvert.SerializeObject(new {
-                        type = "mcp_response",
-                        content = resultText
-                    }));
+                    resultText = McpFunctions.SearchAssets(mcpMessage);
+                    SendToMcpAgent(resultText);
                     break;
                 
                 case "MCP_NOTIFY":
-                    var message = contentObj["message"]?.ToString();
+                    var message = mcpMessage["message"]?.ToString();
                     Debug.Log($"<color=cyan>[Claude]</color> {message}");
-                    SendToAgent(JsonConvert.SerializeObject(new {
-                         type = "mcp_response",
-                         content = "Notification displayed."
-                    }));
+                    SendToMcpAgent("Notification displayed.");
+                    break;
+                
+                case "MCP_GET_SCENE":
+                    resultText = McpFunctions.GetSemanticScene(mcpMessage);
+                    SendToMcpAgent(resultText);
+                    break;
+                
+                case "MCP_GREP":
+                    resultText = McpFunctions.FindAssetReferences(mcpMessage);
+                    SendToMcpAgent(resultText);
+                    break;
+                
+                case "MCP_TREE":
+                    resultText = McpFunctions.GetFolderStructure(mcpMessage);
+                    SendToMcpAgent(resultText);
+                    break;
+                
+                case "MCP_FIND":
+                    resultText = McpFunctions.FindFiles(mcpMessage);
+                    SendToMcpAgent(resultText);
                     break;
             }
             
@@ -185,8 +184,17 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 sceneJson = JsonConvert.DeserializeObject(json), // Ensures nested JSON is valid
                 b64Image = Convert.ToBase64String(image)
             };
-            
             SendToAgent(JsonConvert.SerializeObject(payload));
+        }
+
+        private static void SendToMcpAgent(string message)
+        {
+            var response = JsonConvert.SerializeObject(new
+            {
+                type = "mcp_response",
+                content = message
+            });
+            SendToAgent(response);
         }
 
         public static void SendToAgent(string message)
@@ -196,7 +204,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 if (info.name != ChannelName) continue;
                 
-                byte[] data = Encoding.UTF8.GetBytes(message);
+                var data = Encoding.UTF8.GetBytes(message);
                 ChannelService.Broadcast(info.id, data);
             }
         }
@@ -232,7 +240,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static Vector2 ConvertToScreenPosition(float normalizedX, float normalizedY)
         {
             // 1. Flip Y back (Unity Screen/Viewport Y is bottom-up, LLM Y is top-down)
-            float correctedY = 1f - normalizedY;
+            var correctedY = 1f - normalizedY;
 
             // 2. Convert 0-1 Viewport to Actual Pixels
             var pixelPosition = new Vector2(

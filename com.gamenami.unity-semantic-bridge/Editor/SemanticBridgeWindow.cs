@@ -300,5 +300,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
             System.IO.File.WriteAllText(path, json);
             AssetDatabase.Refresh();
         }
+
+        public string GetEditorHierarchy()
+        {
+            return SemanticSceneGenerator.Generate(_editorConfig);
+        }
     }
 }
