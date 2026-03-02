@@ -1,43 +1,35 @@
 import asyncio
 import websockets
-from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 import logging
-import os
 import json
 from unity_bridge import handle_unity_message
-from shared_state import SharedState
-
-state = SharedState()
+from state_manager import AppState, app_state
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Global reference to the active Unity MPE socket
-unity_ws = None 
-
 async def handle_mcp_request(websocket, message):
     """Handles requests coming from the MCP Server agent."""
-    global unity_ws
     
-    if unity_ws:
+    if app_state.unity_ws:
         # Create a Future to await the response from Unity
-        state.unity_res_future = asyncio.get_event_loop().create_future()
-        await unity_ws.send(message)
+        app_state.unity_res_future = asyncio.get_event_loop().create_future()
+        await app_state.unity_ws.send(message)
         
         # Wait for Unity to send response (handled in EditorMpeBridge)
         try:
             # 5-second timeout in case Unity is busy
-            result = await asyncio.wait_for(state.unity_res_future, timeout=5.0)
+            result = await asyncio.wait_for(app_state.unity_res_future, timeout=5.0)
             await websocket.send(json.dumps({"type": "unity_mcp_result", "content": result}))
         except asyncio.TimeoutError:
             await websocket.send(json.dumps({"error": "Unity timeout"}))
         finally:
-            state.unity_res_future = None # Cleanup
+            app_state.unity_res_future = None # Cleanup
     else:
         await websocket.send(json.dumps({"error": "Unity not connected"}))
 
 async def connect_to_unity_mpe(unity_port):
     """This is the persistent data channel."""
-    global unity_ws
+
     uri = f"ws://127.0.0.1:{unity_port}/usb-agent-channel"
     try:
         # ws frame max_size = 10 MB to accomodate screenshot + sceneJson. Increase as needed
@@ -46,7 +38,7 @@ async def connect_to_unity_mpe(unity_port):
                                       ping_interval=None, # Disable pings to prevent timeout during long Gemini calls
                                       compression=None    # Disable compression to prevent frame mismatch
                                       ) as websocket:
-            unity_ws = websocket # Store for the relay
+            app_state.unity_ws = websocket # Store for the relay
             logging.info(f"Connected to Unity MPE on port {unity_port}")
             
             async for message in websocket:
@@ -58,12 +50,12 @@ async def connect_to_unity_mpe(unity_port):
                     # "Catch" numeric Unity ClientID and ignore without an error
                     continue 
 
-                await handle_unity_message(websocket, payload, state)
+                await handle_unity_message(websocket, payload)
                 
     except Exception as e:
         logging.error(f"Failed to connect to Unity MPE: {e}")
     finally:
-        unity_ws = None
+        app_state.unity_ws = None
 
 async def handle_handshake(websocket):
     """This handles the initial 'mpe_init' from Unity."""

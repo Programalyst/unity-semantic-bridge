@@ -1,4 +1,3 @@
-import asyncio
 import json
 import websockets
 from mcp.server.fastmcp import FastMCP
@@ -92,27 +91,6 @@ async def find_asset_references(asset_path: str) -> str:
             "asset_path": asset_path,
         }
         await ws.send(json.dumps(payload))
-        response = await ws.recv()
-        return response
-
-
-@mcp.tool()
-async def find_unity_files(filter_query: str, limit: int = 10) -> str:
-    """
-    Unity equivent of 'find'. Finds assets and immediately returns their file paths.
-    Use this instead of search_unity_assets to get a file (likely a script) to read the code.
-    'limit' acts like 'head' to set a limit on search results
-    Filter examples: 't:Prefab', 't:Script Player', 'l:Gold_Master'
-    Returns a JSON list of paths like ["Assets/Scripts/Player.cs", ...]
-    """
-    async with websockets.connect(BRIDGE_URI) as ws:
-        payload = {
-            "action": "MCP_FIND",
-            "filter": filter_query,
-            "limit": limit
-        }
-        await ws.send(json.dumps(payload))
-        
         response = await ws.recv()
         return response
 

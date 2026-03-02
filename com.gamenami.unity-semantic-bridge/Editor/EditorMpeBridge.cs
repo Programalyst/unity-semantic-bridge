@@ -141,41 +141,32 @@ namespace Gamenami.UnitySemanticBridge.Editor
             //Debug.Log($"[MPE] Raw JObject {contentObj}");
             var action = mcpMessage["action"]?.ToString();
 
-            string resultText;
+            var resultText = "";
             switch (action)
             {
                 case "MCP_GLOB":
                     resultText = McpFunctions.SearchAssets(mcpMessage);
-                    SendToMcpAgent(resultText);
                     break;
                 
                 case "MCP_NOTIFY":
                     var message = mcpMessage["message"]?.ToString();
                     Debug.Log($"<color=cyan>[Claude]</color> {message}");
-                    SendToMcpAgent("Notification displayed.");
+                    resultText ="Notification displayed.";
                     break;
                 
                 case "MCP_GET_SCENE":
                     resultText = McpFunctions.GetSemanticScene(mcpMessage);
-                    SendToMcpAgent(resultText);
                     break;
                 
                 case "MCP_GREP":
                     resultText = McpFunctions.FindAssetReferences(mcpMessage);
-                    SendToMcpAgent(resultText);
                     break;
                 
                 case "MCP_TREE":
                     resultText = McpFunctions.GetFolderStructure(mcpMessage);
-                    SendToMcpAgent(resultText);
-                    break;
-                
-                case "MCP_FIND":
-                    resultText = McpFunctions.FindFiles(mcpMessage);
-                    SendToMcpAgent(resultText);
                     break;
             }
-            
+            SendToMcpAgent(resultText);
         }
 
         private static void HandleRuntimeRequest(string json, byte[] image)

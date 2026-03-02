@@ -3,14 +3,14 @@ import json
 import asyncio
 from image_analysis import gemini_image_analysis
 from scene_analysis import gemini_scene_analysis
-from shared_state import SharedState
+from state_manager import AppState, app_state
 
 logger = logging.getLogger(__name__)
 # prevent 1002 protocol error due to Unity sending a large buffer (sceneJson+image) with a Continuation Frame 
 # without an Initial Frame, or it might not set the "FIN" (Final) bit correctly
 processing_lock = asyncio.Lock() 
 
-async def handle_unity_message(websocket, payload_string, state_container):
+async def handle_unity_message(websocket, payload_string):
     """
     Main logic hub: Parses JSON, calls Gemini, and sends tools back.
     """
@@ -19,8 +19,8 @@ async def handle_unity_message(websocket, payload_string, state_container):
 
     # Message from Unity -> Respond to MCP
     if msg_type == "mcp_response":
-        if state_container.unity_res_future and not state_container.unity_res_future.done():
-            state_container.unity_res_future.set_result(data)
+        if app_state.unity_res_future and not app_state.unity_res_future.done():
+            app_state.unity_res_future.set_result(data)
         return
     
     # Message from Unity -> Gemini image analysis -> back to Unity

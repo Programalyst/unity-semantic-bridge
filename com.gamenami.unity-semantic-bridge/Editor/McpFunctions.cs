@@ -31,17 +31,21 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         public static string FindAssetReferences(JObject mcpMessage)
         {
-            return "Not implemented";
+            var assetPath = mcpMessage["path"]?.ToString();
+            // Finds everything this asset uses (dependencies)
+            string[] deps = UnityEditor.AssetDatabase.GetDependencies(assetPath, false);
+            var responseContent = deps.Length > 0 ? string.Join("\n", deps) : "No references found.";
+            return responseContent;
         }
         
         public static string GetFolderStructure(JObject mcpMessage)
         {
-            return "Not implemented";
-        }
-        
-        public static string FindFiles(JObject mcpMessage)
-        {
-            return "Not implemented";
+            var folderPath = mcpMessage["path"]?.ToString() ?? "Assets";
+            var dirs = System.IO.Directory.GetDirectories(folderPath);
+            var files = System.IO.Directory.GetFiles(folderPath);
+            var responseContent = $"Folders in {folderPath}:\n" + string.Join("\n", dirs) + 
+                                        $"\nFiles in {folderPath}:\n" + string.Join("\n", files);
+            return responseContent;
         }
     }
 }
