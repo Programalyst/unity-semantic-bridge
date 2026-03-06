@@ -1,6 +1,7 @@
 import json
 import websockets
 from mcp.server.fastmcp import FastMCP
+from typing import Annotated
 
 # Initialize the MCP Sub-Agent
 mcp = FastMCP("UnitySceneSubAgent")
@@ -42,16 +43,14 @@ async def notify_unity(text: str) -> str:
         return response
 
 @mcp.tool()
-async def search_unity_assets(filter_query: str, limit: int = 10, searchInFolders: list[str] = ["Assets"]) -> str:
+async def search_unity_assets(
+    filter_query: Annotated[str, "The search string (e.g., 't:Prefab Player' or 'l:LabelName')"], 
+    limit: Annotated[int, "Max results to return (default 10)"] = 10, 
+    searchInFolders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
+    ) -> str:
     """
-    Unity equivalent of 'glob'. Searches for assets by type, name, or label.
-    Uses UnityEditor.AssetDatabase.FindAssets(filter, searchInFolders)
-    Example filters: 
-    By type: 't:Prefab Player', 't:Script health'
-    By label: 'l:UI_Assets'
-    'limit' acts like 'head' to set a limit on search results
-    'folders' is a list of paths to search in (e.g. ["Assets/Scripts", "Assets/Prefabs"]).
-    Defaults to ["Assets"] to exclude Packages.
+    Searches for Unity assets using AssetDatabase.FindAssets. 
+    Use this to find specific prefabs, scripts, or assets by type and label.
     """
     async with websockets.connect(BRIDGE_URI) as ws:
         payload = {
@@ -65,10 +64,12 @@ async def search_unity_assets(filter_query: str, limit: int = 10, searchInFolder
         return response
 
 @mcp.tool()
-async def get_project_tree(folder_path: str = "Assets") -> str:
+async def get_project_tree(
+    folder_path: Annotated[str, "The project-relative path (e.g., 'Assets/Scripts') to start the tree from"] = "Assets"
+    ) -> str:
     """
-    Unity equivalent of 'tree'. Returns the folder structure starting from the given path.
-    Use this to see where scripts, prefabs, and materials are stored.
+    Returns a recursive visual folder structure. 
+    Use this first to orient yourself within the project's directory layout before searching for specific files.
     """
     async with websockets.connect(BRIDGE_URI) as ws:
         payload = {
@@ -80,10 +81,12 @@ async def get_project_tree(folder_path: str = "Assets") -> str:
         return response
 
 @mcp.tool()
-async def find_asset_references(asset_path: str) -> str:
+async def find_asset_references(
+    asset_path: Annotated[str, "The full project-relative path to the asset, including extension (e.g., 'Assets/Prefabs/Player.prefab')"]
+    ) -> str:
     """
-    Unity equivalent of 'grep'. Finds all objects or scenes that reference a specific asset.
-    Useful for seeing which Prefabs use a specific Script.
+    Finds all scenes, prefabs, and assets that depend on or reference the specified asset.
+    Essential for impact analysis before deleting an asset or changing a script's public variables.
     """
     async with websockets.connect(BRIDGE_URI) as ws:
         payload = {
