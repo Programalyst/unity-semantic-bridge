@@ -2,6 +2,7 @@ using System;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.MPE;
@@ -10,103 +11,98 @@ using Newtonsoft.Json.Linq;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
-    public static class EditorMpeBridge
+    public static class EditorBridge
     {
-        private const string ChannelName = "usb-agent-channel";
-        private const string PythonHandshakeUrl = "ws://127.0.0.1:8765";
-        
-        public static bool IsActive => ChannelService.IsRunning() && HasActiveChannel();
-        
-        private static bool HasActiveChannel()
+        private const string ServerUrl = "ws://127.0.0.1:8765";
+        private static ClientWebSocket _ws;
+        private static CancellationTokenSource _cts;
+
+        // Check if the actual websocket is open
+        public static bool IsConnected => _ws != null && _ws.State == WebSocketState.Open;
+
+        public static async Task Connect()
         {
-            // Query Unity's internal MPE list to see if our channel is already there
-            var channels = ChannelService.GetChannelList();
-            foreach (var channel in channels)
-            {
-                if (channel.name == ChannelName) return true;
-            }
-            return false;
-        }
+            if (IsConnected) return;
 
-        public static void RebindEvents()
-        {
-            // 1. Re-link the Runtime Agent -> Server path
-            BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
-            BridgeRelay.OnRequestSendToServer += HandleRuntimeRequest;
+            // Clean up any old connection attempts
+            await Disconnect();
 
-            // 2. Re-link the Server -> Unity path
-            // Even if the channel is active, the callback might be lost on recompile
-            if (IsActive)
-            {
-                // This ensures the current 'OnMessageReceived' is the one listening
-                ChannelService.GetOrCreateChannel(ChannelName, OnMessageReceived);
-            }
-            Debug.Log("<color=lime>[MPE]</color> Bridge re-synchronized.");
-        }
-        
-        public static async System.Threading.Tasks.Task Connect()
-        {
-            // If already connected in the background, just re-link the events
-            if (IsActive) 
-            {
-                RebindEvents();
-                return;
-            }
+            _ws = new ClientWebSocket();
+            _cts = new CancellationTokenSource();
 
-            // 1. Start Unity's Internal MPE Service
-            if (!ChannelService.IsRunning())
+            try
             {
-                ChannelService.Start();
-            }
-
-            // 2. Perform Handshake with Python
-            var success = await SendHandshake();
-
-            if (success)
-            {
-                // 3. Register the incoming message handler
-                ChannelService.GetOrCreateChannel(ChannelName, OnMessageReceived);
+                Debug.Log($"<color=cyan>[Bridge]</color> Connecting to {ServerUrl}...");
+                await _ws.ConnectAsync(new Uri(ServerUrl), _cts.Token);
                 
-                // 4. Subscribe to the Runtime Relay
-                RebindEvents();
-                
-                Debug.Log($"<color=lime>[MPE]</color> USB Agent Server connected on {ChannelService.GetAddress()}:{ChannelService.GetPort()}");
+                // Start the background listening loop
+                _ = ReceiveLoop();
+
+                // Link your existing Runtime Relay events
+                BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
+                BridgeRelay.OnRequestSendToServer += HandleRuntimeRequest;
+
+                Debug.Log("<color=lime>[Bridge]</color> Connected to USB Agent Server.");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"<color=red>[Bridge]</color> Connection failed: {e.Message}");
             }
         }
-        
-        public static void Disconnect()
+
+        public static async Task Disconnect()
         {
             BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
-            ChannelService.CloseChannel(ChannelName);
-            Debug.Log("<color=orange>[MPE]</color> USB Agent Server disconnected.");
-        }
-        
-        private static async System.Threading.Tasks.Task<bool> SendHandshake()
-        {
-            using var ws = new ClientWebSocket();
-            
-            try {
-                // Use a short timeout so the UI doesn't hang if the server is off
-                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await ws.ConnectAsync(new Uri(PythonHandshakeUrl), cts.Token);
-                
-                int mpePort = ChannelService.GetPort();
-                string message = $"{{\"type\": \"mpe_init\", \"port\": {mpePort}}}";
-                
-                byte[] bytes = Encoding.UTF8.GetBytes(message);
-                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cts.Token);
-                return true;
-            }
-            catch (Exception e) 
+
+            if (_ws != null)
             {
-                Debug.LogWarning($"[MPE] Handshake failed: {e.Message}. Is the USB Agent server running?");
-                return false;
+                if (_ws.State == WebSocketState.Open)
+                    await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                _ws.Dispose();
+                _ws = null;
+            }
+
+            if (_cts != null)
+            {
+                _cts.Cancel();
+                _cts.Dispose();
+                _cts = null;
             }
         }
 
-        private static void OnMessageReceived(int clientId, byte[] data)
+        private static async Task ReceiveLoop()
         {
-            string json = Encoding.UTF8.GetString(data);
+            var buffer = new byte[1024 * 1024]; // 1MB buffer for scene data
+
+            try
+            {
+                while (IsConnected)
+                {
+                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                    
+                    if (result.MessageType == WebSocketMessageType.Close) break;
+
+                    string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    
+                    // Unity main thread safety
+                    EditorApplication.delayCall += () => {
+                        OnMessageReceived(json);
+                    };
+                }
+            }
+            catch (Exception e)
+            {
+                if (!_cts.IsCancellationRequested)
+                    Debug.LogWarning($"[Bridge] Connection lost: {e.Message}");
+            }
+            finally
+            {
+                await Disconnect();
+            }
+        }
+
+        private static void OnMessageReceived(string json)
+        {
             var message = JsonConvert.DeserializeObject<dynamic>(json);
             //Debug.Log($"[MPE] Received: {json}");
             if (message.type == "function_call")
@@ -138,7 +134,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void HandleMcpMessage(JObject mcpMessage)
         {
-            //Debug.Log($"[MPE] Raw JObject {contentObj}");
+            Debug.Log($"[MPE] Raw JObject {mcpMessage}");
             var action = mcpMessage["action"]?.ToString();
 
             var resultText = "";
@@ -166,6 +162,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     resultText = McpFunctions.GetFolderStructure(mcpMessage);
                     break;
             }
+            Debug.Log($"<color=cyan>[Result text] {resultText}</color>");
             SendToMcpAgent(resultText);
         }
 
@@ -188,15 +185,18 @@ namespace Gamenami.UnitySemanticBridge.Editor
             SendToAgent(response);
         }
 
-        public static void SendToAgent(string message)
+        public static async void SendToAgent(string json)
         {
-            var channel = ChannelService.GetChannelList();
-            foreach (var info in channel)
+            if (!IsConnected) return;
+
+            try
             {
-                if (info.name != ChannelName) continue;
-                
-                var data = Encoding.UTF8.GetBytes(message);
-                ChannelService.Broadcast(info.id, data);
+                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[Bridge] Send failed: {e.Message}");
             }
         }
         

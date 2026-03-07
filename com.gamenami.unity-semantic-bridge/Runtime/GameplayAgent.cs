@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Gamenami.UnitySemanticBridge
@@ -65,7 +66,12 @@ namespace Gamenami.UnitySemanticBridge
         private void CaptureAndSend()
         {
             // 1. Generate Semantic Scene Representation 
-            var sceneJson = SemanticSceneGenerator.Generate(configAsset);
+            var sceneData = SemanticSceneGenerator.Generate(configAsset);
+            var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+            });
 
             // 2. Capture the Screenshot (Vision)
             ScreenshotTool.Instance.GetScreenshotBytes(imageBytes => 

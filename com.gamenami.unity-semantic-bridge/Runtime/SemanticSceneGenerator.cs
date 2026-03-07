@@ -1,13 +1,14 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Newtonsoft.Json;
 
 namespace Gamenami.UnitySemanticBridge
 {
     public static class SemanticSceneGenerator
     {
-        public static string Generate(SemanticSceneConfigSo settings)
+        public static SemanticScene Generate(SemanticSceneConfigSo settings)
         {
             var activeScene = SceneManager.GetActiveScene();
             var sceneName = string.IsNullOrEmpty(activeScene.name) ? "UntitledScene" : activeScene.name;
@@ -25,10 +26,7 @@ namespace Gamenami.UnitySemanticBridge
                 AddNodesRecursively(root, sceneData, null, 0, settings);
             }
 
-            return JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-            });
+            return sceneData;
         }
 
         private static void AddNodesRecursively(GameObject obj, SemanticScene scene, string parentPath,

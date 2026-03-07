@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from toolDeclarations import clickScreenPosition, clickUiButton
 
 from pathlib import Path
+from state_manager import app_state
 
 import base64
 import json
@@ -24,7 +25,8 @@ tool_config = types.ToolConfig(
     )
 )
 
-system_prompt = Path("system_prompt.txt").read_text(encoding="utf-8")
+system_prompt_path = app_state.base_dir / "system_prompt.txt"
+system_prompt = system_prompt_path.read_text(encoding="utf-8")
 
 config = types.GenerateContentConfig(
     temperature=0,

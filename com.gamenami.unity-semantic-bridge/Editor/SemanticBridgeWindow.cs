@@ -39,23 +39,17 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private void OnEnable()
         {
             Instance = this; // Register this window instance
-            
-            // If the bridge is already running in the background, 
-            // we must tell it to start sending messages to THIS window instance.
-            if (EditorMpeBridge.IsActive)
-            {
-                EditorMpeBridge.RebindEvents();
-            }
-            
-            // Only search if we don't already have both config assets assigned
-            if (_editorConfig != null && _playModeConfig != null) return;
-            
-            string[] guids = AssetDatabase.FindAssets("t:SemanticSceneConfigSo");
+
+            LoadConfigs();
+        }
+        
+        private void LoadConfigs()
+        {
+            var guids = AssetDatabase.FindAssets("t:SemanticSceneConfigSo");
             foreach (var guid in guids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 var asset = AssetDatabase.LoadAssetAtPath<SemanticSceneConfigSo>(path);
-        
                 if (path.Contains("Editor")) _editorConfig = asset;
                 else if (path.Contains("PlayMode")) _playModeConfig = asset;
             }
@@ -165,10 +159,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private void SendChatMessage(string text)
         {
             // Trigger the Bridge to send to Python
-            if (EditorMpeBridge.IsActive)
+            if (EditorBridge.IsConnected)
             {
                 // Use the Editor config for Dev Chat context
-                string sceneJson = SemanticSceneGenerator.Generate(_editorConfig);
+                
+                SemanticScene sceneData = SemanticSceneGenerator.Generate(_editorConfig);
+                var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
+                {
+                    Formatting = Formatting.Indented,
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                });
                 var kbSize = Encoding.UTF8.GetByteCount(sceneJson) / 1024.0;
                 
                 var payload = new {
@@ -177,7 +177,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     scene = JsonConvert.DeserializeObject(sceneJson)
                 };
                 
-                EditorMpeBridge.SendToAgent(JsonConvert.SerializeObject(payload));
+                EditorBridge.SendToAgent(JsonConvert.SerializeObject(payload));
                 
                 _chatHistory.Add(new ChatMessage { 
                     text = $"{text} (+ appended scene context {kbSize:N1} kb)", 
@@ -204,23 +204,23 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 normal =
                 {
-                    textColor = EditorMpeBridge.IsActive ? Color.green : EditorStyles.label.normal.textColor
+                    textColor = EditorBridge.IsConnected ? Color.green : EditorStyles.label.normal.textColor
                 }
             };
-            GUILayout.Label(EditorMpeBridge.IsActive ? "● Connected" : "○ Disconnected", statusStyle);
+            GUILayout.Label(EditorBridge.IsConnected ? "● Connected" : "○ Disconnected", statusStyle);
 
-            if (!EditorMpeBridge.IsActive)
+            if (!EditorBridge.IsConnected)
             {
                 if (GUILayout.Button("Connect to Server"))
                 {
-                    _ = EditorMpeBridge.Connect(); // Fire and forget async
+                    _ = EditorBridge.Connect(); // Fire and forget async
                 }
             }
             else
             {
                 if (GUILayout.Button("Disconnect"))
                 {
-                    EditorMpeBridge.Disconnect();
+                    EditorBridge.Disconnect();
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -285,7 +285,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             var activeScene = SceneManager.GetActiveScene();
             var sceneName = string.IsNullOrEmpty(activeScene.name) ? "UntitledScene" : activeScene.name;
-            var json = SemanticSceneGenerator.Generate(config);
+            var sceneData = SemanticSceneGenerator.Generate(config);
+            var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+            });
+            
             Debug.Log("Scene Exported (Max Depth: " + config.maxDepth + ")");
             
             // Save to a file
@@ -297,11 +303,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
             );
                 
             if (string.IsNullOrEmpty(path)) return;
-            System.IO.File.WriteAllText(path, json);
+            System.IO.File.WriteAllText(path, sceneJson);
             AssetDatabase.Refresh();
         }
 
-        public string GetEditorHierarchy()
+        public SemanticScene GetEditorHierarchy()
         {
             return SemanticSceneGenerator.Generate(_editorConfig);
         }

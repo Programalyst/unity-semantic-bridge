@@ -3,12 +3,28 @@ import json
 import asyncio
 from image_analysis import gemini_image_analysis
 from scene_analysis import gemini_scene_analysis
-from state_manager import AppState, app_state
+from state_manager import app_state
 
 logger = logging.getLogger(__name__)
 # prevent 1002 protocol error due to Unity sending a large buffer (sceneJson+image) with a Continuation Frame 
 # without an Initial Frame, or it might not set the "FIN" (Final) bit correctly
 processing_lock = asyncio.Lock() 
+
+async def forward_to_unity(payload: dict) -> str:
+    """Helper to handle the Request-Response loop to Unity."""
+    if not app_state.unity_ws:
+        return "Error: Unity Editor is not connected to the bridge."
+    
+    app_state.unity_res_future = asyncio.get_event_loop().create_future()
+    await app_state.unity_ws.send(json.dumps(payload))
+    
+    try:
+        result = await asyncio.wait_for(app_state.unity_res_future, timeout=20.0)
+        return str(result)
+    except asyncio.TimeoutError:
+        return "Error: Unity timed out responding to the request."
+    finally:
+        app_state.unity_res_future = None
 
 async def handle_unity_message(websocket, payload_string):
     """
@@ -70,7 +86,7 @@ async def handle_gemini_response(websocket, gemini_response):
     via the established MPE WebSocket.
     """
     try:
-        # 1. Handle Function Calls (Tools)
+        # 1. Handle Function Calls
         if gemini_response.function_calls:
             # Gemini SDK's function_calls can be converted to dicts
             calls = [fc.to_json_dict() for fc in gemini_response.function_calls]
