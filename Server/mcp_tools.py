@@ -1,8 +1,5 @@
 from unity_bridge import forward_to_unity
 from typing import Annotated
-from Runtime.gameplay_agent import GameplaySubAgent
-
-gameplay_agent = GameplaySubAgent()
 
 def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
