@@ -15,15 +15,12 @@ register_unity_tools(mcp)
 
 # --- WEBSOCKET BRIDGE ---
 async def handle_unity_connection(websocket):
-    """The new primary persistent channel for Unity."""
     app_state.unity_ws = websocket
     logging.info("✅ Unity connected directly via WebSocket.")
     
     try:
         async for message in websocket:
-            # Note: RAW ClientWebSocket doesn't have the 4-byte UMPE prefix!
-            # So we don't need 'payload = message[4:]' anymore.
-            await handle_unity_message(websocket, message)
+            await handle_unity_message(message)
     except websockets.ConnectionClosed:
         logging.info("🔌 Unity disconnected.")
     finally:

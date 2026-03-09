@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxDepth: 1
   includeComponents: 1
-  includeTransforms: 0
+  includeTransforms: 1
   excludeLayers:
     serializedVersion: 2
     m_Bits: 0

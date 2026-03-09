@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 using Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
@@ -14,20 +13,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private SemanticSceneConfigSo _editorConfig;
         private SemanticSceneConfigSo _playModeConfig;
         
-        private Vector2 _chatScroll;
-        private string _chatInput = "";
-        private readonly List<ChatMessage> _chatHistory = new List<ChatMessage>();
+        private Vector2 _logScroll;
+        private readonly List<string> _agentHistory = new List<string>();
         private bool _scrollToBottom;
         
-        private GUIStyle _userStyle;
-        private GUIStyle _agentStyle;
-
-        [System.Serializable]
-        public class ChatMessage 
-        {
-            public string text;
-            public bool isUser;
-        }
         
         [MenuItem("Tools/Unity Semantic Bridge")]
         public static void ShowWindow() 
@@ -39,6 +28,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private void OnEnable()
         {
             Instance = this; // Register this window instance
+            BridgeRelay.OnNotifyAgentLogWindow -= AddAgentMessage;
+            BridgeRelay.OnNotifyAgentLogWindow += AddAgentMessage;
 
             LoadConfigs();
         }
@@ -62,8 +53,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private void OnGUI() 
         {
-            InitStyles();
-            
             EditorGUILayout.BeginVertical(GUILayout.ExpandHeight(false));
             {
                 EditorGUILayout.Space(10);
@@ -74,123 +63,52 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             EditorGUILayout.EndVertical();
             
-            DrawChatBox();
+            DrawGameAgentBox();
         }
         
-        private void InitStyles()
+        private void DrawGameAgentBox()
         {
-            _userStyle = new GUIStyle(EditorStyles.label) {
-                wordWrap = true,
-                richText = true,
-                padding = new RectOffset(10, 10, 1, 1),
-                normal = { textColor = new Color(0.4f, 1f, 1f) }
-            };
-
-            _agentStyle = new GUIStyle(EditorStyles.label) {
-                wordWrap = true,
-                richText = true,
-                padding = new RectOffset(10, 10, 1, 1),
-                normal = { textColor = Color.white }
-            };
-        }
-        
-        private void DrawChatBox()
-        {
-            GUILayout.Label("Agent Chat", EditorStyles.boldLabel);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
+            GUILayout.Label("Gameplay Agent", EditorStyles.boldLabel);
+            // Flexbox to hold columns
+            EditorGUILayout.BeginHorizontal(GUILayout.ExpandHeight(true));
             {
-                _chatScroll = EditorGUILayout.BeginScrollView(_chatScroll,
-                    EditorStyles.helpBox,
-                    GUILayout.ExpandHeight(true));
-            
-                foreach (var msg in _chatHistory)
+                // Column 1
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Width(200), GUILayout.ExpandHeight(true));
                 {
-                    DrawMessage(msg);
+                    DrawAgentControls();
                 }
-                EditorGUILayout.EndScrollView();
-            }
-            EditorGUILayout.EndVertical();
-
-            // 2. INPUT AREA
-            EditorGUILayout.BeginHorizontal();
-            {
-                // Handle Enter key for sending
-                bool pressEnter = (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return);
-            
-                _chatInput = EditorGUILayout.TextField(_chatInput, GUILayout.Height(25));
-                if (GUILayout.Button("Send", GUILayout.Width(60), GUILayout.Height(25)) || pressEnter)
+                EditorGUILayout.EndVertical();
+                
+                // Column 2
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
                 {
-                    if (!string.IsNullOrEmpty(_chatInput))
+                    // Agent action Log area
+                    _logScroll = EditorGUILayout.BeginScrollView(_logScroll,
+                        EditorStyles.helpBox,
+                        GUILayout.ExpandHeight(true));
+
+                    foreach (var msg in _agentHistory)
                     {
-                        SendChatMessage(_chatInput);
-                        _chatInput = "";
-                        GUI.FocusControl(null); // Deselect text field
+                        GUILayout.Label(msg);
+                    }
+                    EditorGUILayout.EndScrollView();
+                    
+                    if (_scrollToBottom)
+                    {
+                        _logScroll.y = float.MaxValue;
+                        _scrollToBottom = false;
                     }
                 }
+                EditorGUILayout.EndVertical();
             }
             EditorGUILayout.EndHorizontal();
-            
-            if (_scrollToBottom)
-            {
-                _chatScroll.y = float.MaxValue;
-                _scrollToBottom = false;
-            }
-        }
-
-        private void DrawMessage(ChatMessage msg)
-        {
-            var style = msg.isUser ? _userStyle : _agentStyle;
-            var prefix = msg.isUser ? "<b>You:</b> " : "<b>Agent:</b> ";
-            GUILayout.Label(prefix + msg.text, style);
         }
         
-        public void AddAgentMessage(string text)
+        private void AddAgentMessage(string text)
         {
-            _chatHistory.Add(new ChatMessage { 
-                text = text, 
-                isUser = false, 
-            });
-            
+            _agentHistory.Add(text);
             _scrollToBottom = true; 
             Repaint(); // redraw UI
-        }
-
-        private void SendChatMessage(string text)
-        {
-            // Trigger the Bridge to send to Python
-            if (EditorBridge.IsConnected)
-            {
-                // Use the Editor config for Dev Chat context
-                
-                SemanticScene sceneData = SemanticSceneGenerator.Generate(_editorConfig);
-                var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
-                {
-                    Formatting = Formatting.Indented,
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                });
-                var kbSize = Encoding.UTF8.GetByteCount(sceneJson) / 1024.0;
-                
-                var payload = new {
-                    type = "chat",
-                    message = text,
-                    scene = JsonConvert.DeserializeObject(sceneJson)
-                };
-                
-                EditorBridge.SendToAgent(JsonConvert.SerializeObject(payload));
-                
-                _chatHistory.Add(new ChatMessage { 
-                    text = $"{text} (+ appended scene context {kbSize:N1} kb)", 
-                    isUser = true
-                });
-            }
-            else
-            {
-                Debug.LogError("No USB Agent server connection. Please connect first.");
-            }
-            
-            // Auto-scroll to bottom
-            _chatScroll.y = float.MaxValue;
         }
 
         private static void DrawConnectionArea()
@@ -277,10 +195,53 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (EditorGUI.EndChangeCheck())
             {
                 EditorUtility.SetDirty(config);
-                // Note: AssetDatabase.SaveAssets() is heavy, usually SetDirty is enough until Unity auto-saves
+                // AssetDatabase.SaveAssets() is heavy, usually SetDirty is enough until Unity auto-saves
             }
         }
-        
+
+        private static void DrawAgentControls()
+        {
+            bool connected = EditorBridge.IsConnected;
+            bool playing = EditorApplication.isPlaying;
+            bool agentInScene = GameplayAgent.Instance;
+    
+            // Determine if we are allowed to click anything
+            bool canInteract = connected && playing && agentInScene;
+
+            EditorGUI.BeginDisabledGroup(!canInteract);
+            {
+                EditorGUILayout.Space(5);
+
+                // Check the actual running state from your agent
+                bool isRunning = agentInScene && GameplayAgent.Instance.IsRunning; 
+
+                if (!isRunning)
+                {
+                    GUI.backgroundColor = Color.cyan; // Subtle highlight for the start button
+                    if (GUILayout.Button("🚀 Start Agent Loop", GUILayout.Height(30)))
+                    {
+                        GameplayAgent.Instance.StartAgentLoop();
+                    }
+                }
+                else
+                {
+                    GUI.backgroundColor = new Color(1f, 0.4f, 0.4f); // Subtle red for stop
+                    if (GUILayout.Button("🛑 Stop Agent Loop", GUILayout.Height(30)))
+                    {
+                        GameplayAgent.Instance.StopAgentLoop();
+                    }
+                }
+                GUI.backgroundColor = Color.white; // Reset color for other UI elements
+                EditorGUILayout.Space(5);
+            }
+            EditorGUI.EndDisabledGroup();
+            
+            // Contextual Feedback
+            if (!connected) EditorGUILayout.HelpBox("Connect to Server first.", MessageType.None);
+            if (!playing) EditorGUILayout.HelpBox("Enter Play Mode to start.", MessageType.None);
+            if (!agentInScene) EditorGUILayout.HelpBox("Add GameplayAgent to scene.", MessageType.Warning);
+        }
+
         private static void ExportToJson(SemanticSceneConfigSo config) 
         {
             var activeScene = SceneManager.GetActiveScene();

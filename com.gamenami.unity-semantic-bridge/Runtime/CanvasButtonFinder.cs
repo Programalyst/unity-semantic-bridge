@@ -20,18 +20,18 @@ namespace Gamenami.UnitySemanticBridge
 
         public void ClickButton(string buttonName)
         {
-            // 1. Dynamic Discovery: Find the button across ALL active canvases
+            // Dynamic Discovery: Find the button across ALL active canvases
             var target = GetAllInteractableButtons()
                 .FirstOrDefault(b => b.name.Equals(buttonName, System.StringComparison.OrdinalIgnoreCase));
 
             if (target != null)
             {
-                Debug.Log($"<color=yellow>[Agent]</color> Invoking UI Button: <b>{target.name}</b>");
+                BridgeRelay.OnNotifyAgentLogWindow?.Invoke($"Invoking UI Button: <b>{target.name}</b>");
                 target.onClick.Invoke();
             }
             else
             {
-                Debug.LogWarning($"[Agent] Button '{buttonName}' not found or not interactable.");
+                BridgeRelay.OnNotifyAgentLogWindow?.Invoke($"Button '{buttonName}' not found or not interactable.");
             }
         }
 

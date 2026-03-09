@@ -1,11 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEditor;
-using UnityEditor.MPE;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 
@@ -18,7 +18,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static CancellationTokenSource _cts;
 
         // Check if the actual websocket is open
-        public static bool IsConnected => _ws != null && _ws.State == WebSocketState.Open;
+        public static bool IsConnected => _ws is { State: WebSocketState.Open };
 
         public static async Task Connect()
         {
@@ -69,6 +69,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 _cts = null;
             }
         }
+        
+        [InitializeOnLoadMethod] // ensures it stays wired up
+        private static void SetupRelay()
+        {
+            // Tell relay how to check socket state
+            BridgeRelay.IsServerConnected = () => IsConnected;
+        }
 
         private static async Task ReceiveLoop()
         {
@@ -104,7 +111,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static void OnMessageReceived(string json)
         {
             var message = JsonConvert.DeserializeObject<dynamic>(json);
-            //Debug.Log($"[MPE] Received: {json}");
             if (message.type == "function_call")
             {
                 foreach (var call in message.content)
@@ -112,23 +118,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     HandleFunctionCall(call);
                 }
             }
-            else if (message.type == "chat_response")
-            {
-                var text = (string)message.content; // cast to string as "content" is Newtonsoft.Json.Linq.JValue
-                
-                // Tell window to update from the main thread
-                EditorApplication.delayCall += () => {
-                    if (SemanticBridgeWindow.Instance)
-                        SemanticBridgeWindow.Instance.AddAgentMessage(text);
-                };
-            }
             else if (message.action != null) // all MCP messages have an action field
             {
                 HandleMcpMessage(message);
             }
             else 
             {
-                Debug.LogWarning($"[MPE] Unknown response type: {message.type}");
+                Debug.LogWarning($"[Bridge] Unknown response type: {message.type}");
             }
         }
 
@@ -146,7 +142,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 
                 case "MCP_NOTIFY":
                     var message = mcpMessage["message"]?.ToString();
-                    Debug.Log($"<color=cyan>[Claude]</color> {message}");
+                    Debug.Log($"<color=cyan>[USB Agent]</color> {message}");
                     resultText ="Notification displayed.";
                     break;
                 
@@ -162,37 +158,42 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     resultText = McpFunctions.GetFolderStructure(mcpMessage);
                     break;
             }
-            Debug.Log($"<color=cyan>[Result text] {resultText}</color>");
-            SendToMcpAgent(resultText);
+            Debug.Log($"[Result text] {resultText}");
+            SendToAgent(resultText, "mcp_response");
         }
 
-        private static void HandleRuntimeRequest(string json, byte[] image)
+        private static void HandleRuntimeRequest(List<string> agentActions, SemanticScene sceneData, byte[] image)
         {
+            var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+            });
+            
             var payload = new {
-                sceneJson = JsonConvert.DeserializeObject(json), // Ensures nested JSON is valid
+                agentActions,
+                sceneJson,
                 b64Image = Convert.ToBase64String(image)
             };
-            SendToAgent(JsonConvert.SerializeObject(payload));
+            Debug.Log($"[Bridge] Context sent. Scene JSON size: {sceneJson.Length / 1024}KB. Image size: {image.Length / 1024}KB.");
+            SendToAgent(payload, "gameplay_response");
         }
-
-        private static void SendToMcpAgent(string message)
+        
+        private static async void SendToAgent(object message, string messageType)
         {
-            var response = JsonConvert.SerializeObject(new
-            {
-                type = "mcp_response",
-                content = message
-            });
-            SendToAgent(response);
-        }
-
-        public static async void SendToAgent(string json)
-        {
-            if (!IsConnected) return;
-
             try
             {
+                if (!IsConnected) return;
+            
+                var json = JsonConvert.SerializeObject(new
+                {
+                    type = messageType,
+                    content = message
+                });
+                
                 byte[] bytes = Encoding.UTF8.GetBytes(json);
                 await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+
             }
             catch (Exception e)
             {
@@ -239,7 +240,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 correctedY * Screen.height
             );
 
-            Debug.Log($"Viewport: {normalizedX},{normalizedY} -> Pixels: {pixelPosition}");
+            //Debug.Log($"Viewport: {normalizedX},{normalizedY} -> Pixels: {pixelPosition}");
             
             return pixelPosition;
         }

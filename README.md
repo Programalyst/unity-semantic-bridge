@@ -9,7 +9,7 @@ Allows LLMs to understand Unity scenes efficiently through a structured represen
 
 1. Clone this project. 
 2. Add the Unity package in `/com.gamenami.unity-semantic-bridge` to your Unity project via "add package from disk". 
-3. You should have `uv` installed so it can run and automatically update the server's dependancies. Add the MCP Server in `/Server` to your preferred IDE Agent's list of MCP servers. When you start your IDE Agemt, the MCP server will automatically start up and start listening for a connection from the Unity package.
+3. You should have `uv` installed so it can run and automatically update the server's dependancies. Add the MCP Server in `/Server` to your preferred IDE Agent's list of MCP servers. When you start your IDE Agent (e.g. Antigravity, Claude Code, Codex, etc.), the MCP server will automatically start up and start listening for a connection from the Unity package.
 ```json
 "mcpServers": {
     "unity-semantic-bridge": {

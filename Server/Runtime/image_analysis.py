@@ -3,15 +3,17 @@ from google.genai import types
 from google.genai.types import FunctionCall  # Import the type explicitly
 import os
 from dotenv import load_dotenv
-from toolDeclarations import clickScreenPosition, clickUiButton
+from Runtime.toolDeclarations import clickScreenPosition, clickUiButton
 
-from pathlib import Path
 from state_manager import app_state
 
 import base64
 import json
+import logging
 
 load_dotenv() # Load environment variables from .env file
+
+logger = logging.getLogger(__name__)
 
 # Configure the client and tools
 gemini_sdk_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -25,7 +27,7 @@ tool_config = types.ToolConfig(
     )
 )
 
-system_prompt_path = app_state.base_dir / "system_prompt.txt"
+system_prompt_path = app_state.base_dir / "Runtime/system_prompt.txt"
 system_prompt = system_prompt_path.read_text(encoding="utf-8")
 
 config = types.GenerateContentConfig(
@@ -36,7 +38,7 @@ config = types.GenerateContentConfig(
     system_instruction=system_prompt
 )
 
-async def gemini_image_analysis(scene_json, b64_image) -> list[FunctionCall] | str:
+async def gemini_image_analysis(agent_actions: list[str], scene_json, b64_image) -> list[FunctionCall] | str:
     
     # 1. Prepare the Image Part
     image_bytes = base64.b64decode(b64_image)
@@ -46,13 +48,16 @@ async def gemini_image_analysis(scene_json, b64_image) -> list[FunctionCall] | s
     # We turn the JSON object back into a string for the prompt
     semantic_context = json.dumps(scene_json, indent=2)
 
+    # Flatten the list of actions
+    actions = "\n".join(agent_actions)
+
     # 3. Build the Master Prompt
     # This tells Gemini: "Look at the image, but use this JSON for exact coordinates"
     prompt = f"""
-    You are an autonomous agent playing a Unity tactics game. 
-    Attached is the current screenshot and the semantic scene data in JSON format.
+    ### Past actions taken by agent:
+    {actions}
     
-    ### Semantic Scene Data:
+    ### Scene Data in JSON:
     {semantic_context}
     
     ### Task:
@@ -67,7 +72,7 @@ async def gemini_image_analysis(scene_json, b64_image) -> list[FunctionCall] | s
         contents=[prompt,image_part],
         config=config,
     )
-    print(f"Tokens used: {response.usage_metadata.total_token_count}")
+    logger.info(f"Tokens used: {response.usage_metadata.total_token_count}")
 
     return response
     

@@ -1,6 +1,4 @@
-using System.Collections;
 using System.Collections.Generic;
-using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Gamenami.UnitySemanticBridge
@@ -12,75 +10,74 @@ namespace Gamenami.UnitySemanticBridge
         [SerializeField] private SemanticSceneConfigSo configAsset;
         
         [Header("Status")]
-        [SerializeField] private bool awaitingResponse;
-        
-        [Header("Actions")]
-        [SerializeField] private List<string> agentActions;
-        
-        private const float AGENT_INTERVAL = 1.0f; // Slower interval for LLM processing
-        private float _cooldown = 0f;
+        [SerializeField] private bool _awaitingResponse; // needed to make agent wait to send next frame capture
+        [SerializeField] private bool _isRunning;
+        public bool IsRunning => _isRunning;
 
+        [Header("Actions")]
+        [SerializeField] private List<string> agentActions = new List<string>();
+        
+        private const float AGENT_INTERVAL = 3.0f; // Give Gemini time to "Think"
+        private float _cooldown = 0f;
+        
         private void OnEnable()
         {
+            // Clear history on start
             agentActions = new List<string>();
-            AgentCommandRelay.OnCommandReceived += HandleAgentCommand;
-        }
-        
-        private void OnDisable()
-        {
-            AgentCommandRelay.OnCommandReceived -= HandleAgentCommand;
+            // Listen for the "Action Done" signal from the Bridge
+            AgentCommandRelay.OnCommandReceived += HandleActionComplete;
         }
 
-        private void FixedUpdate()
+        private void OnDisable()
         {
-            _cooldown += Time.fixedDeltaTime;
+            AgentCommandRelay.OnCommandReceived -= HandleActionComplete;
+        }
+        
+        public void StartAgentLoop()
+        {
+            _isRunning = true;
+            _awaitingResponse = false;
+            _cooldown = AGENT_INTERVAL; // Allow action immediately
+            Debug.Log("<color=cyan>[Agent]</color> Loop Started.");
+        }
+
+        public void StopAgentLoop()
+        {
+            _isRunning = false;
+        }
+        
+        private void HandleActionComplete(string intent)
+        {
+            var entry = $"Step {agentActions.Count + 1}: {intent}";
+            agentActions.Add(entry);
+            _awaitingResponse = false; 
+        
+            // Notify the UI Window to show the log
+            BridgeRelay.OnNotifyAgentLogWindow?.Invoke(entry);
+        }
+
+        private void Update()
+        {
+            if (!_isRunning || _awaitingResponse || !BridgeRelay.IsServerConnected()) return;
+
+            _cooldown += Time.deltaTime;
             if (!(_cooldown >= AGENT_INTERVAL)) return;
             
             _cooldown = 0f;
-            TryToAct();
-        }
-        
-        private void HandleAgentCommand(string agentIntent)
-        {
-            agentActions.Add(agentIntent);
-            StartCoroutine(DelayedResetWaitingResponse());
-        }
-
-        private IEnumerator DelayedResetWaitingResponse()
-        {
-            yield return new WaitForSeconds(AGENT_INTERVAL);
-            awaitingResponse = false;
-        }
-
-        private void TryToAct()
-        {
-            if (awaitingResponse) return;
-            
-            // Use AgentStateRelay. If no game logic is linked, it defaults to 'false'
-            if (!AgentStateRelay.CanAgentAct()) return;
-            if (AgentStateRelay.IsProcessing()) return;
-            
-            CaptureAndSend();
+            if (AgentStateRelay.CanAgentAct() && !AgentStateRelay.IsProcessing())
+            {
+                _awaitingResponse = true;
+                CaptureAndSend();
+            }
         }
 
         private void CaptureAndSend()
         {
-            // 1. Generate Semantic Scene Representation 
             var sceneData = SemanticSceneGenerator.Generate(configAsset);
-            var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-            });
-
-            // 2. Capture the Screenshot (Vision)
             ScreenshotTool.Instance.GetScreenshotBytes(imageBytes => 
             {
-                // 3. Send both to Server via MPE Bridge
-                BridgeRelay.Send(sceneJson, imageBytes);
-                awaitingResponse = true;
-                
-                Debug.Log($"[Agent] Context sent. Scene JSON size: {sceneJson.Length / 1024}KB. Image size: {imageBytes.Length / 1024}KB.");
+                // Send directly through the bridge
+                BridgeRelay.Send(agentActions, sceneData, imageBytes);
             });
         }
     }
