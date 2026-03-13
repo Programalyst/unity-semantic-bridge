@@ -5,6 +5,7 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEngine;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
@@ -82,6 +83,38 @@ namespace Gamenami.UnitySemanticBridge.Editor
             foreach (var file in filesInFolder) sb.AppendLine($"  - {file}");
 
             return sb.ToString();
+        }
+        
+        public static string WriteScript(JObject mcpMessage)
+        {
+            var path = mcpMessage["path"]?.ToString();
+            var content = mcpMessage["content"]?.ToString();
+    
+            try {
+                // 1. Get absolute path
+                if (path != null)
+                {
+                    var fullPath = System.IO.Path.Combine(Application.dataPath, "..", path);
+                    var directory = System.IO.Path.GetDirectoryName(fullPath);
+
+                    // 2. Ensure directory exists (for new scripts)
+                    if (directory != null && !System.IO.Directory.Exists(directory))
+                        System.IO.Directory.CreateDirectory(directory);
+
+                    // 3. Write the file
+                    System.IO.File.WriteAllText(fullPath, content);
+                }
+
+                // 4. THE CRITICAL STEP: Tell Unity to refresh
+                // This generates .meta files and triggers Domain Reload/Recompilation
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                AssetDatabase.Refresh();
+
+                return $"Successfully wrote {path}. Unity is now recompiling...";
+            }
+            catch (Exception e) {
+                return $"Failed to write script: {e.Message}";
+            }
         }
     }
 }

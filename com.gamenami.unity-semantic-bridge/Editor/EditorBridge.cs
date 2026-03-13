@@ -11,6 +11,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
+    [InitializeOnLoad] // Makes constructor run every time Unity finishes compiling
     public static class EditorBridge
     {
         private const string ServerUrl = "ws://127.0.0.1:8765";
@@ -19,6 +20,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         // Check if the actual websocket is open
         public static bool IsConnected => _ws is { State: WebSocketState.Open };
+        
+        static EditorBridge() 
+        {
+            Debug.Log("[Bridge] Recompile detected, checking connection...");
+            EditorApplication.delayCall += () => { _ = Connect(); };
+        }
 
         public static async Task Connect()
         {
@@ -156,6 +163,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 
                 case "MCP_TREE":
                     resultText = McpFunctions.GetFolderStructure(mcpMessage);
+                    break;
+                
+                case "WRITE_SCRIPT":
+                    resultText = McpFunctions.WriteScript(mcpMessage);
                     break;
             }
             Debug.Log($"[Result text] {resultText}");

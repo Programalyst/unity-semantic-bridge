@@ -50,3 +50,16 @@ def register_unity_tools(mcp):
             "action": "MCP_GREP", 
             "path": asset_path
         })
+    
+    @mcp.tool()
+    async def write_unity_script(path: str, content: str):
+        """
+        Writes or overwrites a C# script in the Unity project.
+        Path should be relative to Assets/ (e.g., 'Assets/Scripts/MyNewSensor.cs').
+        Automatically triggers Unity recompilation.
+        """
+        return await forward_to_unity({
+            "action": "WRITE_SCRIPT",
+            "path": path,
+            "content": content
+        })
