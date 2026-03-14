@@ -90,7 +90,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var path = mcpMessage["path"]?.ToString();
             var content = mcpMessage["content"]?.ToString();
     
-            try {
+            try 
+            {
                 // 1. Get absolute path
                 if (path != null)
                 {
@@ -112,7 +113,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                 return $"Successfully wrote {path}. Unity is now recompiling...";
             }
-            catch (Exception e) {
+            catch (Exception e) 
+            {
                 return $"Failed to write script: {e.Message}";
             }
         }

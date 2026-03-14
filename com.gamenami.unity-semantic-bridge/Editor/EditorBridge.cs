@@ -15,6 +15,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
     public static class EditorBridge
     {
         private const string ServerUrl = "ws://127.0.0.1:8765";
+        private const string AutoConnectPref = "UnitySemanticBridge_AutoConnect"; // Pref key
+        
         private static ClientWebSocket _ws;
         private static CancellationTokenSource _cts;
 
@@ -23,13 +25,21 @@ namespace Gamenami.UnitySemanticBridge.Editor
         
         static EditorBridge() 
         {
-            Debug.Log("[Bridge] Recompile detected, checking connection...");
+            // Check if we were connected before the recompile
+            var shouldConnect = EditorPrefs.GetBool(AutoConnectPref, false);
+
+            if (!shouldConnect) return;
+            
+            Debug.Log("[Bridge] Recompile detected. Restoring manual connection...");
             EditorApplication.delayCall += () => { _ = Connect(); };
         }
 
         public static async Task Connect()
         {
             if (IsConnected) return;
+            
+            // Set the flag so we reconnect if a script is edited/written
+            EditorPrefs.SetBool(AutoConnectPref, true);
 
             // Clean up any old connection attempts
             await Disconnect();
@@ -59,6 +69,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         public static async Task Disconnect()
         {
+            // Clear the flag so it doesn't auto-reconnect after manual disconnect
+            EditorPrefs.SetBool(AutoConnectPref, false);
+            
             BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
 
             if (_ws != null)
