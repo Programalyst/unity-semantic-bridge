@@ -116,29 +116,30 @@ namespace Gamenami.UnitySemanticBridge.Editor
             GUILayout.Label("USB Agent Server connection", EditorStyles.boldLabel);
     
             EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-    
-            // Status Indicator
-            var statusStyle = new GUIStyle(EditorStyles.label)
             {
-                normal =
+                // Status Indicator
+                var statusStyle = new GUIStyle(EditorStyles.label)
                 {
-                    textColor = EditorBridge.IsConnected ? Color.green : EditorStyles.label.normal.textColor
-                }
-            };
-            GUILayout.Label(EditorBridge.IsConnected ? "● Connected" : "○ Disconnected", statusStyle);
+                    normal =
+                    {
+                        textColor = EditorBridge.IsConnected ? Color.green : EditorStyles.label.normal.textColor
+                    }
+                };
+                GUILayout.Label(EditorBridge.IsConnected ? "● Connected" : "○ Disconnected", statusStyle);
 
-            if (!EditorBridge.IsConnected)
-            {
-                if (GUILayout.Button("Connect to Server"))
+                if (!EditorBridge.IsConnected)
                 {
-                    _ = EditorBridge.Connect(); // Fire and forget async
+                    if (GUILayout.Button("Connect to Server"))
+                    {
+                        _ = EditorBridge.Connect(); // Fire and forget async
+                    }
                 }
-            }
-            else
-            {
-                if (GUILayout.Button("Disconnect"))
+                else
                 {
-                    EditorBridge.Disconnect();
+                    if (GUILayout.Button("Disconnect"))
+                    {
+                        _ = EditorBridge.Disconnect();
+                    }
                 }
             }
             EditorGUILayout.EndHorizontal();
