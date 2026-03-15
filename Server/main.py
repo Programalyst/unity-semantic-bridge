@@ -16,7 +16,7 @@ register_unity_tools(mcp)
 # --- WEBSOCKET BRIDGE ---
 async def handle_unity_connection(websocket):
     app_state.unity_ws = websocket
-    logging.info("✅ Unity connected directly via WebSocket.")
+    logging.info("✅ Unity Bridge connected.")
     
     try:
         async for message in websocket:
@@ -32,7 +32,8 @@ async def run_servers():
     async with websockets.serve(
         handle_unity_connection, 
         "127.0.0.1", 
-        8765
+        8765,
+        reuse_address=True # don't block off the port if Unity reconnects quickly
     ):
         logging.info("🚀 Bridge Server listening on 8765...")
     

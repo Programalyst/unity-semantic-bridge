@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 789621b72e9dd4f3ea6cb39e3d0fdb83, type: 3}
   m_Name: EditorConfig
   m_EditorClassIdentifier: 
-  maxDepth: 1
+  maxDepth: 2
   includeComponents: 1
   includeTransforms: 1
   excludeLayers:

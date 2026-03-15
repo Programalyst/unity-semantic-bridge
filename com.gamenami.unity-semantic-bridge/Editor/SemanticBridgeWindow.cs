@@ -131,14 +131,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 {
                     if (GUILayout.Button("Connect to Server"))
                     {
-                        _ = EditorBridge.Connect(); // Fire and forget async
+                        EditorBridge.ManualConnect();
                     }
                 }
                 else
                 {
                     if (GUILayout.Button("Disconnect"))
                     {
-                        _ = EditorBridge.Disconnect();
+                        EditorBridge.ManualDisconnect();
                     }
                 }
             }

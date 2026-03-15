@@ -11,55 +11,64 @@ using Newtonsoft.Json.Linq;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
-    [InitializeOnLoad] // Makes constructor run every time Unity finishes compiling
     public static class EditorBridge
     {
         private const string ServerUrl = "ws://127.0.0.1:8765";
-        private const string AutoConnectPref = "UnitySemanticBridge_AutoConnect"; // Pref key
+        private const string AutoConnectPref = "UnitySemanticBridge_AutoConnect";
         
         private static ClientWebSocket _ws;
         private static CancellationTokenSource _cts;
 
         // Check if the actual websocket is open
         public static bool IsConnected => _ws is { State: WebSocketState.Open };
-        
-        static EditorBridge() 
-        {
-            // Check if we were connected before the recompile
-            var shouldConnect = EditorPrefs.GetBool(AutoConnectPref, false);
 
-            if (!shouldConnect) return;
+        // This runs on EVERY domain reload (Play Mode, Scripts, etc.)
+        [InitializeOnLoadMethod]
+        private static void OnEditorLoaded()
+        {
+            // only autoConnect if manually connected previously
+            if (!EditorPrefs.GetBool(AutoConnectPref, false) || IsConnected) return;
             
-            Debug.Log("[Bridge] Recompile detected. Restoring manual connection...");
-            EditorApplication.delayCall += () => { _ = Connect(); };
+            Debug.Log("<color=cyan>[Bridge]</color> Bridge ReInitializing...");
+            EditorApplication.delayCall += () => 
+            {
+                if (!IsConnected) 
+                    _ = Connect();
+            };
         }
 
-        public static async Task Connect()
+        public static void ManualConnect()
+        {
+            EditorPrefs.SetBool(AutoConnectPref, true);
+            _ = Connect();
+        }
+
+        public static void ManualDisconnect()
+        {
+            EditorPrefs.SetBool(AutoConnectPref, false);
+            Disconnect();
+        }
+
+        private static async Task Connect()
         {
             if (IsConnected) return;
             
-            // Set the flag so we reconnect if a script is edited/written
-            EditorPrefs.SetBool(AutoConnectPref, true);
-
-            // Clean up any old connection attempts
-            await Disconnect();
+            Disconnect(); // Clean up any old connection attempts
 
             _ws = new ClientWebSocket();
             _cts = new CancellationTokenSource();
 
             try
             {
-                Debug.Log($"<color=cyan>[Bridge]</color> Connecting to {ServerUrl}...");
                 await _ws.ConnectAsync(new Uri(ServerUrl), _cts.Token);
                 
-                // Start the background listening loop
-                _ = ReceiveLoop();
+                _ = ReceiveLoop(); // Start the background listening loop
 
-                // Link your existing Runtime Relay events
+                // Link existing Runtime Relay events
                 BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
                 BridgeRelay.OnRequestSendToServer += HandleRuntimeRequest;
 
-                Debug.Log("<color=lime>[Bridge]</color> Connected to USB Agent Server.");
+                Debug.Log($"<color=lime>[Bridge]</color> Connected to USB Agent Server on {ServerUrl}");
             }
             catch (Exception e)
             {
@@ -67,17 +76,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
         }
 
-        public static async Task Disconnect()
+        private static void Disconnect()
         {
-            // Clear the flag so it doesn't auto-reconnect after manual disconnect
-            EditorPrefs.SetBool(AutoConnectPref, false);
-            
             BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
 
             if (_ws != null)
             {
+                // Don't await CloseAsync during Domain Reload as the socket might already be dead
                 if (_ws.State == WebSocketState.Open)
-                    await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                    _ = _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+        
                 _ws.Dispose();
                 _ws = null;
             }
@@ -88,6 +96,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 _cts.Dispose();
                 _cts = null;
             }
+            
         }
         
         [InitializeOnLoadMethod] // ensures it stays wired up
@@ -124,7 +133,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             finally
             {
-                await Disconnect();
+                Disconnect();
             }
         }
 
@@ -140,6 +149,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             else if (message.action != null) // all MCP messages have an action field
             {
+                //Debug.Log($"[Bridge] Raw JSON {json}");
                 HandleMcpMessage(message);
             }
             else 
@@ -150,7 +160,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void HandleMcpMessage(JObject mcpMessage)
         {
-            Debug.Log($"[MPE] Raw JObject {mcpMessage}");
             var action = mcpMessage["action"]?.ToString();
 
             var resultText = "";
@@ -180,6 +189,19 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 
                 case "WRITE_SCRIPT":
                     resultText = McpFunctions.WriteScript(mcpMessage);
+                    break;
+                
+                case "GET_CONSOLE_LOGS":
+                    resultText = McpFunctions.GetConsoleLogs();
+                    break;
+
+                case "SET_PLAY_MODE":
+                    var enabled = (bool)mcpMessage["enabled"];
+                    resultText = McpFunctions.SetPlayMode(enabled);
+                    break;
+                
+                case "CLEAR_CONSOLE_LOGS":
+                    resultText = McpFunctions.ClearConsole();
                     break;
             }
             Debug.Log($"[Result text] {resultText}");

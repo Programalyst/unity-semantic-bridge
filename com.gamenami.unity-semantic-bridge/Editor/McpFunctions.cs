@@ -118,5 +118,59 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 return $"Failed to write script: {e.Message}";
             }
         }
+        
+        public static string GetConsoleLogs() 
+        {
+            var sb = new StringBuilder();
+        
+            // Use reflection to access Unity's internal LogEntries API
+            var type = Type.GetType("UnityEditor.LogEntries, UnityEditor");
+            if (type == null) return "Couldn't get LogEntries type";
+            var getCountMethod = type.GetMethod("GetCount");
+            var getEntryMethod = type.GetMethod("GetEntryInternal");
+        
+            // Create an internal LogEntry object via reflection
+            var entryType = Type.GetType("UnityEditor.LogEntry, UnityEditor");
+            if (entryType == null) return "Couldn't get LogEntry type";
+            var logEntry = Activator.CreateInstance(entryType);
+
+            if (getCountMethod == null) return "Couldn't get GetCount method";
+            var count = (int)getCountMethod.Invoke(null, null);
+            
+            int maxLogs = 10; // Only get the last 10 to save tokens
+        
+            if (getEntryMethod == null) return "Couldn't get getEntry method";
+            for (var i = Math.Max(0, count - maxLogs); i < count; i++) 
+            {
+                getEntryMethod.Invoke(null, new object[] { i, logEntry });
+            
+                // Extract fields from the logEntry object
+                string message = (string)entryType.GetField("message").GetValue(logEntry);
+                // 1. Only take the first line of the message (removes the massive stack trace)
+                string firstLine = message.Split('\n')[0];
+                
+                sb.AppendLine($"{firstLine}");
+            }
+
+            return sb.Length > 0 ? sb.ToString() : "Console is empty.";
+        }
+        
+        public static string ClearConsole() {
+            var type = Type.GetType("UnityEditor.LogEntries, UnityEditor");
+            if (type == null) return "Console cleared.";
+            var clearMethod = type.GetMethod("Clear");
+            if (clearMethod != null) clearMethod.Invoke(null, null);
+
+            return "Console cleared.";
+        }
+        
+        public static string SetPlayMode(bool enabled) 
+        {
+            // Must run on main thread
+            EditorApplication.delayCall += () => {
+                EditorApplication.isPlaying = enabled;
+            };
+            return $"Initiating Play Mode: {enabled}. Connection will momentarily drop.";
+        }
     }
 }

@@ -63,3 +63,18 @@ def register_unity_tools(mcp):
             "path": path,
             "content": content
         })
+    
+    @mcp.tool()
+    async def get_unity_console_logs() -> str:
+        """Returns the most recent errors and warnings from the Unity Console."""
+        return await forward_to_unity({"action": "GET_CONSOLE_LOGS"})
+    
+    @mcp.tool()
+    async def set_unity_play_mode(enabled: bool) -> str:
+        """Enters or exits Play Mode in the Unity Editor."""
+        return await forward_to_unity({"action": "SET_PLAY_MODE", "enabled": enabled})
+    
+    @mcp.tool()
+    async def clear_unity_console_logs() -> str:
+        """Clears old Unity Editor console logs."""
+        return await forward_to_unity({"action": "CLEAR_CONSOLE_LOGS"})
