@@ -65,8 +65,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 _ = ReceiveLoop(); // Start the background listening loop
 
                 // Link existing Runtime Relay events
-                BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
-                BridgeRelay.OnRequestSendToServer += HandleRuntimeRequest;
+                BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
+                BridgeRelay.OnRequestSendToServer += RuntimeAgentHandler.HandleRequest;
 
                 Debug.Log($"<color=lime>[Bridge]</color> Connected to USB Agent Server on {ServerUrl}");
             }
@@ -78,7 +78,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void Disconnect()
         {
-            BridgeRelay.OnRequestSendToServer -= HandleRuntimeRequest;
+            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
 
             if (_ws != null)
             {
@@ -144,88 +144,21 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 foreach (var call in message.content)
                 {
-                    HandleFunctionCall(call);
+                    RuntimeAgentHandler.HandleFunctionCall(call);
                 }
             }
             else if (message.action != null) // all MCP messages have an action field
             {
                 //Debug.Log($"[Bridge] Raw JSON {json}");
-                HandleMcpMessage(message);
+                McpMessageHandler.HandleMcpMessage(message);
             }
             else 
             {
                 Debug.LogWarning($"[Bridge] Unknown response type: {message.type}");
             }
         }
-
-        private static void HandleMcpMessage(JObject mcpMessage)
-        {
-            var action = mcpMessage["action"]?.ToString();
-
-            var resultText = "";
-            switch (action)
-            {
-                case "MCP_GLOB":
-                    resultText = McpFunctions.SearchAssets(mcpMessage);
-                    break;
-                
-                case "MCP_NOTIFY":
-                    var message = mcpMessage["message"]?.ToString();
-                    Debug.Log($"<color=cyan>[USB Agent]</color> {message}");
-                    resultText ="Notification displayed.";
-                    break;
-                
-                case "MCP_GET_SCENE":
-                    resultText = McpFunctions.GetSemanticScene(mcpMessage);
-                    break;
-                
-                case "MCP_GREP":
-                    resultText = McpFunctions.FindAssetReferences(mcpMessage);
-                    break;
-                
-                case "MCP_TREE":
-                    resultText = McpFunctions.GetFolderStructure(mcpMessage);
-                    break;
-                
-                case "WRITE_SCRIPT":
-                    resultText = McpFunctions.WriteScript(mcpMessage);
-                    break;
-                
-                case "GET_CONSOLE_LOGS":
-                    resultText = McpFunctions.GetConsoleLogs();
-                    break;
-
-                case "SET_PLAY_MODE":
-                    var enabled = (bool)mcpMessage["enabled"];
-                    resultText = McpFunctions.SetPlayMode(enabled);
-                    break;
-                
-                case "CLEAR_CONSOLE_LOGS":
-                    resultText = McpFunctions.ClearConsole();
-                    break;
-            }
-            Debug.Log($"[Result text] {resultText}");
-            SendToAgent(resultText, "mcp_response");
-        }
-
-        private static void HandleRuntimeRequest(List<string> agentActions, SemanticScene sceneData, byte[] image)
-        {
-            var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-            });
-            
-            var payload = new {
-                agentActions,
-                sceneJson,
-                b64Image = Convert.ToBase64String(image)
-            };
-            Debug.Log($"[Bridge] Context sent. Scene JSON size: {sceneJson.Length / 1024}KB. Image size: {image.Length / 1024}KB.");
-            SendToAgent(payload, "gameplay_response");
-        }
         
-        private static async void SendToAgent(object message, string messageType)
+        public static async void SendToAgent(object message, string messageType)
         {
             try
             {
@@ -245,50 +178,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 Debug.LogError($"[Bridge] Send failed: {e.Message}");
             }
-        }
-        
-        private static void HandleFunctionCall(dynamic call)
-        {
-            string funcName = call.name;
-            var args = call.args;
-            var intent = call.args.Intent != null ? (string)call.args.Intent : "No Intent";
-
-            // Wrapping in delayCall ensures the click happens safely on the main thread during the next editor update
-            EditorApplication.delayCall += () =>
-            {
-                switch (funcName)
-                {
-                    case "click_screen_position":
-                    {
-                        // Gemini sends 0-1 Viewport coordinates
-                        var vx = (float)args.screenX;
-                        var vy = (float)args.screenY;
-                    
-                        AgentCommandRelay.ExecuteScreenClick(ConvertToScreenPosition(vx, vy));
-                        break;
-                    }
-                    case "click_ui_button":
-                        AgentCommandRelay.ExecuteButtonClick(args.ButtonName.ToString());
-                        break;
-                }
-                AgentCommandRelay.CommandReceived(intent); // allow GameplayAgent to act again
-            };
-        }
-        
-        private static Vector2 ConvertToScreenPosition(float normalizedX, float normalizedY)
-        {
-            // 1. Flip Y back (Unity Screen/Viewport Y is bottom-up, LLM Y is top-down)
-            var correctedY = 1f - normalizedY;
-
-            // 2. Convert 0-1 Viewport to Actual Pixels
-            var pixelPosition = new Vector2(
-                normalizedX * Screen.width,
-                correctedY * Screen.height
-            );
-
-            //Debug.Log($"Viewport: {normalizedX},{normalizedY} -> Pixels: {pixelPosition}");
-            
-            return pixelPosition;
         }
     }
 }
