@@ -82,7 +82,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             if (_ws != null)
             {
-                // Don't await CloseAsync during Domain Reload as the socket might already be dead
+                // Use CancellationToken.None here because we want the close 
+                // to attempt to fire even if our main _cts is already cancelled
                 if (_ws.State == WebSocketState.Open)
                     _ = _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
         
@@ -90,13 +91,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 _ws = null;
             }
 
-            if (_cts != null)
-            {
-                _cts.Cancel();
-                _cts.Dispose();
-                _cts = null;
-            }
-            
+            if (_cts == null) return;
+            _cts.Cancel(); // This is the "kill switch" for the ReceiveLoop
+            _cts.Dispose();
+            _cts = null;
         }
         
         [InitializeOnLoadMethod] // ensures it stays wired up
@@ -115,10 +113,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 while (IsConnected)
                 {
                     var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
-                    
-                    if (result.MessageType == WebSocketMessageType.Close) break;
 
-                    string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        Debug.Log("<color=orange>[Bridge]</color> Server initiated close.");
+                        break;
+                    }
+                    
+                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     
                     // Unity main thread safety
                     EditorApplication.delayCall += () => {
@@ -128,8 +130,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             catch (Exception e)
             {
-                if (!_cts.IsCancellationRequested)
-                    Debug.LogWarning($"[Bridge] Connection lost: {e.Message}");
+                Debug.LogWarning($"<color=orange>[Bridge]</color> Connection lost: {e.Message}");
             }
             finally
             {
