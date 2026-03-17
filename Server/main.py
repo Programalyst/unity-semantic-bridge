@@ -27,15 +27,7 @@ async def handle_unity_connection(websocket):
     finally:
         app_state.unity_ws = None
 
-# --- Monitor STDIN --- 
-async def watch_stdin(server_task):
-    """Ensure the WS server process is killed when Claude closes the STDIN pipe"""
-    loop = asyncio.get_event_loop()
-    # This will wait until Claude/Antigravity closes the pipe
-    await loop.run_in_executor(None, sys.stdin.read)
-    logging.info("🔌 STDIN closed. Shutting down...")
-    # Force exit to ensure the port is released immediately
-    os._exit(0) 
+
 
 # --- MAIN ENTRY POINT ---
 async def run_servers():
@@ -45,13 +37,15 @@ async def run_servers():
         "127.0.0.1", 
         8765,
         reuse_address=True # don't block off the port if Unity reconnects quickly
-    ) as ws_server:
+    ):
         logging.info("🚀 Bridge Server listening on 8765...")
     
-        await asyncio.gather(
-            mcp.run_stdio_async(),
-            watch_stdin(ws_server)
-        )
+        # Simply run the MCP server allowing it to control the lifecycle
+        # When Claude closes the pipe, this task finishes, 
+        # the 'async with' block exits, and the process dies naturally.
+        await mcp.run_stdio_async()
+
+    logging.info("🔌 MCP Server stopped. Cleaning up...")
 
 if __name__ == "__main__":
     asyncio.run(run_servers())
