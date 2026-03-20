@@ -27,7 +27,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static void OnEditorLoaded()
         {
             // only autoConnect if manually connected previously
-            if (!EditorPrefs.GetBool(AutoConnectPref, false) || IsConnected) return;
+            var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref);
+            
+            if (!shouldAutoConnect || IsConnected) return;
             
             Debug.Log("<color=cyan>[Bridge]</color> Bridge ReInitializing...");
             EditorApplication.delayCall += () => 
@@ -35,6 +37,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (!IsConnected) 
                     _ = Connect();
             };
+            
+            // set autoConnect to false on Editor quit
+            EditorApplication.quitting -= OnEditorQuitting;
+            EditorApplication.quitting += OnEditorQuitting;
         }
 
         public static void ManualConnect()
@@ -179,6 +185,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 Debug.LogError($"[Bridge] Send failed: {e.Message}");
             }
+        }
+
+        private static void OnEditorQuitting()
+        {
+            EditorPrefs.SetBool(AutoConnectPref, false);
+            Disconnect();
         }
     }
 }
