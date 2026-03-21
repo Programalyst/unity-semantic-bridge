@@ -1,13 +1,84 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using Newtonsoft.Json;
+using System.Linq;
 
 namespace Gamenami.UnitySemanticBridge
 {
+    public class SceneGenerateSettings
+    {
+        public int MaxDepth = 2;
+        public bool IncludeLayers = true;
+        public bool IncludeComponents = true;
+        public bool IncludePositions = false;
+    }
+
     public static class SemanticSceneGenerator
     {
+        public static SemanticScene Generate(SceneGenerateSettings config)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            var sceneData = new SemanticScene
+            {
+                sceneName = activeScene.name,
+                sceneContext = "Each entry in the JSON represents a gameObject."
+            };
+            
+            if (config.IncludeLayers)
+            {
+                sceneData.layerCounts = new Dictionary<string, int>();
+            }
+
+            var rootGameObjects = activeScene.GetRootGameObjects();
+            foreach (var go in rootGameObjects)
+            {
+                AddNodesRecursively(go, sceneData.nodes, "", 0, config);
+            }
+
+            return sceneData;
+        }
+        
+        private static void AddNodesRecursively(GameObject go, List<SemanticNode> list, string parentPath, 
+            int currentDepth, SceneGenerateSettings config)
+        {
+            var currentPath = string.IsNullOrEmpty(parentPath) ? go.name : $"{parentPath}/{go.name}";
+    
+            var node = new SemanticNode
+            {
+                name = go.name,
+                instanceId = go.GetInstanceID(),
+                path = currentPath
+            };
+
+            if (config.IncludeLayers)
+            {
+                node.layer = LayerMask.LayerToName(go.layer);
+            }
+            
+            if (config.IncludeComponents)
+            {
+                node.components = go.GetComponents<Component>()
+                    .Where(c => c != null)
+                    .Select(c => c.GetType().Name)
+                    .ToList();
+            }
+
+            if (config.IncludePositions)
+            {
+                node.position = new SimpleVec3(go.transform.position);
+            }
+
+            list.Add(node);
+
+            // Recursion check
+            if (currentDepth >= config.MaxDepth) return;
+            
+            foreach (Transform child in go.transform)
+            {
+                AddNodesRecursively(child.gameObject, list, currentPath, currentDepth + 1, config);
+            }
+        }
+
         public static SemanticScene Generate(SemanticSceneConfigSo settings)
         {
             var activeScene = SceneManager.GetActiveScene();
@@ -21,9 +92,9 @@ namespace Gamenami.UnitySemanticBridge
                 layerCounts = settings.includeLayerStats ? new Dictionary<string, int>() : null
             };
 
-            foreach (GameObject root in activeScene.GetRootGameObjects())
+            foreach (var rootGameObject in activeScene.GetRootGameObjects())
             {
-                AddNodesRecursively(root, sceneData, null, 0, settings);
+                AddNodesRecursively(rootGameObject, sceneData, null, 0, settings);
             }
 
             return sceneData;
@@ -86,6 +157,9 @@ namespace Gamenami.UnitySemanticBridge
 
                 if (settings.includeComponents)
                 {
+                    // InstanceId only needed if operating on components in Editor mode
+                    node.instanceId = obj.GetInstanceID();
+                    
                     var uniqueComponents = new HashSet<string>();
                 
                     foreach (var comp in obj.GetComponents<Component>()) 
@@ -104,7 +178,7 @@ namespace Gamenami.UnitySemanticBridge
                     }
                 }
                 
-                scene.entities.Add(node);
+                scene.nodes.Add(node);
             }
             
             // Continue recursion for child nodes

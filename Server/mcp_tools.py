@@ -5,15 +5,29 @@ def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
     @mcp.tool()
-    async def get_unity_hierarchy() -> str:
-        """Requests the current Unity scene hierarchy and component data."""
-        return await forward_to_unity({"action": "MCP_GET_SCENE"})
+    async def get_unity_hierarchy(
+        depth: Annotated[int, "How many levels deep to traverse. Default is 2."] = 2,
+        includeLayers: Annotated[bool, "If true, includes layers for each object."] = True,
+        includeComponents: Annotated[bool, "If true, includes component names."] = True,
+        includePosition: Annotated[bool, "If true, includes object position."] = True,
+    ) -> str:
+        """
+        Requests the current Unity scene hierarchy. 
+        Use 'minimal=True' for a fast overview of the scene structure.
+        """
+        return await forward_to_unity({
+            "action": "Get_SceneHierarchy",
+            "depth": depth,
+            "includeLayers": includeLayers,
+            "includeComponents": includeComponents,
+            "includePosition": includePosition
+        })
     
     @mcp.tool()
     async def notify_unity(text: str) -> str:
         """Sends a message to the Unity Editor chat window."""
         return await forward_to_unity({
-            "action": "MCP_NOTIFY",
+            "action": "Notify_Unity",
             "message": f"IDE Agent: {text}",
         })
 
@@ -25,7 +39,7 @@ def register_unity_tools(mcp):
     ) -> str:
         """Finds assets in Unity. Default folders: ['Assets']."""
         return await forward_to_unity({
-            "action": "MCP_SEARCH_LIMIT",
+            "action": "Search_Assets",
             "filter": filter_query,
             "limit": limit,
             "searchInFolders": searchInFolders
@@ -37,7 +51,7 @@ def register_unity_tools(mcp):
     ) -> str:
         """Returns the folder structure starting from the given path."""
         return await forward_to_unity({
-            "action": "MCP_TREE", 
+            "action": "Get_FolderStructure", 
             "path": folder_path
         })
 
@@ -47,15 +61,17 @@ def register_unity_tools(mcp):
     ) -> str:
         """Finds all assets or scenes that reference a specific asset path."""
         return await forward_to_unity({
-            "action": "MCP_GREP", 
+            "action": "Find_AssetReferences", 
             "path": asset_path
         })
     
     @mcp.tool()
-    async def write_unity_script(path: str, content: str):
+    async def write_unity_script(
+        path: Annotated[str, "Path should be relative to Assets/ (e.g., 'Assets/Scripts/MyNewSensor.cs')."], 
+        content: str
+    ) -> str:
         """
         Writes or overwrites a C# script in the Unity project.
-        Path should be relative to Assets/ (e.g., 'Assets/Scripts/MyNewSensor.cs').
         Automatically triggers Unity recompilation.
         """
         return await forward_to_unity({
@@ -78,3 +94,39 @@ def register_unity_tools(mcp):
     async def clear_unity_console_logs() -> str:
         """Clears old Unity Editor console logs."""
         return await forward_to_unity({"action": "CLEAR_CONSOLE_LOGS"})
+    
+    @mcp.tool()
+    async def inspect_gameobject(
+        instance_id: Annotated[int, "Get the instance_id from the 'get_unity_hierarchy' tool output."]
+    ) -> str:
+        """
+        Detailed inspection of a GameObject including components and public fields.
+        """
+        return await forward_to_unity({
+            "action": "Inspect_GameObject",
+            "instanceID": instance_id
+        })
+    
+    @mcp.tool()
+    async def get_component_code(
+        component_name: Annotated[str, "The exact name of the C# class/component (e.g., 'HealthHandler' or 'Projectile')."]
+    ) -> str:
+        """
+        Locates and returns the full C# source code for a specific Unity component.
+        Use this to analyze the logic of scripts identified via 'inspect_gameobject'.
+        """
+        return await forward_to_unity({
+            "action": "Get_ComponentCode",
+            "componentName": component_name
+        })
+
+    @mcp.tool()
+    async def get_unity_physics_layers() -> str:
+        """
+        Returns the Unity Physics Collision Matrix.
+        Shows which layers are configured to collide with each other or ignore each other.
+        Essential for diagnosing 'friend or foe' collision or trigger issues.
+        """
+        return await forward_to_unity({
+            "action": "Get_PhysicsMatrix"
+        })

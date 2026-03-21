@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
+using System.Reflection;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
@@ -28,13 +29,27 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return resultText;
         }
 
-        public static string GetSemanticScene(JObject mcpMessage)
+        public static string GetSceneHierarchy(JObject mcpMessage)
         {
-            var sceneData = SemanticBridgeWindow.Instance.GetEditorHierarchy();
+            var maxDepth = mcpMessage["depth"]?.Value<int>() ?? 2;
+            var includeLayers = mcpMessage["includeLayers"]?.Value<bool>() ?? true;
+            var includeComponents = mcpMessage["includeComponents"]?.Value<bool>() ?? true;
+            var includePositions = mcpMessage["includePositions"]?.Value<bool>() ?? true;
+
+            var sceneGenerateConfig = new SceneGenerateSettings
+            {
+                MaxDepth = maxDepth,
+                IncludeLayers = includeLayers,
+                IncludeComponents = includeComponents,
+                IncludePositions = includePositions
+            };
+            
+            var sceneData = SemanticSceneGenerator.Generate(sceneGenerateConfig);
             var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
             {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                Formatting = Formatting.None, // Was Formatting.Indented
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                NullValueHandling = NullValueHandling.Ignore,
             });
             return sceneJson;
         }
@@ -171,6 +186,63 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 EditorApplication.isPlaying = enabled;
             };
             return $"Initiating Play Mode: {enabled}. Connection will momentarily drop.";
+        }
+        
+        public static string InspectGameObject(int instanceId) 
+        {
+            var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            if (go == null) return "GameObject not found.";
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"Name: {go.name} (Layer: {LayerMask.LayerToName(go.layer)})");
+    
+            foreach (var comp in go.GetComponents<Component>()) 
+            {
+                if (comp == null) continue;
+                sb.AppendLine($"\n[Component: {comp.GetType().Name}]");
+                // Use reflection to get public fields (Health, Layer checks, etc.)
+                foreach (var field in comp.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance)) 
+                {
+                    sb.AppendLine($"  - {field.Name}: {field.GetValue(comp)}");
+                }
+            }
+            return sb.ToString();
+        }
+        
+        public static string GetComponentCode(string componentName) 
+        {
+            // Find the script asset by name
+            var guids = AssetDatabase.FindAssets($"{componentName} t:MonoScript");
+            if (guids.Length == 0) return $"Source code for {componentName} not found.";
+
+            var path = AssetDatabase.GUIDToAssetPath(guids[0]);
+            try 
+            {
+                var fullPath = System.IO.Path.GetFullPath(path);
+                return System.IO.File.ReadAllText(fullPath);
+            } 
+            catch (Exception e) 
+            {
+                return $"Error reading file: {e.Message}";
+            }
+        }
+        
+        public static string GetPhysicsMatrix() 
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("--- Physics Collision Matrix ---");
+            for (int i = 0; i < 32; i++) 
+            {
+                string layerName = LayerMask.LayerToName(i);
+                if (string.IsNullOrEmpty(layerName)) continue;
+        
+                for (int j = i; j < 32; j++) 
+                {
+                    if (Physics.GetIgnoreLayerCollision(i, j)) continue;
+                    sb.AppendLine($"{layerName} <--> {LayerMask.LayerToName(j)}: ENABLED");
+                }
+            }
+            return sb.ToString();
         }
     }
 }

@@ -268,10 +268,5 @@ namespace Gamenami.UnitySemanticBridge.Editor
             System.IO.File.WriteAllText(path, sceneJson);
             AssetDatabase.Refresh();
         }
-
-        public SemanticScene GetEditorHierarchy()
-        {
-            return SemanticSceneGenerator.Generate(_editorConfig);
-        }
     }
 }

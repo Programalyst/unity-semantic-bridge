@@ -6,10 +6,10 @@ using UnityEngine;
 public class SemanticScene
 {
     public string sceneName;
-    // Info for LLM on the limitations of the exported scene graph (e.g. excluded layers, etc)
+    // Info for LLM on the limitations of the exported scene graph (e.g. excluded layers, etc.)
     public string sceneContext;
     
-    public List<SemanticNode> entities = new List<SemanticNode>();
+    public List<SemanticNode> nodes = new List<SemanticNode>();
     
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public Dictionary<string, int> layerCounts = new Dictionary<string, int>();
@@ -20,6 +20,9 @@ public class SemanticNode
 {
     public string name;
     public string path; // New: e.g., "Obstacles/Wall"
+    
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public int instanceId;
     
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public string layer;
