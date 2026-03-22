@@ -10,13 +10,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         public static SemanticBridgeWindow Instance { get; private set; }
         
-        private SemanticSceneConfigSo _editorConfig;
+        private int _tabSelection = 0;
+        private readonly string[] _tabLabels = { "Editor Mode", "Gameplay Mode" };
+        
         private SemanticSceneConfigSo _playModeConfig;
         
         private Vector2 _logScroll;
         private readonly List<string> _agentHistory = new List<string>();
-        private bool _scrollToBottom;
-        
         
         [MenuItem("Tools/Unity Semantic Bridge")]
         public static void ShowWindow() 
@@ -30,8 +30,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
             Instance = this; // Register this window instance
             BridgeRelay.OnAgentMessage -= AddAgentMessage;
             BridgeRelay.OnAgentMessage += AddAgentMessage;
-
             LoadConfigs();
+        }
+        
+        private void OnDisable()
+        {
+            if (Instance == this) Instance = null; // Unregister
         }
         
         private void LoadConfigs()
@@ -41,129 +45,105 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 var asset = AssetDatabase.LoadAssetAtPath<SemanticSceneConfigSo>(path);
-                if (path.Contains("Editor")) _editorConfig = asset;
-                else if (path.Contains("PlayMode")) _playModeConfig = asset;
+                if (path.Contains("PlayMode")) _playModeConfig = asset;
             }
         }
         
-        private void OnDisable()
-        {
-            if (Instance == this) Instance = null; // Unregister
-        }
-
         private void OnGUI() 
         {
-            EditorGUILayout.BeginVertical(GUILayout.ExpandHeight(false));
-            {
-                EditorGUILayout.Space(10);
-                DrawConnectionArea();
-                EditorGUILayout.Space(10);
-                DrawConfigArea();
-                EditorGUILayout.Space(10);
-            }
-            EditorGUILayout.EndVertical();
+            DrawConnectionHeader();
             
-            DrawGameAgentBox();
+            // Tab selection
+            _tabSelection = GUILayout.Toolbar(_tabSelection, _tabLabels, GUILayout.Height(30));
+
+            EditorGUILayout.Space(10);
+            
+            switch (_tabSelection)
+            {
+                case 0:
+                    DrawEditorTab();
+                    break;
+                case 1:
+                    DrawGameplayTab();
+                    break;
+            }
         }
         
-        private void DrawGameAgentBox()
+        private void DrawConnectionHeader()
         {
-            GUILayout.Label("Gameplay Agent", EditorStyles.boldLabel);
-            // Flexbox to hold columns
-            EditorGUILayout.BeginHorizontal(GUILayout.ExpandHeight(true));
-            {
-                // Column 1
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Width(200), GUILayout.ExpandHeight(true));
-                {
-                    DrawAgentControls();
-                }
-                EditorGUILayout.EndVertical();
-                
-                // Column 2
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
-                {
-                    // Agent action Log area
-                    _logScroll = EditorGUILayout.BeginScrollView(_logScroll,
-                        EditorStyles.helpBox,
-                        GUILayout.ExpandHeight(true));
+            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+            var isConnected = EditorBridge.IsConnected;
+            var statusStyle = new GUIStyle(EditorStyles.label) { 
+                normal = { textColor = isConnected ? Color.green : Color.gray },
+                fontStyle = FontStyle.Bold 
+            };
+            
+            GUILayout.Label(isConnected ? "● Connected" : "○ Offline", statusStyle);
+            GUILayout.FlexibleSpace();
 
-                    foreach (var msg in _agentHistory)
-                    {
-                        GUILayout.Label(msg);
-                    }
-                    EditorGUILayout.EndScrollView();
-                    
-                    if (_scrollToBottom)
-                    {
-                        _logScroll.y = float.MaxValue;
-                        _scrollToBottom = false;
-                    }
-                }
+            if (!isConnected)
+            {
+                if (GUILayout.Button("Connect to USB MCP Server")) EditorBridge.ManualConnect();
+            }
+            else
+            {
+                if (GUILayout.Button("Disconnect")) EditorBridge.ManualDisconnect();
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+        
+        private void DrawEditorTab()
+        {
+            var isConnected = EditorBridge.IsConnected;
+            if (isConnected) 
+                EditorGUILayout.HelpBox("Ready to receive MCP commands.", MessageType.Info);
+            else
+                EditorGUILayout.HelpBox("Connect to MCP server to start receiving MCP commands.", MessageType.Info);
+            
+            DrawLogArea("MCP Activity Log", _agentHistory);
+        }
+        
+        private void DrawGameplayTab()
+        {
+            DrawConfigArea();
+            // Re-use your existing Gameplay Agent UI logic
+            EditorGUILayout.BeginHorizontal();
+            {
+                // Column 1: Controls
+                EditorGUILayout.BeginVertical(GUILayout.Width(200));
+                DrawAgentControls();
+                EditorGUILayout.EndVertical();
+
+                // Column 2: Live Intent Log
+                EditorGUILayout.BeginVertical();
+                DrawLogArea("Agent Intent Log", _agentHistory);
                 EditorGUILayout.EndVertical();
             }
             EditorGUILayout.EndHorizontal();
+        }
+
+        
+        private void DrawLogArea(string areaTitle, IEnumerable<string> logs)
+        {
+            GUILayout.Label(areaTitle, EditorStyles.boldLabel);
+            _logScroll = EditorGUILayout.BeginScrollView(_logScroll, EditorStyles.helpBox);
+            foreach (var log in logs)
+            {
+                GUILayout.Label(log, EditorStyles.wordWrappedLabel);
+            }
+            EditorGUILayout.EndScrollView();
         }
         
         private void AddAgentMessage(string text)
         {
             _agentHistory.Add(text);
-            _scrollToBottom = true; 
             Repaint(); // redraw UI
-        }
-
-        private static void DrawConnectionArea()
-        {
-            GUILayout.Label("USB Agent Server connection", EditorStyles.boldLabel);
-    
-            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-            {
-                // Status Indicator
-                var statusStyle = new GUIStyle(EditorStyles.label)
-                {
-                    normal =
-                    {
-                        textColor = EditorBridge.IsConnected ? Color.green : EditorStyles.label.normal.textColor
-                    }
-                };
-                GUILayout.Label(EditorBridge.IsConnected ? "● Connected" : "○ Disconnected", statusStyle);
-
-                if (!EditorBridge.IsConnected)
-                {
-                    if (GUILayout.Button("Connect to Server"))
-                    {
-                        EditorBridge.ManualConnect();
-                    }
-                }
-                else
-                {
-                    if (GUILayout.Button("Disconnect"))
-                    {
-                        EditorBridge.ManualDisconnect();
-                    }
-                }
-            }
-            EditorGUILayout.EndHorizontal();
         }
         
         private void DrawConfigArea()
         {
-            GUILayout.Label("Semantic Scene Config", EditorStyles.boldLabel);
+            GUILayout.Label("Semantic Scene Generation Config", EditorStyles.boldLabel);
             
-            // START SIDE-BY-SIDE COLUMNS
-            EditorGUILayout.BeginHorizontal();
-            
-            // COLUMN 1: Editor Config
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            _editorConfig = (SemanticSceneConfigSo)EditorGUILayout.ObjectField("Editor Config Asset", _editorConfig,
-                typeof(SemanticSceneConfigSo), false);
-            if (_editorConfig)
-            {
-                DrawConfigColumn("Editor Mode Settings", _editorConfig);
-                if (GUILayout.Button("Test Editor Mode JSON export")) ExportToJson(_editorConfig);
-            }
-            EditorGUILayout.EndVertical();
-            
-            // COLUMN 2: Play Mode Config
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             _playModeConfig = (SemanticSceneConfigSo)EditorGUILayout.ObjectField("PlayMode Config Asset", _playModeConfig, 
                 typeof(SemanticSceneConfigSo), false);
@@ -173,8 +153,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (GUILayout.Button("Test Play Mode JSON export")) ExportToJson(_playModeConfig);
             }
             EditorGUILayout.EndVertical();
-
-            EditorGUILayout.EndHorizontal();
         }
 
         private static void DrawConfigColumn(string label, SemanticSceneConfigSo config)
@@ -183,8 +161,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             
             var layerNames = new string[32];
             for (var i = 0; i < 32; i++) layerNames[i] = LayerMask.LayerToName(i);
-
-            // Draw fields
+            
             EditorGUI.BeginChangeCheck();
     
             config.maxDepth = EditorGUILayout.IntField("Max Hierarchy Depth", config.maxDepth);
@@ -202,18 +179,18 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void DrawAgentControls()
         {
-            bool connected = EditorBridge.IsConnected;
-            bool playing = EditorApplication.isPlaying;
+            bool isConnected = EditorBridge.IsConnected;
+            bool isPlayMode = EditorApplication.isPlaying;
             bool agentInScene = GameplayAgent.Instance;
     
             // Determine if we are allowed to click anything
-            bool canInteract = connected && playing && agentInScene;
+            bool canInteract = isConnected && isPlayMode && agentInScene;
 
             EditorGUI.BeginDisabledGroup(!canInteract);
             {
                 EditorGUILayout.Space(5);
 
-                // Check the actual running state from your agent
+                // Check the actual running state from Gameplay agent
                 bool isRunning = agentInScene && GameplayAgent.Instance.IsRunning; 
 
                 if (!isRunning)
@@ -238,8 +215,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
             EditorGUI.EndDisabledGroup();
             
             // Contextual Feedback
-            if (!connected) EditorGUILayout.HelpBox("Connect to Server first.", MessageType.None);
-            if (!playing) EditorGUILayout.HelpBox("Enter Play Mode to start.", MessageType.None);
+            if (!isConnected) EditorGUILayout.HelpBox("Connect to Server first.", MessageType.None);
+            if (!isPlayMode) EditorGUILayout.HelpBox("Enter Play Mode to start.", MessageType.None);
             if (!agentInScene) EditorGUILayout.HelpBox("Add GameplayAgent to scene.", MessageType.Warning);
         }
 

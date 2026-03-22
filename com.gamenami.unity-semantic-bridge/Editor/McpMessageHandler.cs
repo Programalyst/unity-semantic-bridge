@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -8,8 +10,20 @@ namespace Gamenami.UnitySemanticBridge.Editor
         public static void HandleMcpMessage(JObject mcpMessage)
         {
             var action = mcpMessage["action"]?.ToString();
-            
-            BridgeRelay.OnAgentMessage?.Invoke($"MCP action: {action}");
+            var parameters = new List<string>();
+            foreach (var property in mcpMessage.Properties())
+            {
+                if (property.Name == "action") continue;
+                
+                var value = property.Value.ToString();
+                // Truncate long content (like script code)
+                if (value.Length > 100) 
+                    value = value.Substring(0, 97) + "...";
+                parameters.Add($"{property.Name}: {value}");
+            }
+    
+            var paramString = parameters.Count > 0 ? $" ({string.Join(", ", parameters)})" : "";
+            BridgeRelay.OnAgentMessage?.Invoke($"[{DateTime.Now:HH:mm:ss}] {action}{paramString}");
 
             var resultText = "";
             switch (action)
