@@ -28,8 +28,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private void OnEnable()
         {
             Instance = this; // Register this window instance
-            BridgeRelay.OnNotifyAgentLogWindow -= AddAgentMessage;
-            BridgeRelay.OnNotifyAgentLogWindow += AddAgentMessage;
+            BridgeRelay.OnAgentMessage -= AddAgentMessage;
+            BridgeRelay.OnAgentMessage += AddAgentMessage;
 
             LoadConfigs();
         }

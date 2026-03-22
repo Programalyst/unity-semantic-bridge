@@ -53,7 +53,7 @@ namespace Gamenami.UnitySemanticBridge
             _awaitingResponse = false; 
         
             // Notify the UI Window to show the log
-            BridgeRelay.OnNotifyAgentLogWindow?.Invoke(entry);
+            BridgeRelay.OnAgentMessage?.Invoke(entry);
         }
 
         private void Update()

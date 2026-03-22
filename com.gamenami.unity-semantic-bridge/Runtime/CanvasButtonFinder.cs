@@ -26,12 +26,12 @@ namespace Gamenami.UnitySemanticBridge
 
             if (target != null)
             {
-                BridgeRelay.OnNotifyAgentLogWindow?.Invoke($"Invoking UI Button: <b>{target.name}</b>");
+                BridgeRelay.OnAgentMessage?.Invoke($"Invoking UI Button: <b>{target.name}</b>");
                 target.onClick.Invoke();
             }
             else
             {
-                BridgeRelay.OnNotifyAgentLogWindow?.Invoke($"Button '{buttonName}' not found or not interactable.");
+                BridgeRelay.OnAgentMessage?.Invoke($"Button '{buttonName}' not found or not interactable.");
             }
         }
 

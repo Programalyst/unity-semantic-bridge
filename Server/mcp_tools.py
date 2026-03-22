@@ -5,15 +5,19 @@ def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
     @mcp.tool()
-    async def get_unity_hierarchy(
-        depth: Annotated[int, "How many levels deep to traverse. Default is 2."] = 2,
-        includeLayers: Annotated[bool, "If true, includes layers for each object."] = True,
-        includeComponents: Annotated[bool, "If true, includes component names."] = True,
-        includePosition: Annotated[bool, "If true, includes object position."] = True,
+    async def get_scene_hierarchy(
+        depth: Annotated[int, "How many levels deep to traverse. Use 2 for a quick overview, 3–5 to find deeply nested objects. "] = 2,
+        includeLayers: Annotated[bool, "If true, includes the layer (e.g. 'Default', 'UI') for each object. Omit if not needed to reduce output size."] = True,
+        includeComponents: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling get_component_inspector_values."] = True,
+        includePosition: Annotated[bool, "If true, includes world-space position for each object. Omit if not needed to reduce output size."] = True,
     ) -> str:
         """
-        Requests the current Unity scene hierarchy. 
-        Use 'minimal=True' for a fast overview of the scene structure.
+        Returns the current Unity scene hierarchy as a list of GameObjects with their paths and instance_ids.
+    
+        This is usually the FIRST tool to call — use it to discover GameObjects and their instance_ids,
+        which are required by inspect_gameobject and get_component_inspector_values.
+        
+        Tip: set includeComponents=True to confirm a component exists on a GameObject before inspecting it.
         """
         return await forward_to_unity({
             "action": "Get_SceneHierarchy",
@@ -97,7 +101,7 @@ def register_unity_tools(mcp):
     
     @mcp.tool()
     async def inspect_gameobject(
-        instance_id: Annotated[int, "Get the instance_id from the 'get_unity_hierarchy' tool output."]
+        instance_id: Annotated[int, "Get the instance_id from the 'get_scene_hierarchy' tool output."]
     ) -> str:
         """
         Detailed inspection of a GameObject including components and public fields.
@@ -105,6 +109,27 @@ def register_unity_tools(mcp):
         return await forward_to_unity({
             "action": "Inspect_GameObject",
             "instanceID": instance_id
+        })
+    
+    @mcp.tool()
+    async def get_component_inspector_values(
+        instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
+        component_name: Annotated[str, "The exact component class name to inspect (e.g. 'UnitHealth', 'Rigidbody'). Use get_scene_hierarchy with includeComponents=True to find valid component names."]
+    ) -> str:
+        """
+        Retrieves all serialized field values currently visible in the Unity Inspector for a specific component on a GameObject.
+        This includes [SerializeField] private fields and prefab overrides — i.e. live Editor values that may differ from source code defaults.
+        
+        Typical workflow:
+        1. Call get_scene_hierarchy (with includeComponents=True) to find the GameObject's instance_id and confirm the component name.
+        2. Call this tool with that instance_id and component_name.
+        
+        To read the component's source logic instead of its values, use get_component_code.
+        """
+        return await forward_to_unity({
+            "action": "Get_InspectorValues",
+            "instanceID": instance_id,
+            "componentName": component_name
         })
     
     @mcp.tool()

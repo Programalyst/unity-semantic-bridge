@@ -188,8 +188,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return $"Initiating Play Mode: {enabled}. Connection will momentarily drop.";
         }
         
-        public static string InspectGameObject(int instanceId) 
+        public static string InspectGameObject(JObject mcpMessage) 
         {
+            var instanceId = (int)mcpMessage["instanceID"];
+
             var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
             if (go == null) return "GameObject not found.";
 
@@ -209,8 +211,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return sb.ToString();
         }
         
-        public static string GetComponentCode(string componentName) 
+        public static string GetComponentCode(JObject mcpMessage) 
         {
+            var componentName = mcpMessage["componentName"]?.ToString();
+            
             // Find the script asset by name
             var guids = AssetDatabase.FindAssets($"{componentName} t:MonoScript");
             if (guids.Length == 0) return $"Source code for {componentName} not found.";
@@ -243,6 +247,63 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 }
             }
             return sb.ToString();
+        }
+        
+        public static string GetComponentInspectorValues(JObject mcpMessage)
+        {
+            var id = (int)mcpMessage["instanceID"];
+            var compName = mcpMessage["componentName"]?.ToString();
+            
+            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            if (go == null) return "Error: GameObject not found.";
+
+            // Find the specific component
+            var comp = go.GetComponent(compName);
+            if (comp == null) return $"Error: Component '{compName}' not found on {go.name}.";
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"--- Inspector: {go.name} > {compName} ---");
+
+            // SerializedObject is the key to seeing what the Editor sees
+            SerializedObject so = new SerializedObject(comp);
+            SerializedProperty prop = so.GetIterator();
+
+            // Iterate through all visible properties (skips internal Unity fluff)
+            bool enterChildren = true;
+            while (prop.NextVisible(enterChildren))
+            {
+                enterChildren = false; // Prevents getting stuck in deep sub-properties
+                
+                // Skip the 'm_Script' field which just points to the C# file
+                if (prop.name == "m_Script") continue;
+
+                string valueStr = GetPropertyValue(prop);
+                sb.AppendLine($"{prop.displayName} ({prop.name}): {valueStr}");
+            }
+
+            return sb.ToString();
+        }
+
+        private static string GetPropertyValue(SerializedProperty prop)
+        {
+            // Handle the most common Unity property types
+            return prop.propertyType switch
+            {
+                SerializedPropertyType.Integer => prop.intValue.ToString(),
+                SerializedPropertyType.Boolean => prop.boolValue.ToString(),
+                SerializedPropertyType.Float => prop.floatValue.ToString(),
+                SerializedPropertyType.String => prop.stringValue,
+                SerializedPropertyType.Color => prop.colorValue.ToString(),
+                SerializedPropertyType.ObjectReference => prop.objectReferenceValue != null
+                    ? prop.objectReferenceValue.name
+                    : "None",
+                SerializedPropertyType.Enum => prop.enumNames[prop.enumValueIndex],
+                SerializedPropertyType.Vector2 => prop.vector2Value.ToString(),
+                SerializedPropertyType.Vector3 => prop.vector3Value.ToString(),
+                SerializedPropertyType.Rect => prop.rectValue.ToString(),
+                SerializedPropertyType.ArraySize => prop.arraySize.ToString(),
+                _ => $"[{prop.propertyType}]"
+            };
         }
     }
 }

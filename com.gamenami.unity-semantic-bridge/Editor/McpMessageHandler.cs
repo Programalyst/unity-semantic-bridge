@@ -1,4 +1,3 @@
-using System;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -9,6 +8,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         public static void HandleMcpMessage(JObject mcpMessage)
         {
             var action = mcpMessage["action"]?.ToString();
+            
+            BridgeRelay.OnAgentMessage?.Invoke($"MCP action: {action}");
 
             var resultText = "";
             switch (action)
@@ -19,7 +20,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 
                 case "Notify_Unity":
                     var message = mcpMessage["message"]?.ToString();
-                    Debug.Log($"<color=cyan>[USB Agent]</color> {message}");
+                    BridgeRelay.OnAgentMessage?.Invoke($"MCP agent: {message}");
                     resultText ="Notification displayed.";
                     break;
                 
@@ -53,13 +54,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     break;
                 
                 case "Inspect_GameObject":
-                    var instanceId = mcpMessage["instanceId"]?.ToString();
-                    resultText = McpFunctions.InspectGameObject(Convert.ToInt32(instanceId));
+                    resultText = McpFunctions.InspectGameObject(mcpMessage);
+                    break;
+                
+                case "Get_InspectorValues":
+                    resultText = McpFunctions.GetComponentInspectorValues(mcpMessage);
                     break;
                 
                 case "Get_ComponentCode":
-                    var componentName = mcpMessage["componentName"]?.ToString();
-                    resultText = McpFunctions.GetComponentCode(componentName);
+                    resultText = McpFunctions.GetComponentCode(mcpMessage);
                     break;
                 
                 case "Get_PhysicsMatrix":
@@ -71,7 +74,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     resultText = "Could not handle MCP command";
                     break;
             }
-            Debug.Log($"[Result text] {resultText}");
+
+            //Debug.Log($"[Result text] {resultText}");
             EditorBridge.SendToAgent(resultText, "mcp_response");
         }
     }
