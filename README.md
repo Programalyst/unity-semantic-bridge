@@ -1,9 +1,11 @@
 # Unity Semantic Bridge (USB)
 
-Allows LLMs to understand Unity scenes efficiently through a structured representation of the scene graph based on the required use case.
+A subagent (in Editor mode) to allow AI coding tools (like Antigavity, Cursor, Claude, etc.) to query and understand Unity scenes efficiently (reduced the number of tool calls required).
 
-<img src="images/Editor-use-example.png" alt="Alt text" width="600">
+Also includes an experimental Unity Agent (runs from Unity) that can automate gameplay testing. 
 
+<img src="images/usb-editor-mode.png" alt="Alt text" width="600">
+<img src="images/usb-working-w-antigravity.png" alt="Alt text" width="600">
 
 ## Installation
 
@@ -23,13 +25,13 @@ Allows LLMs to understand Unity scenes efficiently through a structured represen
 ```
 
 
-4. In Unity, from the Tools menu, select "Unity Semantic Bridge" > "Connect to Server". Your IDE Agent now has access to your Unity Project.
+4. In Unity, from the Tools menu, select "Unity Semantic Bridge" > "Connect to Server". Your IDE Agent now has access to your Unity Project and MCP tools provided.
 
 
 
-## Runtime SubAgent
+## Gameplay Agent
 
-USB uses Gemini to power the runtime subagent
+USB uses Gemini to power the gameplay agent
 
 ### Setup
 1. Replace the `/Server/system_prompt.txt` with the instructions for the game you want the LLM to play.
