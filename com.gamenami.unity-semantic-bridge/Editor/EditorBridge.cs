@@ -118,29 +118,47 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 while (IsConnected)
                 {
-                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
-
-                    if (result.MessageType == WebSocketMessageType.Close)
+                    using var ms = new System.IO.MemoryStream();
+                    WebSocketReceiveResult result;
+                    // Loop until we have the FULL message
+                    do
                     {
-                        Debug.Log("<color=orange>[Bridge]</color> Server initiated close.");
-                        break;
+                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                            return;
+                        }
+
+                        ms.Write(buffer, 0, result.Count);
+                    } 
+                    while (!result.EndOfMessage);
+                    
+                    // Now we have the complete string
+                    ms.Seek(0, System.IO.SeekOrigin.Begin);
+                    using var reader = new System.IO.StreamReader(ms, Encoding.UTF8);
+                    var json = await reader.ReadToEndAsync();
+                    
+                    if (!string.IsNullOrEmpty(json))
+                    {
+                        // Push to Main Thread
+                        EditorApplication.delayCall += () => OnMessageReceived(json);
                     }
-                    
-                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    
-                    // Unity main thread safety
-                    EditorApplication.delayCall += () => {
-                        OnMessageReceived(json);
-                    };
                 }
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"<color=orange>[Bridge]</color> Connection lost: {e.Message}");
+                if (_ws != null && _ws.State != WebSocketState.Aborted)
+                    Debug.LogWarning($"<color=orange>[Bridge]</color> Connection lost: {e.Message}");
             }
             finally
             {
-                Disconnect();
+                // Only trigger Disconnect if the socket object still exists and we aren't already nulling it
+                if (_ws != null) 
+                {
+                    EditorApplication.delayCall += Disconnect;
+                }
             }
         }
 
@@ -169,7 +187,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             try
             {
-                if (!IsConnected) return;
+                if (!IsConnected)
+                {
+                    return;
+                }
             
                 var json = JsonConvert.SerializeObject(new
                 {
