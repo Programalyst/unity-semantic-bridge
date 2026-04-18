@@ -181,3 +181,43 @@ def register_unity_tools(mcp):
         return await forward_to_unity({
             "action": "Get_UrpPipelineSettings"
         })
+    
+    
+    @mcp.tool()
+    async def add_component(
+        instance_id: Annotated[int, "The instance_id of the target GameObject. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
+        component_type: Annotated[str, "Fully-qualified C# type name of the component to add. E.g. 'UnityEngine.Rigidbody', 'UnityEngine.CapsuleCollider', or a custom type like 'MyNamespace.UnitLimb'."],
+        allow_duplicate: Annotated[bool, "If False (default), skips adding if a component of this type already exists and returns the existing component's instance_id. If True, adds a second instance regardless."] = False
+    ) -> str:
+        """
+        Adds a component to a GameObject by instance_id.
+        If the component already exists, behaviour is controlled by allow_duplicate.
+        Returns the new (or existing) component's instance_id and the added type name.
+        """
+        return await forward_to_unity({
+            "action": "Add_Component",
+            "instanceID": instance_id,
+            "componentType": component_type,
+            "allowDuplicate": allow_duplicate
+        })
+
+
+    @mcp.tool()
+    async def set_field_value(
+        instance_id: Annotated[int, "The instance_id of the GameObject that owns the component. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
+        component_name: Annotated[str, "Name of the component type whose fields will be set. E.g. 'Rigidbody', 'CapsuleCollider', 'UnitLimb'. Use 'get_component_inspector_values' to see available field names."],
+        fields: Annotated[dict, "Key-value map of field names to new values. Values may be: primitives (float, int, bool, string), structs as dicts (e.g. {'x':0,'y':1,'z':0}), enum strings, or integer instance_ids for Object reference fields."],
+        component_index: Annotated[int, "Zero-based index to disambiguate when multiple components of the same type exist on the GameObject. Defaults to 0 (first found)."] = 0
+    ) -> str:
+        """
+        Sets one or more serialized field values on a component attached to a GameObject.
+        Records an Undo operation so changes are reversible in the Editor.
+        Use 'get_component_inspector_values' first to discover field names and current values.
+        """
+        return await forward_to_unity({
+            "action": "Set_Field_Value",
+            "instanceID": instance_id,
+            "componentName": component_name,
+            "fields": fields,
+            "componentIndex": component_index
+        })
