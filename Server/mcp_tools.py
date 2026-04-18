@@ -28,6 +28,26 @@ def register_unity_tools(mcp):
         })
     
     @mcp.tool()
+    async def get_gameobject_tree(
+        instance_id: Annotated[int, "The instance_id of the root GameObject to traverse. Get this from 'get_scene_hierarchy'."],
+        depth: Annotated[int, "How many levels of children to include. Default is 5."] = 5,
+        includeComponents: Annotated[bool, "Whether to include component names on each GameObject. Default is True."] = True,
+        includePosition: Annotated[bool, "Whether to include world position of each GameObject. Default is False."] = False,
+    ) -> str:
+        """
+        Returns the child hierarchy of a single GameObject as a flat list.
+        Use this instead of get_scene_hierarchy when you already know the root object
+        and want to avoid fetching the entire scene (faster, less likely to time out).
+        """
+        return await forward_to_unity({
+            "action": "Get_GameObjectTree",
+            "instanceID": instance_id,
+            "depth": depth,
+            "includeComponents": includeComponents,
+            "includePosition": includePosition,
+        })
+    
+    @mcp.tool()
     async def notify_unity(text: str) -> str:
         """Sends a message to the Unity Editor chat window."""
         return await forward_to_unity({

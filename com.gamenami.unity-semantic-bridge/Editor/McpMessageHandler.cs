@@ -31,7 +31,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 switch (action)
                 {
                     case "Get_SceneHierarchy":
-                        resultText = McpFunctions.GetSceneHierarchy(mcpMessage);
+                        resultText = SceneFunctions.GetSceneHierarchy(mcpMessage);
+                        break;
+                    
+                    case "Get_GameObjectTree":
+                        resultText = SceneFunctions.GetGameObjectTree(mcpMessage);
                         break;
 
                     case "Notify_Unity":
@@ -41,36 +45,36 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         break;
 
                     case "Search_Assets":
-                        resultText = McpFunctions.SearchAssets(mcpMessage);
+                        resultText = AssetFunctions.SearchAssets(mcpMessage);
                         break;
 
                     case "Find_AssetReferences":
-                        resultText = McpFunctions.FindAssetReferences(mcpMessage);
+                        resultText = AssetFunctions.FindAssetReferences(mcpMessage);
                         break;
 
                     case "Get_FolderStructure":
-                        resultText = McpFunctions.GetFolderStructure(mcpMessage);
+                        resultText = AssetFunctions.GetFolderStructure(mcpMessage);
                         break;
 
                     case "WRITE_SCRIPT":
-                        resultText = McpFunctions.WriteScript(mcpMessage);
+                        resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
 
                     case "GET_CONSOLE_LOGS":
-                        resultText = McpFunctions.GetConsoleLogs();
+                        resultText = SceneFunctions.GetConsoleLogs();
                         break;
 
                     case "SET_PLAY_MODE":
                         var enabled = (bool)mcpMessage["enabled"];
-                        resultText = McpFunctions.SetPlayMode(enabled);
+                        resultText = SceneFunctions.SetPlayMode(enabled);
                         break;
 
                     case "CLEAR_CONSOLE_LOGS":
-                        resultText = McpFunctions.ClearConsole();
+                        resultText = SceneFunctions.ClearConsole();
                         break;
 
                     case "Inspect_GameObject":
-                        resultText = McpFunctions.InspectGameObject(mcpMessage);
+                        resultText = SceneFunctions.InspectGameObject(mcpMessage);
                         break;
 
                     case "Get_InspectorValues":
@@ -82,7 +86,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         break;
 
                     case "Get_PhysicsMatrix":
-                        resultText = McpFunctions.GetPhysicsMatrix();
+                        resultText = SceneFunctions.GetPhysicsMatrix();
                         break;
                     
                     case "Add_Component":
