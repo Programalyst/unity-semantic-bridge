@@ -74,11 +74,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         break;
 
                     case "Get_InspectorValues":
-                        resultText = McpFunctions.GetComponentInspectorValues(mcpMessage);
+                        resultText = ComponentFunctions.GetComponentInspectorValues(mcpMessage);
                         break;
 
                     case "Get_ComponentCode":
-                        resultText = McpFunctions.GetComponentCode(mcpMessage);
+                        resultText = ComponentFunctions.GetComponentCode(mcpMessage);
                         break;
 
                     case "Get_PhysicsMatrix":
@@ -86,19 +86,19 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         break;
                     
                     case "Add_Component":
-                        resultText = McpFunctions.AddComponent(mcpMessage);
+                        resultText = ComponentFunctions.AddComponent(mcpMessage);
                         break;
                     
                     case "Set_FieldValue":
-                        resultText = McpFunctions.SetFieldValue(mcpMessage);
+                        resultText = ComponentFunctions.SetFieldValue(mcpMessage);
                         break;
                     
                     case "Get_LightsAffectingObject":
-                        resultText = McpFunctions.GetLightsAffectingObject(mcpMessage);
+                        resultText = LightingFunctions.GetLightsAffectingObject(mcpMessage);
                         break;
                     
                     case "Get_UrpPipelineSettings":
-                        resultText = McpFunctions.GetUrpPipelineSettings();
+                        resultText = LightingFunctions.GetUrpPipelineSettings();
                         break;
 
                     default:

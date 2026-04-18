@@ -195,6 +195,7 @@ def register_unity_tools(mcp):
             "componentIndex": component_index
         })
     
+    
     @mcp.tool()
     async def get_lights_affecting_object(
         instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
