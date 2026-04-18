@@ -92,6 +92,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "Set_FieldValue":
                         resultText = McpFunctions.SetFieldValue(mcpMessage);
                         break;
+                    
+                    case "Get_LightsAffectingObject":
+                        resultText = McpFunctions.GetLightsAffectingObject(mcpMessage);
+                        break;
+                    
+                    case "Get_UrpPipelineSettings":
+                        resultText = McpFunctions.GetUrpPipelineSettings();
+                        break;
 
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");

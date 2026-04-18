@@ -157,33 +157,6 @@ def register_unity_tools(mcp):
         })
     
     @mcp.tool()
-    async def get_lights_affecting_object(
-        instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
-    ) -> str:
-        """
-        Returns:
-        - All Light components in the scene
-        - For each light: name, type, intensity, range, position, lightmapping mode, culling mask, rendering layer mask
-        - Distance from each light to the target object
-        - Whether the target is within range of each light
-        - Total count of lights in range (to spot per-object limit issues)
-        """
-        return await forward_to_unity({
-            "action": "Get_LightsAffectingObject",
-            "instanceID": instance_id
-        })
-    
-    @mcp.tool()
-    async def get_urp_pipeline_settings() -> str:
-        """
-        Returns the URP render pipeline asset's current render path setting
-        """
-        return await forward_to_unity({
-            "action": "Get_UrpPipelineSettings"
-        })
-    
-
-    @mcp.tool()
     async def add_component(
         instance_id: Annotated[int, "The instance_id of the target GameObject. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
         component_type: Annotated[str, "Fully-qualified C# type name of the component to add. E.g. 'UnityEngine.Rigidbody', 'UnityEngine.CapsuleCollider', or a custom type like 'MyNamespace.UnitLimb'."],
@@ -220,4 +193,30 @@ def register_unity_tools(mcp):
             "componentName": component_name,
             "fields": fields,
             "componentIndex": component_index
+        })
+    
+    @mcp.tool()
+    async def get_lights_affecting_object(
+        instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
+    ) -> str:
+        """
+        Returns:
+        - All Light components in the scene
+        - For each light: name, type, intensity, range, position, lightmapping mode, culling mask, rendering layer mask
+        - Distance from each light to the target object
+        - Whether the target is within range of each light
+        - Total count of lights in range (to spot per-object limit issues)
+        """
+        return await forward_to_unity({
+            "action": "Get_LightsAffectingObject",
+            "instanceID": instance_id
+        })
+    
+    @mcp.tool()
+    async def get_urp_pipeline_settings() -> str:
+        """
+        Returns the URP render pipeline asset's current render path setting
+        """
+        return await forward_to_unity({
+            "action": "Get_UrpPipelineSettings"
         })
