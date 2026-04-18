@@ -84,6 +84,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "Get_PhysicsMatrix":
                         resultText = McpFunctions.GetPhysicsMatrix();
                         break;
+                    
+                    case "Add_Component":
+                        resultText = McpFunctions.AddComponent(mcpMessage);
+                        break;
+                    
+                    case "Set_FieldValue":
+                        resultText = McpFunctions.SetFieldValue(mcpMessage);
+                        break;
 
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");

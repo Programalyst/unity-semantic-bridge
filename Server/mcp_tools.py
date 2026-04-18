@@ -182,7 +182,7 @@ def register_unity_tools(mcp):
             "action": "Get_UrpPipelineSettings"
         })
     
-    
+
     @mcp.tool()
     async def add_component(
         instance_id: Annotated[int, "The instance_id of the target GameObject. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
@@ -215,7 +215,7 @@ def register_unity_tools(mcp):
         Use 'get_component_inspector_values' first to discover field names and current values.
         """
         return await forward_to_unity({
-            "action": "Set_Field_Value",
+            "action": "Set_FieldValue",
             "instanceID": instance_id,
             "componentName": component_name,
             "fields": fields,
