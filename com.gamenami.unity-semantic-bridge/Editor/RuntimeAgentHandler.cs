@@ -8,15 +8,22 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class RuntimeAgentHandler
     {
-        public static void HandleRequest(List<string> agentActions, SemanticScene sceneData, byte[] image)
+        public static async void HandleRequest(List<string> agentActions, SemanticScene sceneData, byte[] image)
         {
-            var payload = new {
-                agentActions,
-                sceneJson = sceneData,
-                b64Image = Convert.ToBase64String(image)
-            };
+            try
+            {
+                var payload = new {
+                    agentActions,
+                    sceneJson = sceneData,
+                    b64Image = Convert.ToBase64String(image)
+                };
             
-            EditorBridge.SendToAgent(payload, "gameplay_response");
+                await EditorBridge.SendToAgent(payload, "gameplay_response");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"<color=red>[Bridge]</color> Error sending request to mcp server: {e.Message}");
+            }
         }
 
         public static void HandleFunctionCall(dynamic call)

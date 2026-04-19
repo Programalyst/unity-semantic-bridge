@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -7,13 +8,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class McpMessageHandler
     {
-        public static void HandleMcpMessage(JObject mcpMessage)
+        public static async Task HandleMcpMessage(JObject mcpMessage)
         {
             var action = mcpMessage["action"]?.ToString();
+            var requestId = mcpMessage["request_id"]?.ToString();
+            
             var parameters = new List<string>();
             foreach (var property in mcpMessage.Properties())
             {
-                if (property.Name == "action") continue;
+                if (property.Name is "action" or "request_id") continue;
                 
                 var value = property.Value.ToString();
                 // Truncate long content (like script code)
@@ -23,6 +26,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
     
             var paramString = parameters.Count > 0 ? $" ({string.Join(", ", parameters)})" : "";
+            
+            // Display the params in the Activity Log (less "action" and "request_id")
             BridgeRelay.OnAgentMessage?.Invoke($"[{DateTime.Now:HH:mm:ss}] {action}{paramString}");
 
             var resultText = "";
@@ -117,7 +122,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 resultText = $"Unity Error: {e.Message}\n{e.StackTrace}";
             }
             //Debug.Log($"[Result text] {resultText}");
-            EditorBridge.SendToAgent(resultText, "mcp_response");
+            await EditorBridge.SendToAgent(resultText, "mcp_response", requestId);
         }
     }
 }

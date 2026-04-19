@@ -1,6 +1,7 @@
 import logging
 import json
 import asyncio
+import uuid
 from state_manager import app_state
 from Runtime.image_analysis import gemini_image_analysis
 
@@ -10,20 +11,24 @@ logger = logging.getLogger(__name__)
 processing_lock = asyncio.Lock() 
 
 async def forward_to_unity(payload: dict) -> str:
-    """Helper to handle the Request-Response loop to Unity."""
     if not app_state.unity_ws:
         return "Error: Unity Editor is not connected to the bridge."
     
-    app_state.unity_res_future = asyncio.get_event_loop().create_future()
+    request_id = str(uuid.uuid4())
+    payload["request_id"] = request_id  # Unity must echo this back
+    
+    future = asyncio.get_event_loop().create_future()
+    app_state.pending_requests[request_id] = future  # add future to dict
+    
     await app_state.unity_ws.send(json.dumps(payload))
     
     try:
-        result = await asyncio.wait_for(app_state.unity_res_future, timeout=20.0)
+        result = await asyncio.wait_for(future, timeout=20.0)
         return str(result)
     except asyncio.TimeoutError:
         return "Error: Unity timed out responding to the request."
     finally:
-        app_state.unity_res_future = None
+        app_state.pending_requests.pop(request_id, None)
 
 async def handle_unity_message(payload_string):
 
@@ -32,8 +37,10 @@ async def handle_unity_message(payload_string):
 
     # Message from Unity -> Respond to MCP
     if msg_type == "mcp_response":
-        if app_state.unity_res_future and not app_state.unity_res_future.done():
-            app_state.unity_res_future.set_result(data)
+        request_id = data.get("request_id")
+        future = app_state.pending_requests.get(request_id)
+        if future and not future.done():
+            future.set_result(data)
         return
     
     # Message from Unity -> Send to GameplaySubAgent

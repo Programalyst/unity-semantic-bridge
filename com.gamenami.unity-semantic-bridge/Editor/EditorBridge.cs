@@ -183,22 +183,23 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
         }
         
-        public static async void SendToAgent(object message, string messageType)
+        public static async Task SendToAgent(object content, string messageType, string requestId = null)
         {
             try
             {
                 if (!IsConnected)
-                {
                     return;
-                }
-            
-                var json = JsonConvert.SerializeObject(new
-                {
-                    type = messageType,
-                    content = message
-                });
                 
-                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                var response = new JObject
+                {
+                    ["type"] = messageType,
+                    ["content"] = content as string ?? JToken.FromObject(content) // if content is string, do nothing, else convert to nested JSON
+                };
+
+                if (requestId != null)
+                    response["request_id"] = requestId;
+                
+                var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
                 await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
 
             }

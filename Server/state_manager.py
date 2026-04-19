@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 from websockets import ClientConnection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class AppState:
@@ -11,8 +11,11 @@ class AppState:
     # Global reference to the socket instance with Unity
     unity_ws: ClientConnection = None 
 
-    # Future for handling Editor time responses
-    unity_res_future: asyncio.Future = None
+    # dict for holding futures for responses back from Unity
+    # str is the uuid of the request
+    # dataclass doesn't allow mutable objects (like a dict or list) to be used as default values directly
+    # default_factory=dict tells the dataclass to create a brand-new dictionary every time a new AppState is initialized
+    pending_requests: dict[str, asyncio.Future] = field(default_factory=dict)
 
     # Future for handling gameplay responses
     gameplay_future: asyncio.Future = None 
