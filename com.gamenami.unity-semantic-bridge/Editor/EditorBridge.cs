@@ -21,7 +21,30 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         // Check if the actual websocket is open
         public static bool IsConnected => _ws is { State: WebSocketState.Open };
+        
+        // Queue for received messages
+        private static readonly Queue<string> _pendingMessages = new();
+        private static readonly object _queueLock = new();
+        
+        [InitializeOnLoadMethod]
+        private static void RegisterUpdatePump()
+        {
+            EditorApplication.update -= DrainMessageQueue;
+            EditorApplication.update += DrainMessageQueue;
+        }
 
+        private static void DrainMessageQueue()
+        {
+            string json = null;
+            lock (_queueLock)
+            {
+                if (_pendingMessages.Count > 0)
+                    json = _pendingMessages.Dequeue();
+            }
+            if (json != null)
+                OnMessageReceived(json);
+        }
+        
         // This runs on EVERY domain reload (Play Mode, Scripts, etc.)
         [InitializeOnLoadMethod]
         private static void OnEditorLoaded()
@@ -142,8 +165,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     
                     if (!string.IsNullOrEmpty(json))
                     {
-                        // Push to Main Thread
-                        EditorApplication.delayCall += () => OnMessageReceived(json);
+                        // If Editor is not in focus and interaction mode not set, delayCall will be throttled
+                        // this decouples message handling from delayCall scheduling
+                        lock (_queueLock)
+                        {
+                            _pendingMessages.Enqueue(json);
+                        }
                     }
                 }
             }
@@ -154,7 +181,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             finally
             {
-                // Only trigger Disconnect if the socket object still exists and we aren't already nulling it
+                // Only trigger Disconnect if the socket object still exists, and we aren't yet nulling it
                 if (_ws != null) 
                 {
                     EditorApplication.delayCall += Disconnect;
