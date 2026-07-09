@@ -11,6 +11,7 @@ namespace Gamenami.UnitySemanticBridge
         public bool IncludeLayers = true;
         public bool IncludeComponents = true;
         public bool IncludePositions = false;
+        public int MaxNodes = 300; // node cap to avoid overwhelming LLM context / freezing Editor on huge scenes
     }
 
     public static class SemanticSceneGenerator
@@ -18,7 +19,7 @@ namespace Gamenami.UnitySemanticBridge
         public static SemanticScene Generate(SceneGenerateSettings config)
         {
             var activeScene = SceneManager.GetActiveScene();
-            var sceneData = new SemanticScene
+            var scene = new SemanticScene
             {
                 sceneName = activeScene.name,
                 sceneContext = "Each entry in the JSON represents a gameObject."
@@ -26,21 +27,34 @@ namespace Gamenami.UnitySemanticBridge
             
             if (config.IncludeLayers)
             {
-                sceneData.layerCounts = new Dictionary<string, int>();
+                scene.LayerCounts = new Dictionary<string, int>();
             }
 
             var rootGameObjects = activeScene.GetRootGameObjects();
             foreach (var go in rootGameObjects)
             {
-                AddNodesRecursively(go, sceneData.nodes, "", 0, config);
+                AddNodesRecursively(go, scene, "", 0, config);
+            }
+            
+            if (scene.truncated)
+            {
+                scene.sceneContext += $" NOTE: Result truncated at {config.MaxNodes} nodes ({scene.totalNodesVisited} total encountered). " +
+                                      "Use a smaller 'depth' or query a specific subtree path to see more.";
             }
 
-            return sceneData;
+            return scene;
         }
         
-        private static void AddNodesRecursively(GameObject go, List<SemanticNode> list, string parentPath, 
+        private static void AddNodesRecursively(GameObject go, SemanticScene scene, string parentPath, 
             int currentDepth, SceneGenerateSettings config)
         {
+            scene.totalNodesVisited++;
+            if (scene.nodes.Count > config.MaxNodes)
+            {
+                scene.truncated = true;
+                return; // stop adding. Still increment totalNodesVisited for recursive calls that reach here
+            }
+
             var currentPath = string.IsNullOrEmpty(parentPath) ? go.name : $"{parentPath}/{go.name}";
     
             var node = new SemanticNode
@@ -68,17 +82,23 @@ namespace Gamenami.UnitySemanticBridge
                 node.position = new SimpleVec3(go.transform.position);
             }
 
-            list.Add(node);
+            scene.nodes.Add(node);
 
             // Recursion check
             if (currentDepth >= config.MaxDepth) return;
             
             foreach (Transform child in go.transform)
             {
-                AddNodesRecursively(child.gameObject, list, currentPath, currentDepth + 1, config);
+                if (scene.nodes.Count >= config.MaxNodes)
+                {
+                    scene.truncated = true; 
+                    break; // early exit before recursing further
+                } 
+                AddNodesRecursively(child.gameObject, scene, currentPath, currentDepth + 1, config);
             }
         }
 
+        // Game Specific overload - To be deprecated
         public static SemanticScene Generate(SemanticSceneConfigSo settings)
         {
             var activeScene = SceneManager.GetActiveScene();
@@ -89,7 +109,7 @@ namespace Gamenami.UnitySemanticBridge
                 sceneContext = "Each entry in the JSON represents a single interactable entity. " +
                                "To interact with a unit or obstacle, use the viewportPos of its root node.",
                 // Initialize layer statistics if toggled true
-                layerCounts = settings.includeLayerStats ? new Dictionary<string, int>() : null
+                LayerCounts = settings.includeLayerStats ? new Dictionary<string, int>() : null
             };
 
             foreach (var rootGameObject in activeScene.GetRootGameObjects())
@@ -117,17 +137,15 @@ namespace Gamenami.UnitySemanticBridge
             // This ignores all bones, joints, and target points inside the character
             if (obj.GetComponent<SkinnedMeshRenderer>()) return;
             
-            
             // Layer STATISTICS for debugging: Count objects per layer
             var layerName = LayerMask.LayerToName(obj.layer);
             if (settings.includeLayerStats)
             {
-                scene.layerCounts.TryAdd(layerName, 0);
-                scene.layerCounts[layerName]++;
+                scene.LayerCounts.TryAdd(layerName, 0);
+                scene.LayerCounts[layerName]++;
             }
             
             // --- GENERALIZABLE CULLING LOGIC ---
-
             SimpleVec2? vPos = GetViewportPos(obj); // returns null if obj is outside the viewport
             
             // If it's a "Grid Tile" but NOT visible, skip it. 

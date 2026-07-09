@@ -6,13 +6,15 @@ using UnityEngine;
 public class SemanticScene
 {
     public string sceneName;
-    // Info for LLM on the limitations of the exported scene graph (e.g. excluded layers, etc.)
+    // Info for LLM on the limitations of the exported scene graph (e.g., excluded layers, etc.)
     public string sceneContext;
     
-    public List<SemanticNode> nodes = new List<SemanticNode>();
+    public List<SemanticNode> nodes = new();
+    public bool truncated = false;
+    public int totalNodesVisited = 0; // actual count encountered, vs. nodes.Count which may be capped
     
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
-    public Dictionary<string, int> layerCounts = new Dictionary<string, int>();
+    public Dictionary<string, int> LayerCounts = new();
 }
 
 [System.Serializable]

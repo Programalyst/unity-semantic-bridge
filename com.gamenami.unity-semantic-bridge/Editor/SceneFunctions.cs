@@ -18,13 +18,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var includeLayers = mcpMessage["includeLayers"]?.Value<bool>() ?? true;
             var includeComponents = mcpMessage["includeComponents"]?.Value<bool>() ?? true;
             var includePositions = mcpMessage["includePositions"]?.Value<bool>() ?? true;
+            var maxNodes = mcpMessage["maxNodes"]?.Value<int>() ?? 300;
 
             var sceneGenerateConfig = new SceneGenerateSettings
             {
                 MaxDepth = maxDepth,
                 IncludeLayers = includeLayers,
                 IncludeComponents = includeComponents,
-                IncludePositions = includePositions
+                IncludePositions = includePositions,
+                MaxNodes = maxNodes
             };
             
             var sceneData = SemanticSceneGenerator.Generate(sceneGenerateConfig);
