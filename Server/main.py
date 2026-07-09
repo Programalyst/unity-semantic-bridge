@@ -1,6 +1,4 @@
 import asyncio
-import os
-import sys
 import logging
 import websockets
 from mcp.server.fastmcp import FastMCP
@@ -8,6 +6,9 @@ from mcp.server.fastmcp import FastMCP
 from mcp_tools import register_unity_tools
 from state_manager import app_state
 from unity_bridge import handle_unity_message
+
+from dotenv import load_dotenv
+load_dotenv() # Load environment variables from .env file
 
 # --- CONFIG & STATE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,7 +27,6 @@ async def handle_unity_connection(websocket):
         logging.info("🔌 Unity disconnected.")
     finally:
         app_state.unity_ws = None
-
 
 
 # --- MAIN ENTRY POINT ---

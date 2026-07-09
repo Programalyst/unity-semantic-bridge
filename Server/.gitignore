@@ -208,3 +208,6 @@ __marimo__/
 
 # Add your own system_prompt.txt
 system_prompt.txt
+
+# IntelliJ IDEA
+.idea/

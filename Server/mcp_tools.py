@@ -7,9 +7,9 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def get_scene_hierarchy(
         depth: Annotated[int, "How many levels deep to traverse. Use 2 for a quick overview, 3–5 to find deeply nested objects. "] = 2,
-        includeLayers: Annotated[bool, "If true, includes the layer (e.g. 'Default', 'UI') for each object. Omit if not needed to reduce output size."] = True,
-        includeComponents: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling get_component_inspector_values."] = True,
-        includePosition: Annotated[bool, "If true, includes world-space position for each object. Omit if not needed to reduce output size."] = True,
+        include_layers: Annotated[bool, "If true, includes the layer (e.g. 'Default', 'UI') for each object. Omit if not needed to reduce output size."] = True,
+        include_components: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling get_component_inspector_values."] = True,
+        include_positions: Annotated[bool, "If true, includes world-space position for each object. Omit if not needed to reduce output size."] = True,
     ) -> str:
         """
         Returns the current Unity scene hierarchy as a list of GameObjects with their paths and instance_ids.
@@ -22,17 +22,17 @@ def register_unity_tools(mcp):
         return await forward_to_unity({
             "action": "Get_SceneHierarchy",
             "depth": depth,
-            "includeLayers": includeLayers,
-            "includeComponents": includeComponents,
-            "includePosition": includePosition
+            "includeLayers": include_layers,
+            "includeComponents": include_components,
+            "includePositions": include_positions
         })
     
     @mcp.tool()
     async def get_gameobject_tree(
         instance_id: Annotated[int, "The instance_id of the root GameObject to traverse. Get this from 'get_scene_hierarchy'."],
         depth: Annotated[int, "How many levels of children to include. Default is 5."] = 5,
-        includeComponents: Annotated[bool, "Whether to include component names on each GameObject. Default is True."] = True,
-        includePosition: Annotated[bool, "Whether to include world position of each GameObject. Default is False."] = False,
+        include_components: Annotated[bool, "Whether to include component names on each GameObject. Default is True."] = True,
+        include_positions: Annotated[bool, "Whether to include world position of each GameObject. Default is False."] = False,
     ) -> str:
         """
         Returns the child hierarchy of a single GameObject as a flat list.
@@ -43,8 +43,8 @@ def register_unity_tools(mcp):
             "action": "Get_GameObjectTree",
             "instanceID": instance_id,
             "depth": depth,
-            "includeComponents": includeComponents,
-            "includePosition": includePosition,
+            "includeComponents": include_components,
+            "includePositions": include_positions,
         })
     
     @mcp.tool()
@@ -59,14 +59,14 @@ def register_unity_tools(mcp):
     async def find_unity_files(
         filter_query: Annotated[str, "The search string (e.g., 't:Prefab Player' or 'l:LabelName')"], 
         limit: Annotated[int, "Max results to return (default 10)"] = 10, 
-        searchInFolders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
+        search_in_folders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
     ) -> str:
         """Finds assets in Unity. Default folders: ['Assets']."""
         return await forward_to_unity({
             "action": "Search_Assets",
             "filter": filter_query,
             "limit": limit,
-            "searchInFolders": searchInFolders
+            "searchInFolders": search_in_folders
         })
 
     @mcp.tool()

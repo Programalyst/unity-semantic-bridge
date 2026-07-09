@@ -42,13 +42,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var id = (int)mcpMessage["instanceID"];
             var maxDepth = mcpMessage["depth"]?.ToObject<int>() ?? 5;
             var includeComponents = mcpMessage["includeComponents"]?.ToObject<bool>() ?? true;
-            var includePosition = mcpMessage["includePosition"]?.ToObject<bool>() ?? false;
+            var includePositions = mcpMessage["includePositions"]?.ToObject<bool>() ?? false;
 
             var go = EditorUtility.InstanceIDToObject(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
             var nodes = new List<object>();
-            TraverseTree(go.transform, go.name, 0, maxDepth, includeComponents, includePosition, nodes);
+            TraverseTree(go.transform, go.name, 0, maxDepth, includeComponents, includePositions, nodes);
 
             var result = new
             {

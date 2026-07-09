@@ -14,23 +14,25 @@ async def forward_to_unity(payload: dict) -> str:
     if not app_state.unity_ws:
         return "Error: Unity Editor is not connected to the bridge."
     
-    request_id = str(uuid.uuid4())
-    payload["request_id"] = request_id  # Unity must echo this back
-    
-    future = asyncio.get_event_loop().create_future()
-    app_state.pending_requests[request_id] = future  # add future to dict
-    
-    await app_state.unity_ws.send(json.dumps(payload))
-    
-    try:
-        result = await asyncio.wait_for(future, timeout=20.0)
-        return str(result)
-    except asyncio.TimeoutError:
-        return "Error: Unity timed out responding to the request."
-    finally:
-        app_state.pending_requests.pop(request_id, None)
+    async with app_state.unity_request_lock: # queue all Unity calls. Otherwise a backlog of calls will slow Unity down.
+        request_id = str(uuid.uuid4())
+        payload["request_id"] = request_id  # Unity must echo this back
+        
+        future = asyncio.get_event_loop().create_future()
+        app_state.pending_requests[request_id] = future  # add future to dict
+        
+        await app_state.unity_ws.send(json.dumps(payload))
+        
+        try:
+            result = await asyncio.wait_for(future, timeout=60.0)
+            return str(result)
+        except asyncio.TimeoutError:
+            return "Error: Unity timed out responding to the request."
+        finally:
+            app_state.pending_requests.pop(request_id, None)
 
 async def handle_unity_message(payload_string):
+    logger.info(f"📥 RAW from Unity: {payload_string[:50]}")
 
     data = json.loads(payload_string)
     msg_type = data.get("type")

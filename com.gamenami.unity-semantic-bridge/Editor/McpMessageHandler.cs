@@ -8,10 +8,19 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class McpMessageHandler
     {
+        private static volatile bool _isProcessing; // Volatile so all threads see the latest value
         public static async Task HandleMcpMessage(JObject mcpMessage)
         {
             var action = mcpMessage["action"]?.ToString();
             var requestId = mcpMessage["request_id"]?.ToString();
+            
+            // Guard against MCP server sending concurrent requests
+            if (_isProcessing)
+            {
+                await EditorBridge.SendToAgent("Unity Error: A request is already being processed. Try again shortly.", "mcp_response", requestId);
+                return;
+            }
+            _isProcessing = true;
             
             var parameters = new List<string>();
             foreach (var property in mcpMessage.Properties())
@@ -31,6 +40,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             BridgeRelay.OnAgentMessage?.Invoke($"[{DateTime.Now:HH:mm:ss}] {action}{paramString}");
 
             var resultText = "";
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 switch (action)
@@ -38,7 +48,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "Get_SceneHierarchy":
                         resultText = SceneFunctions.GetSceneHierarchy(mcpMessage);
                         break;
-                    
+
                     case "Get_GameObjectTree":
                         resultText = SceneFunctions.GetGameObjectTree(mcpMessage);
                         break;
@@ -93,19 +103,19 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "Get_PhysicsMatrix":
                         resultText = SceneFunctions.GetPhysicsMatrix();
                         break;
-                    
+
                     case "Add_Component":
                         resultText = ComponentFunctions.AddComponent(mcpMessage);
                         break;
-                    
+
                     case "Set_FieldValue":
                         resultText = ComponentFunctions.SetFieldValue(mcpMessage);
                         break;
-                    
+
                     case "Get_LightsAffectingObject":
                         resultText = LightingFunctions.GetLightsAffectingObject(mcpMessage);
                         break;
-                    
+
                     case "Get_UrpPipelineSettings":
                         resultText = LightingFunctions.GetUrpPipelineSettings();
                         break;
@@ -120,6 +130,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 // Always send a result 
                 resultText = $"Unity Error: {e.Message}\n{e.StackTrace}";
+            }
+            finally
+            {
+                Debug.Log($"[MCP] {action} took {sw.ElapsedMilliseconds}ms (request_id={requestId})");
+                _isProcessing = false;
             }
             //Debug.Log($"[Result text] {resultText}");
             await EditorBridge.SendToAgent(resultText, "mcp_response", requestId);
