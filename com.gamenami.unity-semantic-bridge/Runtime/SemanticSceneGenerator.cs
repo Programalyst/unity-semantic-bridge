@@ -52,7 +52,7 @@ namespace Gamenami.UnitySemanticBridge
             int currentDepth, SceneGenerateSettings config, Camera mainCamera)
         {
             scene.totalNodesVisited++;
-            if (scene.nodes.Count > config.MaxNodes)
+            if (scene.nodes.Count >= config.MaxNodes)
             {
                 scene.truncated = true;
                 return; // stop adding. Still increment totalNodesVisited for recursive calls that reach here
@@ -62,7 +62,12 @@ namespace Gamenami.UnitySemanticBridge
             if (config.IgnoreDisabled && !go.activeSelf) { return; }
 
             // Ignore objects out of the main camera view
-            if (config.OnlyMainCamVisible && GetViewportPos(go, mainCamera) == null) { return; }
+            SimpleVec2? vPos = null;
+            if (config.OnlyMainCamVisible)
+            {
+                vPos = GetViewportPos(go, mainCamera);
+                if (vPos == null) return;
+            }
 
             // Prune branch traversal if we hit a SkinnedMeshRenderer (Character Rig)
             // This ignores all bones, joints, and target points inside the character's rig
@@ -74,7 +79,8 @@ namespace Gamenami.UnitySemanticBridge
             {
                 name = go.name,
                 instanceId = go.GetInstanceID(),
-                path = currentPath
+                path = currentPath,
+                viewportPos = vPos // populated for free if OnlyMainCamVisible was on; null otherwise
             };
 
             if (config.IncludeLayers)
