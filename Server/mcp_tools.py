@@ -7,12 +7,15 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def get_scene_hierarchy(
         depth: Annotated[int, "How many levels deep to traverse. Use 2 for a quick overview, 3–5 to find deeply nested objects. "] = 2,
+        max_nodes: Annotated[int, "Maximum nodes to return before truncating, to avoid overwhelming context on large scenes."] = 300,
         include_layers: Annotated[bool, "If true, includes the layer (e.g. 'Default', 'UI') for each object. Omit if not needed to reduce output size."] = True,
         include_components: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling get_component_inspector_values."] = True,
         include_positions: Annotated[bool, "If true, includes world-space position for each object. Omit if not needed to reduce output size."] = True,
+        only_main_cam_visible: Annotated[bool, "If true, objects out of the main camera view will be culled."] = False
     ) -> str:
         """
         Returns the current Unity scene hierarchy as a list of GameObjects with their paths and instance_ids.
+        Note: Scene hierarchy subtree traversal will always be pruned if a SkinnedMeshRenderer is encountered. Use get_gameobject_tree to inspect a character's rig
     
         This is usually the FIRST tool to call — use it to discover GameObjects and their instance_ids,
         which are required by inspect_gameobject and get_component_inspector_values.

@@ -14,19 +14,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         public static string GetSceneHierarchy(JObject mcpMessage)
         {
-            var maxDepth = mcpMessage["depth"]?.Value<int>() ?? 2;
-            var includeLayers = mcpMessage["includeLayers"]?.Value<bool>() ?? true;
-            var includeComponents = mcpMessage["includeComponents"]?.Value<bool>() ?? true;
-            var includePositions = mcpMessage["includePositions"]?.Value<bool>() ?? true;
-            var maxNodes = mcpMessage["maxNodes"]?.Value<int>() ?? 300;
-
             var sceneGenerateConfig = new SceneGenerateSettings
             {
-                MaxDepth = maxDepth,
-                IncludeLayers = includeLayers,
-                IncludeComponents = includeComponents,
-                IncludePositions = includePositions,
-                MaxNodes = maxNodes
+                MaxDepth = mcpMessage["depth"]?.Value<int>() ?? 2,
+                MaxNodes = mcpMessage["maxNodes"]?.Value<int>() ?? 300,
+                IncludeLayers = mcpMessage["includeLayers"]?.Value<bool>() ?? true,
+                IncludeComponents = mcpMessage["includeComponents"]?.Value<bool>() ?? true,
+                IncludePositions = mcpMessage["includePositions"]?.Value<bool>() ?? true,
+                OnlyMainCamVisible = mcpMessage["onlyMainCamVisible"]?.Value<bool>() ?? true,
+                IgnoreDisabled = mcpMessage["ignoreDisabled"]?.Value<bool>() ?? true
             };
             
             var sceneData = SemanticSceneGenerator.Generate(sceneGenerateConfig);

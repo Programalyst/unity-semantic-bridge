@@ -8,10 +8,12 @@ namespace Gamenami.UnitySemanticBridge
     public class SceneGenerateSettings
     {
         public int MaxDepth = 2;
-        public bool IncludeLayers = true;
-        public bool IncludeComponents = true;
-        public bool IncludePositions = false;
         public int MaxNodes = 300; // node cap to avoid overwhelming LLM context / freezing Editor on huge scenes
+        public bool IncludeLayers = true; // if true, will return name of the layer the gameobject is in
+        public bool IncludeComponents = true;
+        public bool IncludePositions = false; // include transform.position
+        public bool OnlyMainCamVisible = false; // cull objects out of the main camera's view
+        public bool IgnoreDisabled = false; // ignore disabled objects in Unity
     }
 
     public static class SemanticSceneGenerator
@@ -30,10 +32,11 @@ namespace Gamenami.UnitySemanticBridge
                 scene.LayerCounts = new Dictionary<string, int>();
             }
 
+            var mainCamera = Camera.main;
             var rootGameObjects = activeScene.GetRootGameObjects();
             foreach (var go in rootGameObjects)
             {
-                AddNodesRecursively(go, scene, "", 0, config);
+                AddNodesRecursively(go, scene, "", 0, config, mainCamera);
             }
             
             if (scene.truncated)
@@ -46,7 +49,7 @@ namespace Gamenami.UnitySemanticBridge
         }
         
         private static void AddNodesRecursively(GameObject go, SemanticScene scene, string parentPath, 
-            int currentDepth, SceneGenerateSettings config)
+            int currentDepth, SceneGenerateSettings config, Camera mainCamera)
         {
             scene.totalNodesVisited++;
             if (scene.nodes.Count > config.MaxNodes)
@@ -54,6 +57,16 @@ namespace Gamenami.UnitySemanticBridge
                 scene.truncated = true;
                 return; // stop adding. Still increment totalNodesVisited for recursive calls that reach here
             }
+
+            // Ignore disabled objects and their entire children sub-hierarchy
+            if (config.IgnoreDisabled && !go.activeSelf) { return; }
+
+            // Ignore objects out of the main camera view
+            if (config.OnlyMainCamVisible && GetViewportPos(go, mainCamera) == null) { return; }
+
+            // Prune branch traversal if we hit a SkinnedMeshRenderer (Character Rig)
+            // This ignores all bones, joints, and target points inside the character's rig
+            if (go.GetComponent<SkinnedMeshRenderer>()) return;
 
             var currentPath = string.IsNullOrEmpty(parentPath) ? go.name : $"{parentPath}/{go.name}";
     
@@ -94,11 +107,11 @@ namespace Gamenami.UnitySemanticBridge
                     scene.truncated = true; 
                     break; // early exit before recursing further
                 } 
-                AddNodesRecursively(child.gameObject, scene, currentPath, currentDepth + 1, config);
+                AddNodesRecursively(child.gameObject, scene, currentPath, currentDepth + 1, config, mainCamera);
             }
         }
 
-        // Game Specific overload - To be deprecated
+        // Gameplay Mode overload. Uses Scriptableobject
         public static SemanticScene Generate(SemanticSceneConfigSo settings)
         {
             var activeScene = SceneManager.GetActiveScene();
@@ -111,17 +124,18 @@ namespace Gamenami.UnitySemanticBridge
                 // Initialize layer statistics if toggled true
                 LayerCounts = settings.includeLayerStats ? new Dictionary<string, int>() : null
             };
-
+            
+            var mainCamera = Camera.main;
             foreach (var rootGameObject in activeScene.GetRootGameObjects())
             {
-                AddNodesRecursively(rootGameObject, sceneData, null, 0, settings);
+                AddNodesRecursively(rootGameObject, sceneData, null, 0, settings, mainCamera);
             }
 
             return sceneData;
         }
 
         private static void AddNodesRecursively(GameObject obj, SemanticScene scene, string parentPath,
-            int currentDepth, SemanticSceneConfigSo settings)
+            int currentDepth, SemanticSceneConfigSo settings, Camera mainCamera)
         {
             // --- OPTIMIZATIONS ---
             // Ignore disabled objects and their entire children sub-hierarchy
@@ -146,7 +160,7 @@ namespace Gamenami.UnitySemanticBridge
             }
             
             // --- GENERALIZABLE CULLING LOGIC ---
-            SimpleVec2? vPos = GetViewportPos(obj); // returns null if obj is outside the viewport
+            SimpleVec2? vPos = GetViewportPos(obj, mainCamera); // returns null if obj is outside the viewport
             
             // If it's a "Grid Tile" but NOT visible, skip it. 
             // This allows the LLM to see the 100 tiles on screen but ignore the 2,400 off-screen.
@@ -204,16 +218,14 @@ namespace Gamenami.UnitySemanticBridge
             {
                 var newDepth = HeuristicFilters.IsFolderObject(obj) ? currentDepth : currentDepth + 1;
                 // Pass the currentPath as the parentPath for the next generation
-                AddNodesRecursively(child.gameObject, scene, currentPath, newDepth, settings);
+                AddNodesRecursively(child.gameObject, scene, currentPath, newDepth, settings, mainCamera);
             }
         }
         
-        private static SimpleVec2? GetViewportPos(GameObject obj) 
+        private static SimpleVec2? GetViewportPos(GameObject obj, Camera cam) 
         {
-            Camera cam = Camera.main;
-            
             if (!cam) return null;
-            Vector3 viewPoint = cam.WorldToViewportPoint(obj.transform.position);
+            var viewPoint = cam.WorldToViewportPoint(obj.transform.position);
             
             if (viewPoint is { z: > 0, x: >= 0 and <= 1, y: >= 0 and <= 1 })
                 return new SimpleVec2(viewPoint.x, 1f - viewPoint.y);

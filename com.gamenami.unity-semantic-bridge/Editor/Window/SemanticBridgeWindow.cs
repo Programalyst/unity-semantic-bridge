@@ -150,7 +150,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (_playModeConfig)
             {
                 DrawConfigColumn("Play Mode Settings", _playModeConfig);
-                if (GUILayout.Button("Test Play Mode JSON export")) ExportToJson(_playModeConfig);
             }
             EditorGUILayout.EndVertical();
         }
@@ -218,32 +217,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (!isConnected) EditorGUILayout.HelpBox("Connect to Server first.", MessageType.None);
             if (!isPlayMode) EditorGUILayout.HelpBox("Enter Play Mode to start.", MessageType.None);
             if (!agentInScene) EditorGUILayout.HelpBox("Add GameplayAgent to scene.", MessageType.Warning);
-        }
-
-        private static void ExportToJson(SemanticSceneConfigSo config) 
-        {
-            var activeScene = SceneManager.GetActiveScene();
-            var sceneName = string.IsNullOrEmpty(activeScene.name) ? "UntitledScene" : activeScene.name;
-            var sceneData = SemanticSceneGenerator.Generate(config);
-            var sceneJson = JsonConvert.SerializeObject(sceneData, new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-            });
-            
-            Debug.Log("Scene Exported (Max Depth: " + config.maxDepth + ")");
-            
-            // Save to a file
-            var path = EditorUtility.SaveFilePanel(
-                "Save Semantic Scene", 
-                "", 
-                $"{sceneName}.json", 
-                "json"
-            );
-                
-            if (string.IsNullOrEmpty(path)) return;
-            System.IO.File.WriteAllText(path, sceneJson);
-            AssetDatabase.Refresh();
         }
     }
 }
