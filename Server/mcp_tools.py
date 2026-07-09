@@ -25,9 +25,11 @@ def register_unity_tools(mcp):
         return await forward_to_unity({
             "action": "Get_SceneHierarchy",
             "depth": depth,
+            "maxNodes": max_nodes,
             "includeLayers": include_layers,
             "includeComponents": include_components,
-            "includePositions": include_positions
+            "includePositions": include_positions,
+            "onlyMainCamVisible": only_main_cam_visible
         })
     
     @mcp.tool()
