@@ -12,6 +12,21 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class SceneFunctions
     {
+        public static string GetScreenshot(JObject mcpMessage)
+        {
+            var jpgQuality = mcpMessage["jpgQuality"]?.Value<int>() ?? 50;
+            var maxWidth = mcpMessage["maxWidth"]?.Value<int>() ?? 1280;
+
+            if (Application.isPlaying)
+                return "Error: Screenshot capture in Play Mode is not yet supported via MCP.";
+
+            var jpgBytes = EditModeScreenshotTool.CaptureSceneViewJpg(jpgQuality, maxWidth);
+            if (jpgBytes == null)
+                return "Error: No active Scene View to capture. Make sure a Scene view window is open and focused.";
+
+            return Convert.ToBase64String(jpgBytes);
+        }
+        
         public static string GetSceneHierarchy(JObject mcpMessage)
         {
             var sceneGenerateConfig = new SceneGenerateSettings

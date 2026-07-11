@@ -45,6 +45,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 switch (action)
                 {
+                    case "Get_Screenshot":
+                        resultText = SceneFunctions.GetScreenshot(mcpMessage);
+                        break;
+                    
                     case "Get_SceneHierarchy":
                         resultText = SceneFunctions.GetSceneHierarchy(mcpMessage);
                         break;

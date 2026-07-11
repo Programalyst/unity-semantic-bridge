@@ -31,6 +31,26 @@ async def forward_to_unity(payload: dict) -> str:
         finally:
             app_state.pending_requests.pop(request_id, None)
 
+
+async def fetch_screenshot_base64() -> str:
+    """Returns raw base64 JPEG string from Unity's Game/Scene view."""
+    if not app_state.unity_ws:
+        raise RuntimeError("Unity Editor is not connected to the bridge.")
+
+    request_id = str(uuid.uuid4())
+    payload = {"action": "Get_Screenshot", "request_id": request_id}
+    future = asyncio.get_event_loop().create_future()
+    app_state.pending_requests[request_id] = future
+
+    async with app_state.unity_request_lock:
+        await app_state.unity_ws.send(json.dumps(payload))
+        try:
+            result = await asyncio.wait_for(future, timeout=60.0)
+            return result.get("content", "")  # extract just the base64 payload, not the whole dict
+        finally:
+            app_state.pending_requests.pop(request_id, None)
+
+
 async def handle_unity_message(payload_string):
     logger.info(f"📥 RAW from Unity: {payload_string[:50]}")
 

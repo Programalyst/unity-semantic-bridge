@@ -1,9 +1,24 @@
-from unity_bridge import forward_to_unity
+from unity_bridge import forward_to_unity, fetch_screenshot_base64
 from typing import Annotated
+from LightingAgent.lighting_agent import LightingDiagnosticAgent
+from mcp.server.fastmcp import Image
+import base64
+
+# Global reference to lighting agent (initialized after tools are registered)
+_lighting_agent = None
 
 def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
+    @mcp.tool()
+    async def get_screenshot() -> Image:
+        """
+        Captures a screenshot of the current Unity Game view and returns it as an image.
+        Useful for visually inspecting lighting, UI layout, or general scene appearance.
+        """
+        b64 = await fetch_screenshot_base64()
+        return Image(data=base64.b64decode(b64), format="jpeg")
+    
     @mcp.tool()
     async def get_scene_hierarchy(
         depth: Annotated[int, "How many levels deep to traverse. Use 2 for a quick overview, 3–5 to find deeply nested objects. "] = 2,
@@ -246,3 +261,35 @@ def register_unity_tools(mcp):
         return await forward_to_unity({
             "action": "Get_UrpPipelineSettings"
         })
+
+    @mcp.tool()
+    async def diagnose_lighting_issue(
+        instance_id: Annotated[int, "The instance_id of the GameObject with lighting issues. Get this from 'get_scene_hierarchy'."],
+        issue_description: Annotated[str, "Description of the lighting problem (e.g., 'object appears too dark', 'shadows not rendering', 'lights not affecting object')"],
+        max_iterations: Annotated[int, "Maximum diagnostic iterations before stopping (default 10)"] = 10
+    ) -> str:
+        """
+        Launches an autonomous diagnostic agent that will iteratively investigate and diagnose lighting issues on a GameObject.
+
+        The agent will:
+        1. Check lights affecting the object
+        2. Inspect URP pipeline settings
+        3. Examine renderer components and materials
+        4. Keep iterating until the issue is identified or max iterations reached
+
+        Use this when you need deep, multistep lighting diagnostics rather than manual tool calls.
+        Returns a comprehensive diagnostic report with findings and recommendations.
+        """
+        global _lighting_agent
+
+        # Initialize agent with Unity tools on first use
+        if _lighting_agent is None:
+            unity_tools = {
+                "get_lights_affecting_object": get_lights_affecting_object,
+                "get_urp_pipeline_settings": get_urp_pipeline_settings,
+                "get_component_inspector_values": get_component_inspector_values,
+                "inspect_gameobject": inspect_gameobject,
+            }
+            _lighting_agent = LightingDiagnosticAgent(unity_tools, max_iterations=max_iterations)
+
+        return await _lighting_agent.diagnose_lighting_issue(instance_id, issue_description)
