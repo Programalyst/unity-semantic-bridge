@@ -107,20 +107,26 @@ class LightingDiagnosticAgent:
         # Ask LLM if issue is resolved based on diagnostic results
         check_prompt = """
         Based on the diagnostic information gathered so far, has the lighting issue been identified and resolved?
-        Respond with ONLY 'RESOLVED' if the issue is fixed or fully diagnosed with a clear solution.
-        Respond with ONLY 'CONTINUE' if more investigation is needed.
+        If RESOLVED, respond with a summary starting with 'RESOLVED:' followed by the root cause and recommendations.
+        If not, respond with ONLY 'CONTINUE'.
         """
 
         response = self.llm.invoke(messages + [HumanMessage(content=check_prompt)])
         is_resolved = "RESOLVED" in response.content.upper()
 
-        logger.info(f"Resolution check: {'RESOLVED' if is_resolved else 'CONTINUE'}")
+        logger.info(f"Resolution check: {'RESOLVED' if is_resolved else 'CONTINUE'} (consecutive_errors={consecutive_errors})")
 
-        return {
+        result = {
             "iteration_count": iteration,
             "issue_resolved": is_resolved,
             "consecutive_tool_errors": consecutive_errors
         }
+
+        # Append the actual diagnosis text if resolved
+        if is_resolved:
+            result["messages"] = [AIMessage(content=response.content)]
+
+        return result 
 
     def _should_continue(self, state: AgentState) -> Literal["continue", "end"]:
         """Decide whether to continue diagnosing or end"""
