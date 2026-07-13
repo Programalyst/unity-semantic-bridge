@@ -35,12 +35,33 @@ class LightingDiagnosticAgent:
         """
         
         self.unity_tools = unity_tools
+        # add Gemini grounding with search
+        self.unity_tools = {
+            **unity_tools, 
+            "search_unity_docs" : self.search_unity_docs
+        }
         self.max_iterations = max_iterations
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-        self.graph = self._build_graph()
 
-        llm_with_tools = self.llm.bind_tools(list(self.unity_tools.values()))
-        print(llm_with_tools.kwargs)
+        # Separate grounding-only model instance 
+        # Gemini API does not allow mixing google_search with function calling in one request.
+        self._grounded_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0).bind_tools(
+            [{"google_search": {}}]
+        )
+
+        self.graph = self._build_graph()
+    
+    # custom tool for grounded Gemini
+    async def search_unity_docs(self, query: str) -> str:
+        """
+        Looks up current, accurate Unity/URP documentation or behavior via grounded search.
+        Use this for factual questions about Unity/URP features, settings, or rendering behavior
+        you're not fully certain about (e.g. render pipeline modes, light limits, API behavior).
+        """
+        logger.info(f"[search_unity_docs] Query: {query}")
+        response = await self._grounded_llm.ainvoke(query)
+        logger.info(f"[search_unity_docs] Result: {response.content[:300]}")
+        return response.content
 
     def _build_graph(self):
         """Build the LangGraph workflow"""
@@ -160,6 +181,13 @@ class LightingDiagnosticAgent:
             Current task: Diagnose the lighting issue for GameObject with instance_id={instance_id}
             Issue description: {issue_description}
 
+            You have access to a `search_unity_docs` tool that looks up current, accurate Unity/URP
+            documentation and behavior. Use it at least once during your diagnosis to verify any
+            assumptions about how a Unity/URP feature, setting, or limit actually works — especially
+            before concluding on a root cause or writing recommendations. Do not rely solely on your own
+            prior knowledge of Unity/URP internals, since engine behavior varies across versions and is
+            easy to misremember; treat anything you're not 100% certain about as worth verifying.
+
             Follow this diagnostic process:
             1. Check what lights are affecting the object.
             2. Check URP pipeline settings for rendering configuration. Pay attention not just to binary
@@ -168,13 +196,17 @@ class LightingDiagnosticAgent:
             to miss if you only check whether a setting is "enabled."
             3. If a numeric limit is relevant, check how it compares against the actual conditions in the
             scene (e.g. how many lights are near the object vs. the per-object limit) rather than just
-            noting the limit's existence.
+            noting the limit's existence. Use `search_unity_docs` to confirm how that limit actually
+            behaves and whether there are alternative configurations that avoid it entirely, rather than
+            only considering ways to work within it.
             4. Inspect the object's Renderer component (material, rendering layer, etc.), including Culling
             Mask and Rendering Layer Mask compatibility with the light.
             5. Based on findings, identify the root cause — prefer explanations that are consistent with all
             reported symptoms (e.g. if the issue is inconsistent or angle/position-dependent rather than
             a complete absence of light, favor causes that would produce that specific pattern).
-            6. Provide clear recommendations to fix the issue.
+            6. Provide clear recommendations to fix the issue. Include both immediate workarounds and any
+            more fundamental configuration changes that address the root cause directly, if
+            `search_unity_docs` revealed any.
 
             Keep iterating through diagnostics until you find the root cause or have exhausted all possibilities.""")
         
