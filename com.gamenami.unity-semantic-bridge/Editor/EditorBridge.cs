@@ -33,13 +33,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
             EditorApplication.update += DrainMessageQueue;
         }
 
+        // If Editor is not focused, it may be throttled to 10 fps
+        // We don't flush the entire queue since too many messages may overwhelm Unity
         private static void DrainMessageQueue()
         {
             string json = null;
             lock (_queueLock)
             {
                 if (_pendingMessages.Count > 0)
-                    json = _pendingMessages.Dequeue();
+                    json = _pendingMessages.Dequeue(); // Only pull 1 message on EditorApplication.update tick
             }
             if (json != null)
                 OnMessageReceived(json);
@@ -49,9 +51,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
         [InitializeOnLoadMethod]
         private static void OnEditorLoaded()
         {
+            // Clean up / close open sockets BEFORE domain reload
+            AssemblyReloadEvents.beforeAssemblyReload -= HandleDomainReloadCleanup;
+            AssemblyReloadEvents.beforeAssemblyReload += HandleDomainReloadCleanup;
+            
+            // Clean up on complete Editor quit
+            EditorApplication.quitting -= OnEditorQuitting;
+            EditorApplication.quitting += OnEditorQuitting;
+            
             // only autoConnect if manually connected previously
             var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref);
-            
             if (!shouldAutoConnect || IsConnected) return;
             
             Debug.Log("<color=cyan>[Bridge]</color> Bridge ReInitializing...");
@@ -60,10 +69,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (!IsConnected) 
                     _ = Connect();
             };
-            
-            // set autoConnect to false on Editor quit
-            EditorApplication.quitting -= OnEditorQuitting;
-            EditorApplication.quitting += OnEditorQuitting;
         }
 
         public static void ManualConnect()
@@ -72,17 +77,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
             _ = Connect();
         }
 
-        public static void ManualDisconnect()
-        {
-            EditorPrefs.SetBool(AutoConnectPref, false);
-            Disconnect();
-        }
-
         private static async Task Connect()
         {
             if (IsConnected) return;
             
-            Disconnect(); // Clean up any old connection attempts
+            DisconnectNetworkOnly(); // Clean up any old connection attempts
 
             _ws = new ClientWebSocket();
             _cts = new CancellationTokenSource();
@@ -105,9 +104,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
         }
 
-        private static void Disconnect()
+        // Runs on background thread due to finally block
+        private static void DisconnectNetworkOnly()
         {
-            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
+            // Cancel first so any in-flight ReceiveAsync exits via OperationCanceledException
+            // rather than racing against Dispose() and throwing ObjectDisposedException instead.
+            if (_cts != null)
+            {
+                _cts.Cancel();
+            }
 
             if (_ws != null)
             {
@@ -115,15 +120,32 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 // to attempt to fire even if our main _cts is already cancelled
                 if (_ws.State == WebSocketState.Open)
                     _ = _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-        
+
                 _ws.Dispose();
                 _ws = null;
             }
 
-            if (_cts == null) return;
-            _cts.Cancel(); // This is the "kill switch" for the ReceiveLoop
-            _cts.Dispose();
+            _cts?.Dispose();
             _cts = null;
+        }
+
+        private static void HandleDomainReloadCleanup()
+        {
+            // Unity is about to compile, unhook events on the main thread
+            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
+            
+            DisconnectNetworkOnly(); // shut down the network socket
+        }
+
+        // Cleanup method that handles Unity events on the main thread
+        public static void ManualDisconnect()
+        {
+            EditorPrefs.SetBool(AutoConnectPref, false);
+    
+            // Unhook Unity events because ManualDisconnect is called from the Main Thread
+            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
+            
+            DisconnectNetworkOnly();
         }
         
         [InitializeOnLoadMethod] // ensures it stays wired up
@@ -174,6 +196,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // Expected during normal shutdown/domain reload
+                // catch so only genuine connection failures are logged
+            }
             catch (Exception e)
             {
                 if (_ws != null && _ws.State != WebSocketState.Aborted)
@@ -181,10 +208,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             finally
             {
-                // Only trigger Disconnect if the socket object still exists, and we aren't yet nulling it
-                if (_ws != null) 
+                // Since this runs on a background thread, don't touch EditorApplication directly.
+                // Instead, let a fire-and-forget task handle the cleanup safely.
+                if (_ws != null)
                 {
-                    EditorApplication.delayCall += Disconnect;
+                    await Task.Run(DisconnectNetworkOnly);
                 }
             }
         }
@@ -239,7 +267,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static void OnEditorQuitting()
         {
             EditorPrefs.SetBool(AutoConnectPref, false);
-            Disconnect();
+            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
+            DisconnectNetworkOnly();
         }
     }
 }
