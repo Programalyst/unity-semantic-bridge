@@ -22,35 +22,18 @@ namespace Gamenami.UnitySemanticBridge.Editor
         // Check if the actual websocket is open
         public static bool IsConnected => _ws is { State: WebSocketState.Open };
         
-        // Queue for received messages
-        private static readonly Queue<string> _pendingMessages = new();
-        private static readonly object _queueLock = new();
-        
-        [InitializeOnLoadMethod]
-        private static void RegisterUpdatePump()
-        {
-            EditorApplication.update -= DrainMessageQueue;
-            EditorApplication.update += DrainMessageQueue;
-        }
-
-        // If Editor is not focused, it may be throttled to 10 fps
-        // We don't flush the entire queue since too many messages may overwhelm Unity
-        private static void DrainMessageQueue()
-        {
-            string json = null;
-            lock (_queueLock)
-            {
-                if (_pendingMessages.Count > 0)
-                    json = _pendingMessages.Dequeue(); // Only pull 1 message on EditorApplication.update tick
-            }
-            if (json != null)
-                OnMessageReceived(json);
-        }
+        private static readonly MainThreadMessageQueue _messageQueue = new();
         
         // This runs on EVERY domain reload (Play Mode, Scripts, etc.)
         [InitializeOnLoadMethod]
         private static void OnEditorLoaded()
         {
+            // Start draining background-thread messages on the main thread via EditorApplication.update
+            _messageQueue.Start(OnMessageReceived);
+            
+            // Tell relay how to check socket state
+            BridgeRelay.IsServerConnected = () => IsConnected;
+            
             // Clean up / close open sockets BEFORE domain reload
             AssemblyReloadEvents.beforeAssemblyReload -= HandleDomainReloadCleanup;
             AssemblyReloadEvents.beforeAssemblyReload += HandleDomainReloadCleanup;
@@ -147,13 +130,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             
             DisconnectNetworkOnly();
         }
-        
-        [InitializeOnLoadMethod] // ensures it stays wired up
-        private static void SetupRelay()
-        {
-            // Tell relay how to check socket state
-            BridgeRelay.IsServerConnected = () => IsConnected;
-        }
 
         private static async Task ReceiveLoop()
         {
@@ -187,12 +163,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     
                     if (!string.IsNullOrEmpty(json))
                     {
-                        // If Editor is not in focus and interaction mode not set, delayCall will be throttled
-                        // this decouples message handling from delayCall scheduling
-                        lock (_queueLock)
-                        {
-                            _pendingMessages.Enqueue(json);
-                        }
+                        _messageQueue.Enqueue(json);
                     }
                 }
             }
