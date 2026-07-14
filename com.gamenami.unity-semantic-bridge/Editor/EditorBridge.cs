@@ -117,7 +117,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             // Unity is about to compile, unhook events on the main thread
             BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
             
-            DisconnectNetworkOnly(); // shut down the network socket
+            DisconnectNetworkOnly();
         }
 
         // Cleanup method that handles Unity events on the main thread
