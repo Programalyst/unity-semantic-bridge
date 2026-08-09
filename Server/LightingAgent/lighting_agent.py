@@ -1,10 +1,10 @@
-
 from typing import Annotated, TypedDict, Literal
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.runnables import RunnableConfig
+from langchain_core.language_models import BaseChatModel
 import textwrap
 from unity_bridge import fetch_screenshot_base64
 
@@ -25,6 +25,9 @@ class LightingDiagnosticAgent:
     """
     A LangGraph-based agent that iteratively diagnoses lighting issues in Unity.
     It will keep trying different diagnostic approaches until the issue is resolved or max iterations reached.
+
+    The LLM is supplied by the caller via RunnableConfig (config["configurable"]["llm"]),
+    so the agent reuses the user's connected LLM.
     """
 
     def __init__(self, unity_tools: dict, max_iterations: int = 5):
@@ -34,34 +37,98 @@ class LightingDiagnosticAgent:
             max_iterations: Maximum number of diagnostic iterations before giving up
         """
         
-        self.unity_tools = unity_tools
-        # add Gemini grounding with search
         self.unity_tools = {
             **unity_tools, 
             "search_unity_docs" : self.search_unity_docs
         }
         self.max_iterations = max_iterations
-        self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-
-        # Separate grounding-only model instance 
-        # Gemini API does not allow mixing google_search with function calling in one request.
-        self._grounded_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0).bind_tools(
-            [{"google_search": {}}]
-        )
 
         self.graph = self._build_graph()
     
-    # custom tool for grounded Gemini
-    async def search_unity_docs(self, query: str) -> str:
+    # ------------------------------------------------------------------
+    # RunnableConfig helper
+    # ------------------------------------------------------------------
+    def _get_llm(self, config: RunnableConfig | None) -> BaseChatModel:
+        """Extract the caller's LLM from RunnableConfig.
+
+        Expected shape: config["configurable"]["llm"] is a LangChain BaseChatModel.
+        This allows the sub-agent to reuse the user's connected LLM.
         """
-        Looks up current, accurate Unity/URP documentation or behavior via grounded search.
-        Use this for factual questions about Unity/URP features, settings, or rendering behavior
-        you're not fully certain about (e.g. render pipeline modes, light limits, API behavior).
+        if config is None:
+            raise ValueError(
+                "No LLM provided via RunnableConfig. "
+                "Pass the user's LLM as `config={'configurable': {'llm': your_chat_model}}` "
+                "when invoking the graph or diagnose_lighting_issue()."
+            )
+        # RunnableConfig is a dict-like with optional "configurable" key
+        configurable = None
+        if isinstance(config, dict):
+            configurable = config.get("configurable")
+        else:
+            # Fallback for RunnableConfig object
+            configurable = getattr(config, "configurable", None)
+            if configurable is None and isinstance(config, dict):
+                configurable = config.get("configurable")
+
+        if not isinstance(configurable, dict):
+            raise ValueError(
+                "Invalid RunnableConfig: expected config['configurable']['llm'] to be a BaseChatModel. "
+                f"Got configurable={configurable!r}"
+            )
+
+        llm = configurable.get("llm")
+        if llm is None:
+            raise ValueError(
+                "No LLM found in RunnableConfig. "
+                "Provide it as `{'configurable': {'llm': your_chat_model}}`."
+            )
+        return llm
+
+    # custom tool — uses the injected user's LLM
+    async def search_unity_docs(self, query: str, config: RunnableConfig | None = None) -> str:
+        """
+        Looks up current, accurate Unity/URP documentation or behavior.
+        Uses the user's LLM (via RunnableConfig) to answer factual questions about
+        Unity/URP features, settings, or rendering behavior.
         """
         logger.info(f"[search_unity_docs] Query: {query}")
-        response = await self._grounded_llm.ainvoke(query)
-        logger.info(f"[search_unity_docs] Result: {response.content[:300]}")
-        return response.content
+        try:
+            llm = self._get_llm(config)
+        except ValueError as e:
+            # If called outside a graph context without config, return a helpful message
+            # rather than crashing; the main diagnose loop will surface the error.
+            logger.warning(f"[search_unity_docs] No LLM in config: {e}")
+            return (
+                f"search_unity_docs unavailable: {e}. "
+                "The lighting agent requires the caller's LLM via RunnableConfig."
+            )
+
+        # Use the user's LLM directly to answer the docs question.
+        try:
+            # Prefer async invoke
+            if hasattr(llm, "ainvoke"):
+                response = await llm.ainvoke(query)
+            else:
+                response = llm.invoke(query)
+        except Exception as e:
+            logger.error(f"[search_unity_docs] LLM invoke failed: {e}")
+            return f"Error querying docs via LLM: {e}"
+
+        content = getattr(response, "content", response)
+        if isinstance(content, list):
+            # Handle content blocks (LLM returning list of parts)
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict) and "text" in item:
+                    parts.append(item["text"])
+                else:
+                    parts.append(str(item))
+            content = "\n".join(parts)
+        content_str = str(content) if not isinstance(content, str) else content
+        logger.info(f"[search_unity_docs] Result: {content_str[:300]}")
+        return content_str
 
     def _build_graph(self):
         """Build the LangGraph workflow"""
@@ -74,9 +141,10 @@ class LightingDiagnosticAgent:
 
         # Define edges
         workflow.set_entry_point("diagnose")
-        workflow.add_conditional_edges( # conditional check if there is no tool call
+        # Determine if the LLM requested a tool or returned a text response.
+        workflow.add_conditional_edges(
             "diagnose", 
-            tools_condition,
+            tools_condition, # # If the LLM returned tool calls, we route to tools
             {
                 "tools": "tools",
                 END: "check_resolution"
@@ -94,7 +162,7 @@ class LightingDiagnosticAgent:
 
         return workflow.compile()
 
-    def _diagnose_node(self, state: AgentState) -> AgentState:
+    def _diagnose_node(self, state: AgentState, config: RunnableConfig) -> AgentState:
         """Agent decides what diagnostic action to take next"""
         messages = state["messages"]
         iteration = state["iteration_count"]
@@ -104,15 +172,17 @@ class LightingDiagnosticAgent:
         for i, m in enumerate(messages):
             logger.info(f"  msg[{i}] type={type(m).__name__} content={m.content!r} tool_calls={getattr(m, 'tool_calls', None)}")
 
+        llm = self._get_llm(config)
+
         # Bind tools to LLM
-        llm_with_tools = self.llm.bind_tools(list(self.unity_tools.values()))
+        llm_with_tools = llm.bind_tools(list(self.unity_tools.values()))
 
         # Get response from LLM
         response = llm_with_tools.invoke(messages)
 
         return {"messages": [response]}
 
-    def _check_resolution_node(self, state: AgentState) -> AgentState:
+    def _check_resolution_node(self, state: AgentState, config: RunnableConfig) -> AgentState:
         """Check if the lighting issue has been resolved"""
         messages = state["messages"]
         iteration = state["iteration_count"] + 1
@@ -125,6 +195,8 @@ class LightingDiagnosticAgent:
         else:
             consecutive_errors = 0
 
+        llm = self._get_llm(config)
+
         # Ask LLM if issue is resolved based on diagnostic results
         check_prompt = """
         Based on the diagnostic information gathered so far, has the lighting issue been identified and resolved?
@@ -132,8 +204,8 @@ class LightingDiagnosticAgent:
         If not, respond with ONLY 'CONTINUE'.
         """
 
-        response = self.llm.invoke(messages + [HumanMessage(content=check_prompt)])
-        is_resolved = "RESOLVED" in response.content.upper()
+        response = llm.invoke(messages + [HumanMessage(content=check_prompt)])
+        is_resolved = "RESOLVED" in str(response.content).upper()
 
         logger.info(f"Resolution check: {'RESOLVED' if is_resolved else 'CONTINUE'} (consecutive_errors={consecutive_errors})")
 
@@ -164,13 +236,20 @@ class LightingDiagnosticAgent:
 
         return "continue"
 
-    async def diagnose_lighting_issue(self, instance_id: int, issue_description: str) -> str:
+    async def diagnose_lighting_issue(
+        self,
+        instance_id: int,
+        issue_description: str,
+        config: RunnableConfig | None = None,
+    ) -> str:
         """
         Main entry point to diagnose a lighting issue on a GameObject.
 
         Args:
             instance_id: Unity GameObject instance ID
             issue_description: Description of the lighting problem
+            config: RunnableConfig containing the user's LLM under
+                config["configurable"]["llm"] (a LangChain BaseChatModel).
 
         Returns:
             Final diagnostic report
@@ -227,7 +306,7 @@ class LightingDiagnosticAgent:
             "instance_id": instance_id
         }
 
-        # helper method to handle Gemini (langchain_google_genai) returning a list of content blocks instead of a string
+        # helper method to handle LLM returning a list of content blocks instead of a string
         def _content_to_str(content) -> str:
             if isinstance(content, str):
                 return content
@@ -242,7 +321,7 @@ class LightingDiagnosticAgent:
             return str(content)
 
         try:
-            final_state = await self.graph.ainvoke(initial_state)
+            final_state = await self.graph.ainvoke(initial_state, config=config)
 
             # Extract final report from messages
             report_parts = []

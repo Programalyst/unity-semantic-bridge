@@ -8,8 +8,8 @@ The `LightingDiagnosticAgent` is a specialized sub-agent that can autonomously i
 
 1. **See the scene** - Automatically captures a Scene View screenshot at the start of every diagnosis and includes it as visual context alongside the text description
 2. **Iteratively investigate** - Makes multiple tool calls to gather comprehensive diagnostic data
-3. **Reason about findings** - Uses Gemini to analyze results and decide next steps
-4. **Verify assumptions** - Uses grounded web search to check Unity/URP behavior it isn't certain about, rather than relying solely on parametric knowledge (which can be stale or wrong for engine-version-specific details)
+3. **Reason about findings** - Uses the injected LLM (via `RunnableConfig`) to analyze results and decide next steps
+4. **Verify assumptions** - Uses the injected LLM via `search_unity_docs` to check Unity/URP behavior it isn't certain about, rather than relying solely on parametric knowledge (which can be stale or wrong for engine-version-specific details)
 5. **Continue until resolved** - Keeps trying different approaches until the issue is identified, stops early after 2 consecutive tool errors (rather than burning through remaining iterations against a broken call), or max iterations is reached
 
 ## Architecture
@@ -54,7 +54,7 @@ The agent has access to:
 - `get_urp_pipeline_settings` - Check render pipeline configuration, including the active Rendering Path (Forward / Forward+ / Deferred) and any per-object light limits
 - `get_component_inspector_values` - Inspect renderer/material settings
 - `inspect_gameobject` - Get full GameObject details
-- `search_unity_docs` - Grounded web search for verifying Unity/URP behavior. Runs as its own isolated tool call (Gemini doesn't allow combining native search grounding with function calling in the same request), so this is backed by a separate grounded-only LLM instance rather than being bound directly alongside the tools above
+- `search_unity_docs` - LLM-backed lookup for Unity/URP behavior via the injected `RunnableConfig` LLM
 
 ## Example Diagnostic Flow
 
@@ -84,14 +84,15 @@ To add more specialized agents:
 ## Dependencies
 
 - `langgraph` - Agent orchestration framework
-- `langchain-google-genai` - Gemini integration
 - `langchain-core` - Core abstractions
 
 ## Environment Variables
 
-Add to `Server/.env`:
-```
-GOOGLE_API_KEY=your-api-key-here
-```
+No separate API key is required — the agent reuses the caller's LLM via `RunnableConfig` (`config["configurable"]["llm"]`) and the vision capability gate.
 
-The agent uses `gemini-2.5-flash` by default, with `temperature=0`.
+Injected LLM example (vision-capable):
+```python
+from langchain_anthropic import ChatAnthropic  # or ChatOpenAI, etc.
+llm = ChatAnthropic(model="claude-3-5-sonnet", temperature=0)
+await diagnose_lighting_issue(123, "too dark", config={"configurable": {"llm": llm}})
+```

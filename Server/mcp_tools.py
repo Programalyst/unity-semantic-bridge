@@ -1,7 +1,9 @@
 from unity_bridge import forward_to_unity, fetch_screenshot_base64
 from typing import Annotated
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
-from mcp.server.fastmcp import Image
+from langchain_core.runnables import RunnableConfig
+from mcp.server.fastmcp import Image, Context
+from capability_gate import check_vision_or_error
 import base64
 
 # Global reference to lighting agent (initialized after tools are registered)
@@ -11,11 +13,26 @@ def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
     @mcp.tool()
-    async def get_screenshot() -> Image:
+    async def get_screenshot(ctx: Context | None = None) -> Image:
         """
         Captures a screenshot of the current Unity Game view and returns it as an image.
         Useful for visually inspecting lighting, UI layout, or general scene appearance.
         """
+        # --- Vision gating: verify sampling profile supports image input ---
+        ctx_caps = None
+        if ctx is not None:
+            try:
+                sess = getattr(getattr(ctx, "request_context", None), "session", None) or getattr(ctx, "session", None)
+                if sess and getattr(sess, "client_params", None):
+                    ctx_caps = sess.client_params.capabilities
+            except Exception:
+                pass
+        err = check_vision_or_error("get_screenshot", ctx_caps)
+        if err:
+            # Return as text content; FastMCP will handle str even though annotation is Image
+            # Use explicit error string for text-only clients
+            return err  # type: ignore[return-value]
+
         b64 = await fetch_screenshot_base64()
         return Image(data=base64.b64decode(b64), format="jpeg")
     
@@ -266,7 +283,9 @@ def register_unity_tools(mcp):
     async def diagnose_lighting_issue(
         instance_id: Annotated[int, "The instance_id of the GameObject with lighting issues. Get this from 'get_scene_hierarchy'."],
         issue_description: Annotated[str, "Description of the lighting problem (e.g., 'object appears too dark', 'shadows not rendering', 'lights not affecting object')"],
-        max_iterations: Annotated[int, "Maximum diagnostic iterations before stopping (default 10)"] = 10
+        max_iterations: Annotated[int, "Maximum diagnostic iterations before stopping (default 10)"] = 10,
+        config: Annotated[RunnableConfig | None, "RunnableConfig containing the user's LLM under config['configurable']['llm'] (a LangChain BaseChatModel). The subagent reuses this LLM via the vision gate."] = None,
+        ctx: Context | None = None,
     ) -> str:
         """
         Launches an autonomous diagnostic agent that will iteratively investigate and diagnose lighting issues on a GameObject.
@@ -279,10 +298,26 @@ def register_unity_tools(mcp):
 
         Use this when you need deep, multistep lighting diagnostics rather than manual tool calls.
         Returns a comprehensive diagnostic report with findings and recommendations.
+
+        The subagent reuses the caller's LLM supplied via RunnableConfig (config["configurable"]["llm"]).
         """
         global _lighting_agent
 
-        # Initialize agent with Unity tools on first use
+        # --- Vision gating: verify sampling profile supports image input ---
+        # diagnose_lighting_issue captures a screenshot internally, so it is a vision tool
+        ctx_caps = None
+        if ctx is not None:
+            try:
+                sess = getattr(getattr(ctx, "request_context", None), "session", None) or getattr(ctx, "session", None)
+                if sess and getattr(sess, "client_params", None):
+                    ctx_caps = sess.client_params.capabilities
+            except Exception:
+                pass
+        err = check_vision_or_error("diagnose_lighting_issue", ctx_caps)
+        if err:
+            return err
+
+        # Initialize agent with Unity tools on first use (no LLM created here — supplied via RunnableConfig)
         if _lighting_agent is None:
             unity_tools = {
                 "get_lights_affecting_object": get_lights_affecting_object,
@@ -291,5 +326,8 @@ def register_unity_tools(mcp):
                 "inspect_gameobject": inspect_gameobject,
             }
             _lighting_agent = LightingDiagnosticAgent(unity_tools, max_iterations=max_iterations)
+        else:
+            # Respect the latest max_iterations if caller changed it between invocations
+            _lighting_agent.max_iterations = max_iterations
 
-        return await _lighting_agent.diagnose_lighting_issue(instance_id, issue_description)
+        return await _lighting_agent.diagnose_lighting_issue(instance_id, issue_description, config=config)

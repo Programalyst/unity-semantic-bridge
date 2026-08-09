@@ -17,7 +17,7 @@ namespace Gamenami.UnitySemanticBridge
         [Header("Actions")]
         [SerializeField] private List<string> agentActions = new List<string>();
         
-        private const float AGENT_INTERVAL = 3.0f; // Give Gemini time to "Think"
+        private const float AGENT_INTERVAL = 3.0f; // Give Agent time to "Think"
         private float _cooldown = 0f;
         
         private void OnEnable()

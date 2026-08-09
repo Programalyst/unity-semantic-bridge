@@ -3,7 +3,6 @@ import json
 import asyncio
 import uuid
 from state_manager import app_state
-from Runtime.image_analysis import gemini_image_analysis
 
 logger = logging.getLogger(__name__)
 # prevent 1002 protocol error due to Unity sending a large buffer (sceneJson+image) with a Continuation Frame 
@@ -82,17 +81,51 @@ async def handle_unity_message(payload_string):
 
                 #logger.info(f"Received Scene {len(str(scene_data))} chars + Image {len(str(image_data))} chars")
 
-                gemini_response = await gemini_image_analysis(
-                    agent_actions=actions_data,
-                    b64_image=image_data,
-                    scene_json=scene_data
-                ) 
+                # Vision gate for gameplay — uses same capability check as MCP vision tools
+                from capability_gate import supports_vision, get_client_capabilities
+                caps = get_client_capabilities()
+                if caps is not None and not supports_vision(caps):
+                    logger.warning("Gameplay vision gate blocked: client is text-only, skipping image analysis")
+                    return
 
-                # extract function calls
-                if gemini_response.function_calls:
-                # Gemini SDK's function_calls can be converted to dicts
-                    calls = [fc.to_json_dict() for fc in gemini_response.function_calls]
+                # Use injected LLM via RunnableConfig
+                from Runtime.image_analysis import analyze_gameplay_scene
+
+                # Resolve LLM config from app_state if available, otherwise try to get from global
+                gameplay_config = getattr(app_state, "gameplay_llm_config", None) or getattr(app_state, "llm_config", None)
+
+                try:
+                    response = await analyze_gameplay_scene(
+                        agent_actions=actions_data,
+                        b64_image=image_data,
+                        scene_json=scene_data,
+                        config=gameplay_config,
+                    )
+                except ValueError as ve:
+                    # Missing LLM via RunnableConfig
+                    logger.warning(f"Gameplay analysis skipped: {ve}")
+                    return
+                except RuntimeError as re:
+                    # Vision not supported or other runtime gate
+                    logger.warning(f"Gameplay analysis skipped: {re}")
+                    return
+
+                # Extract tool calls from AIMessage — routing is via msg_type, not python function names
+                calls = []
+                if response is not None:
+                    tool_calls = getattr(response, "tool_calls", None)
+                    if tool_calls:
+                        for tc in tool_calls:
+                            if isinstance(tc, dict):
+                                calls.append({"name": tc.get("name"), "args": tc.get("args", {})})
+                            else:
+                                calls.append({"name": getattr(tc, "name", None), "args": getattr(tc, "args", {})})
                 
+                # If no tool calls, nothing to send (agent may have returned text)
+                if not calls:
+                    logger.info(f"Gameplay analysis returned no tool calls: {getattr(response, 'content', response)}")
+                    return
+
                 payload = json.dumps({
                     "type": "function_call", 
                     "content": calls
@@ -102,4 +135,4 @@ async def handle_unity_message(payload_string):
             except json.JSONDecodeError:
                 logging.error("Failed to decode JSON from Unity.")
             except Exception as e:
-                logging.error(f"Error in payload handler: {e}")
+                logging.error(f"Error in payload handler: {e}", exc_info=True)

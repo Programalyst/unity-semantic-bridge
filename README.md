@@ -58,19 +58,14 @@ Also includes an experimental Unity Agent (runs from Unity) that can automate ga
 ## Sub Agents
 
 ### Lighting Subagent
-USB uses Gemini to power the Lighting subagent for diagnosing lighting issues. 
+Uses the connected client's LLM via `RunnableConfig` (`config["configurable"]["llm"]`) — no separate API key. See `LightingAgent/README.md` for injection. Vision-gated: requires a vision-capable client (image sampling support) for screenshot context.
 
 ### Gameplay Subagent
-USB uses Gemini to power the gameplay agent. Not ready for use yet. 
+Experimental; uses the same injected LLM + vision gate as the Lighting subagent (`Runtime/image_analysis.py` → `analyze_gameplay_scene`). Not ready for use yet.
 
 ### Environment Variables
 
-Add to `Server/.env`:
-```
-GOOGLE_API_KEY=your-api-key-here
-```
-
-Used by both the Gameplay Agent and the Lighting Diagnostic subagent's grounded search (verify against your actual `.env` — some setups use `GEMINI_API_KEY` instead, depending on SDK version).
+No separate API key is required for the bridge or subagents — they reuse the user's connected LLM via the vision capability gate. Optional `.env` vars are only needed if your injected LLM provider requires them.
 
 
 ## Known Limitations (for Agents using this tool to read)

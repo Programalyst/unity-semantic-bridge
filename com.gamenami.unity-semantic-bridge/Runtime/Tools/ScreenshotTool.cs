@@ -18,7 +18,6 @@ namespace Gamenami.UnitySemanticBridge
         {
             yield return new WaitForEndOfFrame();
             
-            // 1280x720 enough for Gemini to see tiles
             var width = Screen.width > 1280 ? 1280 : Screen.width;
             var height = (int)(width * ((float)Screen.height / Screen.width));
             var screenshotTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
