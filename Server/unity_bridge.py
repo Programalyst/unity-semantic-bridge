@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 # without an Initial Frame, or it might not set the "FIN" (Final) bit correctly
 processing_lock = asyncio.Lock() 
 
-async def forward_to_unity(payload: dict) -> str:
+async def send_to_unity(payload: dict) -> str:
     if not app_state.unity_ws:
         return "Error: Unity Editor is not connected to the bridge."
     
@@ -23,7 +23,7 @@ async def forward_to_unity(payload: dict) -> str:
         await app_state.unity_ws.send(json.dumps(payload))
         
         try:
-            result = await asyncio.wait_for(future, timeout=60.0)
+            result = await asyncio.wait_for(future, timeout=30.0)
             return str(result)
         except asyncio.TimeoutError:
             return "Error: Unity timed out responding to the request."

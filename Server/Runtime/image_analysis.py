@@ -10,6 +10,7 @@ import logging
 from typing import Optional, Any
 
 from langchain_core.runnables import RunnableConfig
+from core.llm_provider import get_llm_from_config
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -41,29 +42,6 @@ def click_screen_position(screenX: float, screenY: float, Intent: str) -> str:
 
 GAMEPLAY_TOOLS = [click_ui_button, click_screen_position]
 
-
-def _get_llm(config: RunnableConfig | None) -> BaseChatModel:
-    """Extract LLM from RunnableConfig, mirroring LightingAgent pattern."""
-    if config is None:
-        raise ValueError(
-            "No LLM provided via RunnableConfig. "
-            "Pass the user's LLM as `config={'configurable': {'llm': your_chat_model}}`."
-        )
-    configurable = None
-    if isinstance(config, dict):
-        configurable = config.get("configurable")
-    else:
-        configurable = getattr(config, "configurable", None)
-    if not isinstance(configurable, dict):
-        raise ValueError(
-            f"Invalid RunnableConfig: expected config['configurable']['llm'], got {configurable!r}"
-        )
-    llm = configurable.get("llm")
-    if llm is None:
-        raise ValueError("No LLM found in RunnableConfig at config['configurable']['llm'].")
-    return llm
-
-
 async def analyze_gameplay_scene(
     agent_actions: list[str],
     scene_json: Any,
@@ -86,7 +64,7 @@ async def analyze_gameplay_scene(
             "The gameplay agent's image analysis cannot run without image support."
         )
 
-    llm = _get_llm(config)
+    llm = get_llm_from_config(config)
 
     # Prepare semantic context
     semantic_context = json.dumps(scene_json, indent=2) if not isinstance(scene_json, str) else scene_json

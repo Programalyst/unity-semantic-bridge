@@ -4,7 +4,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_core.language_models import BaseChatModel
+from core.llm_provider import get_llm_from_config
 import textwrap
 from unity_bridge import fetch_screenshot_base64
 
@@ -44,45 +44,7 @@ class LightingDiagnosticAgent:
         self.max_iterations = max_iterations
 
         self.graph = self._build_graph()
-    
-    # ------------------------------------------------------------------
-    # RunnableConfig helper
-    # ------------------------------------------------------------------
-    def _get_llm(self, config: RunnableConfig | None) -> BaseChatModel:
-        """Extract the caller's LLM from RunnableConfig.
 
-        Expected shape: config["configurable"]["llm"] is a LangChain BaseChatModel.
-        This allows the sub-agent to reuse the user's connected LLM.
-        """
-        if config is None:
-            raise ValueError(
-                "No LLM provided via RunnableConfig. "
-                "Pass the user's LLM as `config={'configurable': {'llm': your_chat_model}}` "
-                "when invoking the graph or diagnose_lighting_issue()."
-            )
-        # RunnableConfig is a dict-like with optional "configurable" key
-        configurable = None
-        if isinstance(config, dict):
-            configurable = config.get("configurable")
-        else:
-            # Fallback for RunnableConfig object
-            configurable = getattr(config, "configurable", None)
-            if configurable is None and isinstance(config, dict):
-                configurable = config.get("configurable")
-
-        if not isinstance(configurable, dict):
-            raise ValueError(
-                "Invalid RunnableConfig: expected config['configurable']['llm'] to be a BaseChatModel. "
-                f"Got configurable={configurable!r}"
-            )
-
-        llm = configurable.get("llm")
-        if llm is None:
-            raise ValueError(
-                "No LLM found in RunnableConfig. "
-                "Provide it as `{'configurable': {'llm': your_chat_model}}`."
-            )
-        return llm
 
     # custom tool — uses the injected user's LLM
     async def search_unity_docs(self, query: str, config: RunnableConfig | None = None) -> str:
@@ -93,7 +55,7 @@ class LightingDiagnosticAgent:
         """
         logger.info(f"[search_unity_docs] Query: {query}")
         try:
-            llm = self._get_llm(config)
+            llm = get_llm_from_config(config)
         except ValueError as e:
             # If called outside a graph context without config, return a helpful message
             # rather than crashing; the main diagnose loop will surface the error.
@@ -172,7 +134,7 @@ class LightingDiagnosticAgent:
         for i, m in enumerate(messages):
             logger.info(f"  msg[{i}] type={type(m).__name__} content={m.content!r} tool_calls={getattr(m, 'tool_calls', None)}")
 
-        llm = self._get_llm(config)
+        llm = get_llm_from_config(config)
 
         # Bind tools to LLM
         llm_with_tools = llm.bind_tools(list(self.unity_tools.values()))
@@ -195,7 +157,7 @@ class LightingDiagnosticAgent:
         else:
             consecutive_errors = 0
 
-        llm = self._get_llm(config)
+        llm = get_llm_from_config(config)
 
         # Ask LLM if issue is resolved based on diagnostic results
         check_prompt = """

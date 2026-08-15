@@ -15,7 +15,7 @@ load_dotenv() # Load environment variables from .env file
 
 # --- CONFIG & STATE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-mcp = FastMCP("UnitySceneSubAgent")
+mcp = FastMCP("UnitySemanticBridge")
 register_unity_tools(mcp)
 
 # --- UPFRONT FEATURE-GATING: intercept client capabilities on initialize ---
