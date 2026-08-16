@@ -43,15 +43,4 @@ async def send_to_unity(payload: dict) -> str:
         if isinstance(data, str):
             return data
         return json.dumps(data) if isinstance(data, (dict, list)) else str(data)
-
-
-async def fetch_screenshot_base64() -> str:
-    """Returns raw base64 JPEG string from Unity's Scene view via HTTP."""
-    payload = {"action": "Get_Screenshot"}
-    result = await send_to_unity(payload)
-    if result.startswith("Error:"):
-        raise RuntimeError(result)
-    # send_to_unity already unwraps {"content": b64}
-    # But the raw base64 string itself may have been returned directly
-    # Detect JSON-wrapped error vs base64
-    return result
+    

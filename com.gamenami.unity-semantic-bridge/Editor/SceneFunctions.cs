@@ -14,17 +14,80 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         public static string GetScreenshot(JObject mcpMessage)
         {
+            var source = mcpMessage["source"]?.ToString() ?? "game";
             var jpgQuality = mcpMessage["jpgQuality"]?.Value<int>() ?? 50;
             var maxWidth = mcpMessage["maxWidth"]?.Value<int>() ?? 1280;
+            var focusId = mcpMessage["focusInstanceId"]?.ToObject<int?>();
 
-            if (Application.isPlaying)
-                return "Error: Screenshot capture in Play Mode is not yet supported via MCP.";
+            byte[] jpgBytes;
 
-            var jpgBytes = EditModeScreenshotTool.CaptureSceneViewJpg(jpgQuality, maxWidth);
-            if (jpgBytes == null)
-                return "Error: No active Scene View to capture. Make sure a Scene view window is open and focused.";
+            switch (source)
+            {
+                case "scene":
+                    if (focusId.HasValue)
+                    {
+                        var go = EditorUtility.InstanceIDToObject(focusId.Value) as GameObject;
+                        if (go == null)
+                            throw new BridgeToolException($"No GameObject found for instance_id {focusId.Value}.");
+
+                        var sv = SceneView.lastActiveSceneView;
+                        if (sv == null)
+                            return "Error: No active Scene View to capture. Make sure a Scene view window is open and focused.";
+
+                        var bounds = new Bounds(go.transform.position, Vector3.one);
+                        foreach (var r in go.GetComponentsInChildren<Renderer>(true)) bounds.Encapsulate(r.bounds);
+                        sv.Frame(bounds, true);
+                        sv.Repaint();
+                    }
+
+                    jpgBytes = EditModeScreenshotTool.CaptureSceneViewJpg(jpgQuality, maxWidth);
+                    if (jpgBytes == null)
+                        return "Error: No active Scene View to capture. Make sure a Scene view window is open and focused.";
+                    break;
+
+                case "game":
+                    jpgBytes = CaptureGameViewJpg(jpgQuality, maxWidth);
+                    if (jpgBytes == null)
+                        return "Error: No Camera tagged MainCamera found in the active scene.";
+                    break;
+
+                default:
+                    throw new BridgeToolException($"Unknown screenshot source '{source}'. Expected 'game' or 'scene'.");
+            }
 
             return Convert.ToBase64String(jpgBytes);
+        }
+
+        private static byte[] CaptureGameViewJpg(int jpgQuality, int maxWidth)
+        {
+            var cam = Camera.main;
+            if (cam == null) return null;
+
+            // Preserve aspect ratio, cap width the same way the existing Scene-view tool does
+            var height = Mathf.RoundToInt(maxWidth / (float)cam.pixelWidth * cam.pixelHeight);
+            var rt = RenderTexture.GetTemporary(maxWidth, height, 24);
+            var prevTarget = cam.targetTexture;
+            var prevActive = RenderTexture.active;
+
+            try
+            {
+                cam.targetTexture = rt;
+                RenderTexture.active = rt;
+                cam.Render();
+
+                var tex = new Texture2D(maxWidth, height, TextureFormat.RGB24, false);
+                tex.ReadPixels(new Rect(0, 0, maxWidth, height), 0, 0);
+                tex.Apply();
+                var bytes = tex.EncodeToJPG(jpgQuality);
+                UnityEngine.Object.DestroyImmediate(tex);
+                return bytes;
+            }
+            finally
+            {
+                cam.targetTexture = prevTarget;
+                RenderTexture.active = prevActive;
+                RenderTexture.ReleaseTemporary(rt);
+            }
         }
         
         public static string GetSceneHierarchy(JObject mcpMessage)

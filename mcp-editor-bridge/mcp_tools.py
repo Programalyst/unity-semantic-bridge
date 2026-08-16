@@ -1,5 +1,5 @@
 from unity_bridge import send_to_unity, fetch_screenshot_base64
-from typing import Annotated
+from typing import Annotated, Literal
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from langchain_core.runnables import RunnableConfig
 from mcp.server.fastmcp import Image, Context
@@ -13,13 +13,29 @@ def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
     @mcp.tool()
-    async def get_screenshot() -> Image:
+    async def get_screenshot(
+        source: Annotated[Literal["game", "scene"], "'game': renders from Camera.main — what the player sees in Play mode or a build. 'scene': renders from the Editor's Scene view camera — wherever it's currently aimed by the user."] = "game",
+        focus_instance_id: Annotated[int | None, "Scene view only. Frame the Scene camera on this GameObject before capturing, instead of using its current position. Ignored when source='game'."] = None,
+        jpg_quality: Annotated[int, "JPEG quality, 1-100."] = 50,
+        max_width: Annotated[int, "Max image width in pixels; height scales to preserve aspect ratio."] = 1280,
+    ) -> Image:
         """
-        Captures a screenshot of the current Unity Game view and returns it as an image.
-        Useful for visually inspecting lighting, UI layout, or general scene appearance.
+        Captures a screenshot and returns it as an image. Useful for visually inspecting
+        lighting, UI layout, or general scene appearance.
         """
-        b64 = await fetch_screenshot_base64()
-        return Image(data=base64.b64decode(b64), format="jpeg")
+        payload = {
+            "action": "Get_Screenshot",
+            "source": source,
+            "jpgQuality": jpg_quality,
+            "maxWidth": max_width,
+        }
+        if focus_instance_id is not None:
+            payload["focusInstanceId"] = focus_instance_id
+
+        result = await send_to_unity(payload)
+        if result.startswith("Error:"):
+            raise RuntimeError(result)
+        return Image(data=base64.b64decode(result), format="jpeg")
     
     @mcp.tool()
     async def get_scene_hierarchy(
@@ -151,8 +167,7 @@ def register_unity_tools(mcp):
         Returns one of:
         - PENDING: still compiling, poll again shortly.
         - SUCCESS: compiled cleanly.
-        - FAILED:\\n<file>:<line> <message> (one or more lines) — compilation errors from the most
-        recent write. The script was written to disk even though it failed to compile.
+        - FAILED:\\n<file>:<line> <message> (one or more lines) — compilation errors from the most recent write. The script was written to disk even though it failed to compile.
         """
         return await send_to_unity({"action": "GET_COMPILATION_STATUS"})
     
