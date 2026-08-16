@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.IO;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -54,9 +55,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 // Only include files DIRECTLY in this folder (not in subfolders)
-                if (System.IO.Path.GetDirectoryName(path)?.Replace("\\", "/") == folderPath)
+                if (Path.GetDirectoryName(path)?.Replace("\\", "/") == folderPath)
                 {
-                    filesInFolder.Add(System.IO.Path.GetFileName(path));
+                    filesInFolder.Add(Path.GetFileName(path));
                 }
             }
 
@@ -65,7 +66,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             sb.AppendLine($"--- Contents of {folderPath} ---");
     
             sb.AppendLine("\n[Directories]:");
-            foreach (var dir in subFolders) sb.AppendLine($"  > {System.IO.Path.GetFileName(dir)}/");
+            foreach (var dir in subFolders) sb.AppendLine($"  > {Path.GetFileName(dir)}/");
     
             sb.AppendLine("\n[Files]:");
             foreach (var file in filesInFolder) sb.AppendLine($"  - {file}");
@@ -77,33 +78,57 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             var path = mcpMessage["path"]?.ToString();
             var content = mcpMessage["content"]?.ToString();
-    
-            try 
+            var confirm = mcpMessage["confirm"]?.ToObject<bool>() ?? false;
+
+            if (string.IsNullOrEmpty(path))
+                return "Failed: 'path' is required.";
+
+            try
             {
-                // 1. Get absolute path
-                if (path != null)
+                var fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", path));
+                var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                if (!fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+                    return "Refused: path escapes project root.";
+
+                var exists = File.Exists(fullPath);
+                if (exists && !confirm)
                 {
-                    var fullPath = System.IO.Path.Combine(Application.dataPath, "..", path);
-                    var directory = System.IO.Path.GetDirectoryName(fullPath);
-
-                    // 2. Ensure directory exists (for new scripts)
-                    if (directory != null && !System.IO.Directory.Exists(directory))
-                        System.IO.Directory.CreateDirectory(directory);
-
-                    // 3. Write the file
-                    System.IO.File.WriteAllText(fullPath, content);
+                    var existing = File.ReadAllText(fullPath);
+                    return $"CONFIRM_REQUIRED: '{path}' already exists ({existing.Length} chars). " +
+                           $"Re-call with confirm=true to overwrite.";
                 }
 
-                // 4. THE CRITICAL STEP: Tell Unity to refresh
-                // This generates .meta files and triggers Domain Reload/Recompilation
+                var directory = Path.GetDirectoryName(fullPath);
+                if (directory != null && !Directory.Exists(directory))
+                    Directory.CreateDirectory(directory);
+
+                File.WriteAllText(fullPath, content);
+
+                var token = CompileWatcher.BeginWrite();
                 AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
                 AssetDatabase.Refresh();
 
-                return $"Successfully wrote {path}. Unity is now recompiling...";
+                return $"Wrote {path}. Compilation triggered (token={token}). " +
+                       $"Call get_compilation_status to get the result.";
             }
-            catch (Exception e) 
+            catch (Exception e)
             {
                 return $"Failed to write script: {e.Message}";
+            }
+        }
+
+        // Separate tool — the client calls this after a short delay / in a poll loop.
+        public static string GetCompilationStatus(JObject mcpMessage)
+        {
+            var (status, errors) = CompileWatcher.Poll();
+            switch (status)
+            {
+                case "compiling" or "pending":
+                    return "PENDING: still compiling, poll again shortly.";
+                case "failed":
+                    return $"FAILED:\n{errors}";
+                default:
+                    return "SUCCESS: compiled cleanly.";
             }
         }
     }

@@ -78,6 +78,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "WRITE_SCRIPT":
                         resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
+                    
+                    case "GET_COMPILATION_STATUS":
+                        resultText = AssetFunctions.GetCompilationStatus(mcpMessage);
+                        break;
 
                     case "GET_CONSOLE_LOGS":
                         resultText = SceneFunctions.GetConsoleLogs();

@@ -129,17 +129,43 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def write_unity_script(
         path: Annotated[str, "Path should be relative to Assets/ (e.g., 'Assets/Scripts/MyNewSensor.cs')."], 
-        content: str
+        content: Annotated[str, "Full C# source to write. Overwrites the entire file if it already exists."],
+        confirm: Annotated[bool, "Required to overwrite an existing file. Leave false on the first attempt: "
+                              "if the file already exists, the call returns CONFIRM_REQUIRED along with its "
+                              "current contents instead of writing, so you can review before retrying with "
+                              "confirm=true. Not needed when creating a new file."] = False
     ) -> str:
         """
-        Writes or overwrites a C# script in the Unity project.
-        Automatically triggers Unity recompilation.
+        Writes or overwrites a C# script in the Unity project and triggers recompilation.
+
+        Returns one of:
+        - CONFIRM_REQUIRED: ... — the file already exists; nothing was written. Review the returned
+        contents, then re-call with confirm=true if you want to overwrite it.
+        - Wrote {path}. Compilation triggered (token=...) — the write succeeded and Unity has started
+        recompiling. Compilation is asynchronous: call check_compilation_status afterward (polling
+        with a short delay if it reports PENDING) before assuming the script is error-free.
+        - Failed to write script: ... — the write itself failed (bad path, IO error, etc).
         """
         return await send_to_unity({
             "action": "WRITE_SCRIPT",
             "path": path,
-            "content": content
+            "content": content,
+            "confirm": confirm
         })
+
+    @mcp.tool()
+    async def get_compilation_status() -> str:
+        """
+        Returns a single non-blocking snapshot of Unity's current compilation state. Does not wait —
+        call this after write_unity_script and poll again if the result is PENDING.
+
+        Returns one of:
+        - PENDING: still compiling, poll again shortly.
+        - SUCCESS: compiled cleanly.
+        - FAILED:\\n<file>:<line> <message> (one or more lines) — compilation errors from the most
+        recent write. The script was written to disk even though it failed to compile.
+        """
+        return await send_to_unity({"action": "GET_COMPILATION_STATUS"})
     
     @mcp.tool()
     async def get_unity_console_logs() -> str:
