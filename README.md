@@ -11,14 +11,16 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 
 ## Features
 
-- More optimized scene heirarchy query tool for agents - more token efficient than official Unity CLI tool
+- Optimized scene heirarchy query and gameobject inspection tools with workflow hints for agents - more token efficient than official Unity CLI tool
 - In Editor connection status and reconnect. Not tied to Unity Licensing - Runs 100% local. No need to reauthenticate when token expires
 - In Editor MCP log so you can see what tools are called
+- Dedicated Lighting tools for URP projects
 
 ## Prerequesites
 
  - Unity 2022 LTS or Unity 6.3 (versions of Unity newer than 6.3 use change the InstanceIds to EntityIds - not tested for compatibility yet)
 - uv (https://docs.astral.sh/uv/getting-started/installation/)
+- LLM with vision capabiltiies - this MCP server will block usage with an agent/LLM that lacks vision capability
 
 ## Installation
 
