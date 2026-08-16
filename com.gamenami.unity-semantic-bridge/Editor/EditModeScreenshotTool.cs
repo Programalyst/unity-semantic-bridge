@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace Gamenami.UnitySemanticBridge.Editor
+namespace Gamenami.UnitySemanticBridge
 {
     public static class EditModeScreenshotTool
     {

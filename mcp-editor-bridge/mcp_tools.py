@@ -13,26 +13,11 @@ def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
     @mcp.tool()
-    async def get_screenshot(ctx: Context | None = None) -> Image:
+    async def get_screenshot() -> Image:
         """
         Captures a screenshot of the current Unity Game view and returns it as an image.
         Useful for visually inspecting lighting, UI layout, or general scene appearance.
         """
-        # --- Vision gating: verify sampling profile supports image input ---
-        ctx_caps = None
-        if ctx is not None:
-            try:
-                sess = getattr(getattr(ctx, "request_context", None), "session", None) or getattr(ctx, "session", None)
-                if sess and getattr(sess, "client_params", None):
-                    ctx_caps = sess.client_params.capabilities
-            except Exception:
-                pass
-        err = check_vision_or_error("get_screenshot", ctx_caps)
-        if err:
-            # Return as text content; FastMCP will handle str even though annotation is Image
-            # Use explicit error string for text-only clients
-            return err  # type: ignore[return-value]
-
         b64 = await fetch_screenshot_base64()
         return Image(data=base64.b64decode(b64), format="jpeg")
     
@@ -43,26 +28,30 @@ def register_unity_tools(mcp):
         include_layers: Annotated[bool, "If true, includes the layer (e.g. 'Default', 'UI') for each object. Omit if not needed to reduce output size."] = True,
         include_components: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling get_component_inspector_values."] = True,
         include_positions: Annotated[bool, "If true, includes world-space position for each object. Omit if not needed to reduce output size."] = True,
-        only_main_cam_visible: Annotated[bool, "If true, objects out of the main camera view will be culled."] = False
+        only_main_cam_visible: Annotated[bool, "If true, objects out of the main camera view will be culled."] = False,
+        root_instance_id: Annotated[int | None, "Optional instance_id to start traversal from instead of the scene root — e.g. a UI Canvas root, or any subtree found via a previous call. depth/max_nodes apply relative to this root. Get the id from a prior get_scene_hierarchy or get_gameobject_tree call."] = None
     ) -> str:
         """
         Returns the current Unity scene hierarchy as a list of GameObjects with their paths and instance_ids.
         Note: Scene hierarchy subtree traversal will always be pruned if a SkinnedMeshRenderer is encountered. Use get_gameobject_tree to inspect a character's rig
     
-        This is usually the FIRST tool to call — use it to discover GameObjects and their instance_ids,
-        which are required by inspect_gameobject and get_component_inspector_values.
+        This is usually the FIRST tool to call — use it to discover GameObjects and their instance_ids, which are required by inspect_gameobject and get_component_inspector_values.
         
         Tip: set includeComponents=True to confirm a component exists on a GameObject before inspecting it.
+        Tip: for a specific known subtree (e.g. a UI Canvas), pass its instance_id as root_instance_id instead of raising max_nodes to reach it from the scene root.
         """
-        return await send_to_unity({
+        payload = {
             "action": "Get_SceneHierarchy",
             "depth": depth,
             "maxNodes": max_nodes,
             "includeLayers": include_layers,
             "includeComponents": include_components,
             "includePositions": include_positions,
-            "onlyMainCamVisible": only_main_cam_visible
-        })
+            "onlyMainCamVisible": only_main_cam_visible,
+            # If root_instance_id is None, Unity will receive: "rootInstanceId": null
+            "rootInstanceId": root_instance_id
+        }
+        return await send_to_unity(payload)
     
     @mcp.tool()
     async def get_gameobject_tree(

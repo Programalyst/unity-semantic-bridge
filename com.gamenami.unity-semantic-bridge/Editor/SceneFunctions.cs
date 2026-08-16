@@ -37,7 +37,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 IncludeComponents = mcpMessage["includeComponents"]?.Value<bool>() ?? true,
                 IncludePositions = mcpMessage["includePositions"]?.Value<bool>() ?? true,
                 OnlyMainCamVisible = mcpMessage["onlyMainCamVisible"]?.Value<bool>() ?? true,
-                IgnoreDisabled = mcpMessage["ignoreDisabled"]?.Value<bool>() ?? true
+                IgnoreDisabled = mcpMessage["ignoreDisabled"]?.Value<bool>() ?? true,
+                // direct cast to nullable int
+                RootInstanceId = mcpMessage["rootInstanceId"]?.Value<int?>() 
             };
             
             var sceneData = SemanticSceneGenerator.Generate(sceneGenerateConfig);

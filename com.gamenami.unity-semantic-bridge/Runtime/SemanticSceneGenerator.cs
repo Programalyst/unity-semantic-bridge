@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 
 namespace Gamenami.UnitySemanticBridge
 {
@@ -14,6 +15,7 @@ namespace Gamenami.UnitySemanticBridge
         public bool IncludePositions = false; // include transform.position
         public bool OnlyMainCamVisible = false; // cull objects out of the main camera's view
         public bool IgnoreDisabled = false; // ignore disabled objects in Unity
+        public int? RootInstanceId;
     }
 
     public static class SemanticSceneGenerator
@@ -33,10 +35,25 @@ namespace Gamenami.UnitySemanticBridge
             }
 
             var mainCamera = Camera.main;
-            var rootGameObjects = activeScene.GetRootGameObjects();
-            foreach (var go in rootGameObjects)
+
+            // LLM opted to specify a root object to start the traversal from
+            if (config.RootInstanceId.HasValue)
             {
-                AddNodesRecursively(go, scene, "", 0, config, mainCamera);
+                var rootId = config.RootInstanceId.Value;
+                var rootObj = EditorUtility.InstanceIDToObject(rootId) as GameObject;
+
+                if (rootObj == null) // rootObj can still be null if instanceId is invalid
+                    throw new BridgeToolException($"No GameObject found for instance_id {rootId}.");
+                
+                AddNodesRecursively(rootObj, scene, "", config.MaxDepth, config, mainCamera);
+            }
+            else // traverse from all scene root objects
+            {
+                var rootGameObjects = activeScene.GetRootGameObjects();
+                foreach (var go in rootGameObjects)
+                {
+                    AddNodesRecursively(go, scene, "", 0, config, mainCamera);
+                }
             }
             
             if (scene.truncated)
