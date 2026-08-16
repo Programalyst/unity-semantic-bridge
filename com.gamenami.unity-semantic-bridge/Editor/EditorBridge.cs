@@ -1,245 +1,253 @@
 using System;
-using System.Collections.Generic;
-using System.Net.WebSockets;
+using System.IO;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
-using Newtonsoft.Json.Linq;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class EditorBridge
     {
-        private const string ServerUrl = "ws://127.0.0.1:8765";
+        private const int Port = 1073;
+        private static readonly string Prefix = $"http://127.0.0.1:{Port}/";
         private const string AutoConnectPref = "UnitySemanticBridge_AutoConnect";
-        
-        private static ClientWebSocket _ws;
-        private static CancellationTokenSource _cts;
 
-        // Check if the actual websocket is open
-        public static bool IsConnected => _ws is { State: WebSocketState.Open };
-        
+        private static HttpListener _listener;
+        private static CancellationTokenSource _cts;
+        private static Task _acceptLoop;
+
+        public static bool IsConnected => _listener != null && _listener.IsListening;
+        public static int ListeningPort => Port;
+
         private static readonly MainThreadMessageQueue _messageQueue = new();
-        
-        // This runs on EVERY domain reload (Play Mode, Scripts, etc.)
+
         [InitializeOnLoadMethod]
         private static void OnEditorLoaded()
         {
-            // Start draining background-thread messages on the main thread via EditorApplication.update
             _messageQueue.Start(OnMessageReceived);
-            
-            // Tell relay how to check socket state
+
             BridgeRelay.IsServerConnected = () => IsConnected;
-            
-            // Clean up / close open sockets BEFORE domain reload
+
             AssemblyReloadEvents.beforeAssemblyReload -= HandleDomainReloadCleanup;
             AssemblyReloadEvents.beforeAssemblyReload += HandleDomainReloadCleanup;
-            
-            // Clean up on complete Editor quit
+
             EditorApplication.quitting -= OnEditorQuitting;
             EditorApplication.quitting += OnEditorQuitting;
-            
-            // only autoConnect if manually connected previously
-            var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref);
+
+            var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref, false);
             if (!shouldAutoConnect || IsConnected) return;
-            
-            Debug.Log("<color=cyan>[Bridge]</color> Bridge ReInitializing...");
-            EditorApplication.delayCall += () => 
+
+            Debug.Log("<color=cyan>[Bridge]</color> Bridge ReInitializing (HTTP)...");
+            EditorApplication.delayCall += () =>
             {
-                if (!IsConnected) 
-                    _ = Connect();
+                if (!IsConnected)
+                    StartListener();
             };
         }
 
         public static void ManualConnect()
         {
             EditorPrefs.SetBool(AutoConnectPref, true);
-            _ = Connect();
+            StartListener();
         }
 
-        private static async Task Connect()
+        public static void ManualDisconnect()
+        {
+            EditorPrefs.SetBool(AutoConnectPref, false);
+            StopListener();
+        }
+
+        private static void StartListener()
         {
             if (IsConnected) return;
-            
-            DisconnectNetworkOnly(); // Clean up any old connection attempts
+            StopListener(); // clean any half-open state
 
-            _ws = new ClientWebSocket();
             _cts = new CancellationTokenSource();
-
+            _listener = new HttpListener();
+            _listener.Prefixes.Add(Prefix);
             try
             {
-                await _ws.ConnectAsync(new Uri(ServerUrl), _cts.Token);
-                
-                _ = ReceiveLoop(); // Start the background listening loop
-
-                // Link existing Runtime Relay events
-                BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
-                BridgeRelay.OnRequestSendToServer += RuntimeAgentHandler.HandleRequest;
-
-                Debug.Log($"<color=lime>[Bridge]</color> Connected to USB Agent Server on {ServerUrl}");
+                _listener.Start();
             }
             catch (Exception e)
             {
-                Debug.LogError($"<color=red>[Bridge]</color> Connection failed: {e.Message}");
+                Debug.LogError($"<color=red>[Bridge]</color> HTTP listener failed to start on {Prefix}: {e.Message}");
+                StopListener();
+                return;
             }
+
+            Debug.Log($"<color=lime>[Bridge]</color> HTTP listener started on {Prefix} (POST /mcp, GET /health)");
+            _acceptLoop = Task.Run(() => AcceptLoopAsync(_cts.Token));
         }
 
-        // Runs on background thread due to finally block
-        private static void DisconnectNetworkOnly()
+        private static void StopListener()
         {
-            // Cancel first so any in-flight ReceiveAsync exits via OperationCanceledException
-            // rather than racing against Dispose() and throwing ObjectDisposedException instead.
-            if (_cts != null)
+            try { _cts?.Cancel(); } catch { }
+            try
             {
-                _cts.Cancel();
+                if (_listener != null)
+                {
+                    _listener.Stop();
+                    _listener.Close();
+                }
             }
-
-            if (_ws != null)
+            catch (Exception e)
             {
-                // Use CancellationToken.None here because we want the close 
-                // to attempt to fire even if our main _cts is already cancelled
-                if (_ws.State == WebSocketState.Open)
-                    _ = _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-
-                _ws.Dispose();
-                _ws = null;
+                Debug.LogWarning($"[Bridge] Error stopping listener: {e.Message}");
             }
-
+            _listener = null;
             _cts?.Dispose();
             _cts = null;
         }
 
         private static void HandleDomainReloadCleanup()
         {
-            // Unity is about to compile, unhook events on the main thread
-            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
-            
-            DisconnectNetworkOnly();
-        }
-
-        // Cleanup method that handles Unity events on the main thread
-        public static void ManualDisconnect()
-        {
-            EditorPrefs.SetBool(AutoConnectPref, false);
-    
-            // Unhook Unity events because ManualDisconnect is called from the Main Thread
-            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
-            
-            DisconnectNetworkOnly();
-        }
-
-        private static async Task ReceiveLoop()
-        {
-            var buffer = new byte[1024 * 1024]; // 1MB buffer for scene data
-
-            try
-            {
-                while (IsConnected)
-                {
-                    using var ms = new System.IO.MemoryStream();
-                    WebSocketReceiveResult result;
-                    // Loop until we have the FULL message
-                    do
-                    {
-                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
-                
-                        if (result.MessageType == WebSocketMessageType.Close)
-                        {
-                            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-                            return;
-                        }
-
-                        ms.Write(buffer, 0, result.Count);
-                    } 
-                    while (!result.EndOfMessage);
-                    
-                    // Now we have the complete string
-                    ms.Seek(0, System.IO.SeekOrigin.Begin);
-                    using var reader = new System.IO.StreamReader(ms, Encoding.UTF8);
-                    var json = await reader.ReadToEndAsync();
-                    
-                    if (!string.IsNullOrEmpty(json))
-                    {
-                        _messageQueue.Enqueue(json);
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected during normal shutdown/domain reload
-                // catch so only genuine connection failures are logged
-            }
-            catch (Exception e)
-            {
-                if (_ws != null && _ws.State != WebSocketState.Aborted)
-                    Debug.LogWarning($"<color=orange>[Bridge]</color> Connection lost: {e.Message}");
-            }
-            finally
-            {
-                // Since this runs on a background thread, don't touch EditorApplication directly.
-                // Instead, let a fire-and-forget task handle the cleanup safely.
-                if (_ws != null)
-                {
-                    await Task.Run(DisconnectNetworkOnly);
-                }
-            }
-        }
-
-        private static void OnMessageReceived(string json)
-        {
-            var message = JsonConvert.DeserializeObject<dynamic>(json);
-            if (message.type == "function_call")
-            {
-                foreach (var call in message.content)
-                {
-                    RuntimeAgentHandler.HandleFunctionCall(call);
-                }
-            }
-            else if (message.action != null) // all MCP messages have an action field
-            {
-                //Debug.Log($"[Bridge] Raw JSON {json}");
-                McpMessageHandler.HandleMcpMessage(message);
-            }
-            else 
-            {
-                Debug.LogWarning($"[Bridge] Unknown response type: {message.type}");
-            }
-        }
-        
-        public static async Task SendToAgent(object content, string messageType, string requestId = null)
-        {
-            try
-            {
-                if (!IsConnected)
-                    return;
-                
-                var response = new JObject
-                {
-                    ["type"] = messageType,
-                    ["content"] = content as string ?? JToken.FromObject(content) // if content is string, do nothing, else convert to nested JSON
-                };
-
-                if (requestId != null)
-                    response["request_id"] = requestId;
-                
-                var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
-                await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
-
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[Bridge] Send failed: {e.Message}");
-            }
+            StopListener();
         }
 
         private static void OnEditorQuitting()
         {
             EditorPrefs.SetBool(AutoConnectPref, false);
-            BridgeRelay.OnRequestSendToServer -= RuntimeAgentHandler.HandleRequest;
-            DisconnectNetworkOnly();
+            StopListener();
+        }
+
+        private static async Task AcceptLoopAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested && _listener != null && _listener.IsListening)
+            {
+                HttpListenerContext ctx = null;
+                try
+                {
+                    ctx = await _listener.GetContextAsync();
+                }
+                catch (HttpListenerException) { break; }
+                catch (ObjectDisposedException) { break; }
+                catch (Exception e)
+                {
+                    if (!token.IsCancellationRequested)
+                        Debug.LogWarning($"[Bridge] Accept error: {e.Message}");
+                    break;
+                }
+
+                // Fire-and-forget per-request handler so one slow MCP call doesn't block /health
+                _ = Task.Run(() => HandleContextAsync(ctx), token);
+            }
+        }
+
+        private static async Task HandleContextAsync(HttpListenerContext ctx)
+        {
+            var req = ctx.Request;
+            var resp = ctx.Response;
+            try
+            {
+                // Health check — no main-thread dispatch needed
+                if (req.HttpMethod == "GET" && req.Url.AbsolutePath == "/health")
+                {
+                    var body = Encoding.UTF8.GetBytes("{\"status\":\"ok\"}");
+                    resp.StatusCode = 200;
+                    resp.ContentType = "application/json";
+                    resp.ContentLength64 = body.Length;
+                    await resp.OutputStream.WriteAsync(body, 0, body.Length);
+                    return;
+                }
+
+                if (req.HttpMethod != "POST" || req.Url.AbsolutePath != "/mcp")
+                {
+                    resp.StatusCode = 404;
+                    var msg = Encoding.UTF8.GetBytes("{\"error\":\"not found. Use POST /mcp or GET /health\"}");
+                    resp.ContentType = "application/json";
+                    resp.ContentLength64 = msg.Length;
+                    await resp.OutputStream.WriteAsync(msg, 0, msg.Length);
+                    return;
+                }
+
+                string json;
+                using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
+                    json = await reader.ReadToEndAsync();
+
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    resp.StatusCode = 400;
+                    var msg = Encoding.UTF8.GetBytes("{\"error\":\"empty body\"}");
+                    resp.ContentType = "application/json";
+                    resp.ContentLength64 = msg.Length;
+                    await resp.OutputStream.WriteAsync(msg, 0, msg.Length);
+                    return;
+                }
+
+                // Dispatch to main thread and await result
+                var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _messageQueue.Enqueue(json, tcs);
+
+                // Wait for main-thread handler (30s matches Python timeout; screenshot may need longer)
+                var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(60)));
+                if (completed != tcs.Task)
+                {
+                    resp.StatusCode = 504;
+                    var timeout = Encoding.UTF8.GetBytes("{\"error\":\"Unity timed out processing the request.\"}");
+                    resp.ContentType = "application/json";
+                    resp.ContentLength64 = timeout.Length;
+                    await resp.OutputStream.WriteAsync(timeout, 0, timeout.Length);
+                    return;
+                }
+
+                var resultText = await tcs.Task;
+                var payload = new JObject { ["content"] = resultText };
+                var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(payload));
+                resp.StatusCode = 200;
+                resp.ContentType = "application/json";
+                resp.ContentLength64 = bytes.Length;
+                await resp.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[Bridge] HandleContext error: {e}");
+                try
+                {
+                    resp.StatusCode = 500;
+                    var err = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { error = e.Message }));
+                    resp.ContentType = "application/json";
+                    resp.ContentLength64 = err.Length;
+                    await resp.OutputStream.WriteAsync(err, 0, err.Length);
+                }
+                catch { }
+            }
+            finally
+            {
+                try { resp.OutputStream.Close(); } catch { }
+                resp.Close();
+            }
+        }
+
+        // Called on main thread via MainThreadMessageQueue.Drain
+        private static void OnMessageReceived(MainThreadMessageQueue.QueuedMessage queued)
+        {
+            JObject message;
+            try
+            {
+                message = JObject.Parse(queued.Json);
+            }
+            catch (Exception e)
+            {
+                queued.Completion.TrySetResult($"Error: Invalid JSON: {e.Message}");
+                return;
+            }
+
+            // Only MCP action messages are expected; gameplay function_call path is removed
+            if (message["action"] != null)
+            {
+                McpMessageHandler.HandleMcpMessage(message, queued.Completion);
+            }
+            else
+            {
+                Debug.LogWarning($"[Bridge] Unknown message without action: {queued.Json.Substring(0, Math.Min(200, queued.Json.Length))}");
+                queued.Completion.TrySetResult("Error: Unknown message type — expected 'action' field.");
+            }
         }
     }
 }

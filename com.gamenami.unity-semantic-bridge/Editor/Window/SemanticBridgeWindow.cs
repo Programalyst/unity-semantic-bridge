@@ -1,19 +1,12 @@
 using System.Collections.Generic;
-using Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.SceneManagement; // Don't use Editor scene management so it works during runtime
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
     public class SemanticBridgeWindow : EditorWindow 
     {
         public static SemanticBridgeWindow Instance { get; private set; }
-        
-        private int _tabSelection = 0;
-        private readonly string[] _tabLabels = { "Editor Mode", "Gameplay Mode" };
-        
-        private SemanticSceneConfigSo _playModeConfig;
         
         private Vector2 _logScroll;
         private readonly List<string> _agentHistory = new List<string>();
@@ -22,51 +15,26 @@ namespace Gamenami.UnitySemanticBridge.Editor
         public static void ShowWindow() 
         {
             var window = GetWindow<SemanticBridgeWindow>("Unity Semantic Bridge");
-            window.minSize = new Vector2(600, 500); 
+            window.minSize = new Vector2(600, 400); 
         }
         
         private void OnEnable()
         {
-            Instance = this; // Register this window instance
+            Instance = this;
             BridgeRelay.OnAgentMessage -= AddAgentMessage;
             BridgeRelay.OnAgentMessage += AddAgentMessage;
-            LoadConfigs();
         }
         
         private void OnDisable()
         {
-            if (Instance == this) Instance = null; // Unregister
-        }
-        
-        private void LoadConfigs()
-        {
-            var guids = AssetDatabase.FindAssets("t:SemanticSceneConfigSo");
-            foreach (var guid in guids)
-            {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                var asset = AssetDatabase.LoadAssetAtPath<SemanticSceneConfigSo>(path);
-                if (path.Contains("PlayMode")) _playModeConfig = asset;
-            }
+            if (Instance == this) Instance = null;
         }
         
         private void OnGUI() 
         {
             DrawConnectionHeader();
-            
-            // Tab selection
-            _tabSelection = GUILayout.Toolbar(_tabSelection, _tabLabels, GUILayout.Height(30));
-
             EditorGUILayout.Space(10);
-            
-            switch (_tabSelection)
-            {
-                case 0:
-                    DrawEditorTab();
-                    break;
-                case 1:
-                    DrawGameplayTab();
-                    break;
-            }
+            DrawEditorContent();
         }
         
         private void DrawConnectionHeader()
@@ -78,50 +46,30 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 fontStyle = FontStyle.Bold 
             };
             
-            GUILayout.Label(isConnected ? "● Connected" : "○ Offline", statusStyle);
+            GUILayout.Label(isConnected ? $"● Listening on :{EditorBridge.ListeningPort}" : "○ Offline", statusStyle);
             GUILayout.FlexibleSpace();
 
             if (!isConnected)
             {
-                if (GUILayout.Button("Connect to USB MCP Server")) EditorBridge.ManualConnect();
+                if (GUILayout.Button("Start HTTP Listener")) EditorBridge.ManualConnect();
             }
             else
             {
-                if (GUILayout.Button("Disconnect")) EditorBridge.ManualDisconnect();
+                if (GUILayout.Button("Stop Listener")) EditorBridge.ManualDisconnect();
             }
             EditorGUILayout.EndHorizontal();
         }
         
-        private void DrawEditorTab()
+        private void DrawEditorContent()
         {
             var isConnected = EditorBridge.IsConnected;
             if (isConnected) 
-                EditorGUILayout.HelpBox("Ready to receive MCP commands.", MessageType.Info);
+                EditorGUILayout.HelpBox($"HTTP bridge active at http://127.0.0.1:{EditorBridge.ListeningPort}/mcp — ready to receive MCP commands.", MessageType.Info);
             else
-                EditorGUILayout.HelpBox("Connect to MCP server to start receiving MCP commands.", MessageType.Info);
+                EditorGUILayout.HelpBox("Start the HTTP listener to receive MCP commands.", MessageType.Info);
             
             DrawLogArea("MCP Activity Log", _agentHistory);
         }
-        
-        private void DrawGameplayTab()
-        {
-            DrawConfigArea();
-            // Re-use your existing Gameplay Agent UI logic
-            EditorGUILayout.BeginHorizontal();
-            {
-                // Column 1: Controls
-                EditorGUILayout.BeginVertical(GUILayout.Width(200));
-                DrawAgentControls();
-                EditorGUILayout.EndVertical();
-
-                // Column 2: Live Intent Log
-                EditorGUILayout.BeginVertical();
-                DrawLogArea("Agent Intent Log", _agentHistory);
-                EditorGUILayout.EndVertical();
-            }
-            EditorGUILayout.EndHorizontal();
-        }
-
         
         private void DrawLogArea(string areaTitle, IEnumerable<string> logs)
         {
@@ -137,86 +85,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private void AddAgentMessage(string text)
         {
             _agentHistory.Add(text);
-            Repaint(); // redraw UI
-        }
-        
-        private void DrawConfigArea()
-        {
-            GUILayout.Label("Semantic Scene Generation Config", EditorStyles.boldLabel);
-            
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            _playModeConfig = (SemanticSceneConfigSo)EditorGUILayout.ObjectField("PlayMode Config Asset", _playModeConfig, 
-                typeof(SemanticSceneConfigSo), false);
-            if (_playModeConfig)
-            {
-                DrawConfigColumn("Play Mode Settings", _playModeConfig);
-            }
-            EditorGUILayout.EndVertical();
-        }
-
-        private static void DrawConfigColumn(string label, SemanticSceneConfigSo config)
-        {
-            GUILayout.Label(label, EditorStyles.miniBoldLabel);
-            
-            var layerNames = new string[32];
-            for (var i = 0; i < 32; i++) layerNames[i] = LayerMask.LayerToName(i);
-            
-            EditorGUI.BeginChangeCheck();
-    
-            config.maxDepth = EditorGUILayout.IntField("Max Hierarchy Depth", config.maxDepth);
-            config.includeComponents = EditorGUILayout.Toggle("Include Components", config.includeComponents);
-            config.includeTransforms = EditorGUILayout.Toggle("Include Transforms", config.includeTransforms);
-            config.excludeLayers = EditorGUILayout.MaskField("Exclude Layers", config.excludeLayers, layerNames);
-            config.includeLayerStats = EditorGUILayout.Toggle("Include Statistics", config.includeLayerStats);
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                EditorUtility.SetDirty(config);
-                // AssetDatabase.SaveAssets() is heavy, usually SetDirty is enough until Unity auto-saves
-            }
-        }
-
-        private static void DrawAgentControls()
-        {
-            bool isConnected = EditorBridge.IsConnected;
-            bool isPlayMode = EditorApplication.isPlaying;
-            bool agentInScene = GameplayAgent.Instance;
-    
-            // Determine if we are allowed to click anything
-            bool canInteract = isConnected && isPlayMode && agentInScene;
-
-            EditorGUI.BeginDisabledGroup(!canInteract);
-            {
-                EditorGUILayout.Space(5);
-
-                // Check the actual running state from Gameplay agent
-                bool isRunning = agentInScene && GameplayAgent.Instance.IsRunning; 
-
-                if (!isRunning)
-                {
-                    GUI.backgroundColor = Color.cyan; // Subtle highlight for the start button
-                    if (GUILayout.Button("🚀 Start Agent Loop", GUILayout.Height(30)))
-                    {
-                        GameplayAgent.Instance.StartAgentLoop();
-                    }
-                }
-                else
-                {
-                    GUI.backgroundColor = new Color(1f, 0.4f, 0.4f); // Subtle red for stop
-                    if (GUILayout.Button("🛑 Stop Agent Loop", GUILayout.Height(30)))
-                    {
-                        GameplayAgent.Instance.StopAgentLoop();
-                    }
-                }
-                GUI.backgroundColor = Color.white; // Reset color for other UI elements
-                EditorGUILayout.Space(5);
-            }
-            EditorGUI.EndDisabledGroup();
-            
-            // Contextual Feedback
-            if (!isConnected) EditorGUILayout.HelpBox("Connect to Server first.", MessageType.None);
-            if (!isPlayMode) EditorGUILayout.HelpBox("Enter Play Mode to start.", MessageType.None);
-            if (!agentInScene) EditorGUILayout.HelpBox("Add GameplayAgent to scene.", MessageType.Warning);
+            Repaint();
         }
     }
 }

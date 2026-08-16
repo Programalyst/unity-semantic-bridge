@@ -1,22 +1,28 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEditor;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {
     /// <summary>
-    /// Thread-safe queue for messages received on a background thread (e.g. websocket receive loop)
-    /// that need to be processed on Unity's main thread. Drains one message per EditorApplication.update
-    /// tick, since EditorApplication.update keeps running (even if throttled) when the Editor loses focus,
-    /// unlike EditorApplication.delayCall which can stall for extended periods when unfocused.
+    /// Thread-safe queue for HTTP requests received on background threads
+    /// that need to be processed on Unity's main thread. Drains one message
+    /// per EditorApplication.update tick.
     /// </summary>
     public class MainThreadMessageQueue
     {
-        private readonly Queue<string> _pending = new();
-        private readonly object _lock = new();
-        private Action<string> _onMessage;
+        public class QueuedMessage
+        {
+            public string Json;
+            public TaskCompletionSource<string> Completion;
+        }
 
-        public void Start(Action<string> onMessage)
+        private readonly Queue<QueuedMessage> _pending = new();
+        private readonly object _lock = new();
+        private Action<QueuedMessage> _onMessage;
+
+        public void Start(Action<QueuedMessage> onMessage)
         {
             _onMessage = onMessage;
             EditorApplication.update -= Drain;
@@ -28,20 +34,18 @@ namespace Gamenami.UnitySemanticBridge.Editor
             EditorApplication.update -= Drain;
         }
 
-        /// <summary>Thread-safe enqueue — safe to call from a background thread.</summary>
-        public void Enqueue(string message)
+        /// <summary>Thread-safe enqueue — safe to call from HTTP listener thread.</summary>
+        public void Enqueue(string json, TaskCompletionSource<string> completion)
         {
             lock (_lock)
             {
-                _pending.Enqueue(message);
+                _pending.Enqueue(new QueuedMessage { Json = json, Completion = completion });
             }
         }
 
-        // Only pull 1 message per tick — avoids overwhelming Unity by flushing
-        // a large backlog all at once after a period of throttling.
         private void Drain()
         {
-            string message = null;
+            QueuedMessage message = null;
             lock (_lock)
             {
                 if (_pending.Count > 0)

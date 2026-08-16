@@ -8,35 +8,22 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class McpMessageHandler
     {
-        private static volatile bool _isProcessing; // Volatile so all threads see the latest value
-        public static async Task HandleMcpMessage(JObject mcpMessage)
+
+        public static async void HandleMcpMessage(JObject mcpMessage, TaskCompletionSource<string> completion)
         {
             var action = mcpMessage["action"]?.ToString();
-            var requestId = mcpMessage["request_id"]?.ToString();
-            
-            // Guard against MCP server sending concurrent requests
-            if (_isProcessing)
-            {
-                await EditorBridge.SendToAgent("Unity Error: A request is already being processed. Try again shortly.", "mcp_response", requestId);
-                return;
-            }
-            _isProcessing = true;
-            
+
             var parameters = new List<string>();
             foreach (var property in mcpMessage.Properties())
             {
                 if (property.Name is "action" or "request_id") continue;
-                
                 var value = property.Value.ToString();
-                // Truncate long content (like script code)
-                if (value.Length > 100) 
+                if (value.Length > 100)
                     value = value.Substring(0, 97) + "...";
                 parameters.Add($"{property.Name}: {value}");
             }
-    
+
             var paramString = parameters.Count > 0 ? $" ({string.Join(", ", parameters)})" : "";
-            
-            // Display the params in the Activity Log (less "action" and "request_id")
             BridgeRelay.OnAgentMessage?.Invoke($"[{DateTime.Now:HH:mm:ss}] {action}{paramString}");
 
             var resultText = "";
@@ -48,7 +35,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "Get_Screenshot":
                         resultText = SceneFunctions.GetScreenshot(mcpMessage);
                         break;
-                    
+
                     case "Get_SceneHierarchy":
                         resultText = SceneFunctions.GetSceneHierarchy(mcpMessage);
                         break;
@@ -78,7 +65,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "WRITE_SCRIPT":
                         resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
-                    
+
                     case "GET_COMPILATION_STATUS":
                         resultText = AssetFunctions.GetCompilationStatus(mcpMessage);
                         break;
@@ -130,22 +117,26 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");
-                        resultText = "Could not handle MCP command";
+                        resultText = $"Unity Error: Unhandled action '{action}'.";
                         break;
                 }
             }
+            catch (BridgeToolException e)
+            {
+                resultText = e.Message;
+            }
             catch (Exception e)
             {
-                // Always send a result 
-                resultText = $"Unity Error: {e.Message}\n{e.StackTrace}";
+                Debug.LogError($"[MCP] Unhandled exception in '{action}': {e}");
+                resultText = $"Unity Error: {e.Message}";
+                // LLM can use get_unity_console_logs if it needs e.stacktrace
             }
             finally
             {
-                Debug.Log($"[MCP] {action} took {sw.ElapsedMilliseconds}ms (request_id={requestId})");
-                _isProcessing = false;
+                Debug.Log($"[MCP] {action} took {sw.ElapsedMilliseconds}ms");
             }
-            //Debug.Log($"[Result text] {resultText}");
-            await EditorBridge.SendToAgent(resultText, "mcp_response", requestId);
+
+            completion.TrySetResult(resultText);
         }
     }
 }

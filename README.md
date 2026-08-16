@@ -26,21 +26,21 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 
 1. Clone this project.
 2. Add the Unity package in `/com.gamenami.unity-semantic-bridge` to your Unity project via "add package from disk".
-3. You should have `uv` installed so it can run and automatically update the server's dependencies. Add the MCP Server in `/Server` to your preferred IDE Agent's list of MCP servers. When you start your IDE Agent (e.g. Claude Code, Codex, etc.), the MCP server will automatically start up and start listening for a connection from the Unity package.
+3. You should have `uv` installed so it can run and automatically update the server's dependencies. Add the MCP Server in `/mcp-editor-bridge` to your preferred IDE Agent's list of MCP servers. The MCP server POSTs to the Unity Editor's HTTP listener at `http://127.0.0.1:1073/mcp`.
 
 ```json
 "mcpServers": {
     "unity-semantic-bridge": {
 		"command": "uv",
 		"args": [
-			"--directory", "<YOUR_LOCAL_PATH_TO_/unity-semantic-bridge/Server>",
+			"--directory", "<YOUR_LOCAL_PATH_TO_/unity-semantic-bridge/mcp-editor-bridge>",
 			"run", "main.py"
 		]
     }
 }
 ```
 
-4. In Unity, from the Tools menu, select "Unity Semantic Bridge" > "Connect to Server". Your IDE Agent now has access to your Unity Project and MCP tools provided.
+4. In Unity, from the Tools menu, select "Unity Semantic Bridge" > "Start HTTP Listener" (port 1073). Your IDE Agent now has access to your Unity Project and MCP tools provided. Health check: `GET http://127.0.0.1:1073/health`.
 
 ## Available Tools
 
@@ -75,16 +75,13 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 ### Lighting Subagent
 Uses the connected client's LLM via `RunnableConfig` (`config["configurable"]["llm"]`) — no separate API key. See `LightingAgent/README.md` for injection. Vision-gated: requires a vision-capable client (image sampling support) for screenshot context.
 
-### Gameplay Subagent
-Experimental; uses the same injected LLM + vision gate as the Lighting subagent (`Runtime/image_analysis.py` → `analyze_gameplay_scene`). Not ready for use yet.
-
 ### Environment Variables
 
-No separate API key is required for the bridge or subagents — they reuse the user's connected LLM via the vision capability gate. Optional `.env` vars are only needed if your injected LLM provider requires them.
+No separate API key is required for the bridge or subagent — they reuse the user's connected LLM via the vision capability gate. Optional `.env` vars are only needed if your injected LLM provider requires them.
 
 
 ## Known Limitations (for Agents using this tool to read)
 
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
-- **Screenshot capture (`get_screenshot`) currently only supports Edit Mode**, capturing the Scene view camera. Play Mode capture would need a different code path (see `ScreenshotTool` vs `EditModeScreenshotTool` in the package).
+- **Screenshot capture (`get_screenshot`) currently only supports Edit Mode**, capturing the Scene view camera via `EditModeScreenshotTool`.
