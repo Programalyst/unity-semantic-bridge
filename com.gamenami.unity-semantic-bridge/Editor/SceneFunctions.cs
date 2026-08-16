@@ -162,7 +162,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return $"Initiating Play Mode: {enabled}. Connection will momentarily drop.";
         }
         
-        public static string InspectGameObject(JObject mcpMessage) 
+        public static string InspectGameObject(JObject mcpMessage)
         {
             var instanceId = (int)mcpMessage["instanceID"];
 
@@ -171,16 +171,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             var sb = new StringBuilder();
             sb.AppendLine($"Name: {go.name} (Layer: {LayerMask.LayerToName(go.layer)})");
-    
-            foreach (var comp in go.GetComponents<Component>()) 
+
+            foreach (var comp in go.GetComponents<Component>())
             {
                 if (comp == null) continue;
                 sb.AppendLine($"\n[Component: {comp.GetType().Name}]");
-                // Use reflection to get public fields (Health, Layer checks, etc.)
-                foreach (var field in comp.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance)) 
-                {
-                    sb.AppendLine($"  - {field.Name}: {field.GetValue(comp)}");
-                }
+                ComponentInspector.AppendComponentProperties(sb, comp, indent: "  - ");
             }
             return sb.ToString();
         }
