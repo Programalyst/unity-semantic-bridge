@@ -1,17 +1,30 @@
 # Unity Semantic Bridge (USB)
 
-A subagent (in Editor mode) to allow AI coding tools (like Antigravity, Cursor, Claude, etc.) to query and understand Unity scenes efficiently (reduced the number of tool calls required).
+![Static Badge](https://img.shields.io/badge/unity_version-2022.x-blue)
+![Static Badge](https://img.shields.io/badge/unity_version-6000.3%20%3C%3D-blue)
+![Static Badge](https://img.shields.io/badge/runtime-uv-purple)
 
-Also includes an experimental Unity Agent (runs from Unity) that can automate gameplay testing.
+
+A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and understand Unity scenes efficiently (reduced the number of tool calls required).
 
 <img src="images/usb-editor-mode.png" alt="Alt text" width="600">
-<img src="images/usb-working-w-antigravity.png" alt="Alt text" width="600">
+
+## Features
+
+- More optimized scene heirarchy query tool for agents - more token efficient than official Unity CLI tool
+- In Editor connection status and reconnect. Not tied to Unity Licensing - Runs 100% local. No need to reauthenticate when token expires
+- In Editor MCP log so you can see what tools are called
+
+## Prerequesites
+
+ - Unity 2022 LTS or Unity 6.3 (versions of Unity newer than 6.3 use change the InstanceIds to EntityIds - not tested for compatibility yet)
+- uv (https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Installation
 
 1. Clone this project.
 2. Add the Unity package in `/com.gamenami.unity-semantic-bridge` to your Unity project via "add package from disk".
-3. You should have `uv` installed so it can run and automatically update the server's dependencies. Add the MCP Server in `/Server` to your preferred IDE Agent's list of MCP servers. When you start your IDE Agent (e.g. Antigravity, Claude Code, Codex, etc.), the MCP server will automatically start up and start listening for a connection from the Unity package.
+3. You should have `uv` installed so it can run and automatically update the server's dependencies. Add the MCP Server in `/Server` to your preferred IDE Agent's list of MCP servers. When you start your IDE Agent (e.g. Claude Code, Codex, etc.), the MCP server will automatically start up and start listening for a connection from the Unity package.
 
 ```json
 "mcpServers": {
