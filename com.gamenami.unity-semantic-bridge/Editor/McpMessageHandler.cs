@@ -103,8 +103,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ComponentFunctions.AddComponent(mcpMessage);
                         break;
 
-                    case "Set_FieldValue":
-                        resultText = ComponentFunctions.SetFieldValue(mcpMessage);
+                    case "Set_FieldValues":
+                        resultText = ComponentFunctions.SetFieldValues(mcpMessage);
                         break;
 
                     case "Get_LightsAffectingObject":
@@ -128,7 +128,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             catch (Exception e)
             {
                 Debug.LogError($"[MCP] Unhandled exception in '{action}': {e}");
-                resultText = $"Unity Error: {e.Message}";
+                resultText = $"Error: {e.Message}";
                 // LLM can use get_unity_console_logs if it needs e.stacktrace
             }
             finally

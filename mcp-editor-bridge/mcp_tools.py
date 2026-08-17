@@ -82,7 +82,7 @@ def register_unity_tools(mcp):
         """
         return await send_to_unity({
             "action": "Get_GameObjectTree",
-            "instanceID": instance_id,
+            "instanceId": instance_id,
             "depth": depth,
             "includeComponents": include_components,
             "includePositions": include_positions,
@@ -98,14 +98,14 @@ def register_unity_tools(mcp):
 
     @mcp.tool()
     async def find_unity_files(
-        filter_query: Annotated[str, "The search string (e.g., 't:Prefab Player' or 'l:LabelName')"], 
+        filter: Annotated[str, "The search string (e.g., 't:Prefab Player' or 'l:LabelName')"], 
         limit: Annotated[int, "Max results to return (default 10)"] = 10, 
         search_in_folders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
     ) -> str:
         """Finds assets in Unity. Default folders: ['Assets']."""
         return await send_to_unity({
             "action": "Search_Assets",
-            "filter": filter_query,
+            "filter": filter,
             "limit": limit,
             "searchInFolders": search_in_folders
         })
@@ -188,7 +188,7 @@ def register_unity_tools(mcp):
         """
         return await send_to_unity({
             "action": "Inspect_GameObject",
-            "instanceID": instance_id
+            "instanceId": instance_id
         })
     
     @mcp.tool()
@@ -208,7 +208,7 @@ def register_unity_tools(mcp):
         """
         return await send_to_unity({
             "action": "Get_InspectorValues",
-            "instanceID": instance_id,
+            "instanceId": instance_id,
             "componentName": component_name
         })
     
@@ -249,14 +249,14 @@ def register_unity_tools(mcp):
         """
         return await send_to_unity({
             "action": "Add_Component",
-            "instanceID": instance_id,
+            "instanceId": instance_id,
             "componentType": component_type,
             "allowDuplicate": allow_duplicate
         })
 
 
     @mcp.tool()
-    async def set_field_value(
+    async def set_field_values(
         instance_id: Annotated[int, "The instance_id of the GameObject that owns the component. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
         component_name: Annotated[str, "Name of the component type whose fields will be set. E.g. 'Rigidbody', 'CapsuleCollider', 'UnitLimb'. Use 'get_component_inspector_values' to see available field names."],
         fields: Annotated[dict, "Key-value map of field names to new values. Values may be: primitives (float, int, bool, string), structs as dicts (e.g. {'x':0,'y':1,'z':0}), enum strings, or integer instance_ids for Object reference fields."],
@@ -268,8 +268,8 @@ def register_unity_tools(mcp):
         Use 'get_component_inspector_values' first to discover field names and current values.
         """
         return await send_to_unity({
-            "action": "Set_FieldValue",
-            "instanceID": instance_id,
+            "action": "Set_FieldValues",
+            "instanceId": instance_id,
             "componentName": component_name,
             "fields": fields,
             "componentIndex": component_index
@@ -290,7 +290,7 @@ def register_unity_tools(mcp):
         """
         return await send_to_unity({
             "action": "Get_LightsAffectingObject",
-            "instanceID": instance_id
+            "instanceId": instance_id
         })
     
     @mcp.tool()

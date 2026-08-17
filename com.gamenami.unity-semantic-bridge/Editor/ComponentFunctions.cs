@@ -33,7 +33,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         
         public static string GetComponentInspectorValues(JObject mcpMessage)
         {
-            var id = (int)mcpMessage["instanceID"];
+            var id = (int)mcpMessage["instanceId"];
             var compName = mcpMessage["componentName"]?.ToString();
 
             var go = EditorUtility.InstanceIDToObject(id) as GameObject;
@@ -50,7 +50,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         
         public static string AddComponent(JObject mcpMessage)
         {
-            var id = (int)mcpMessage["instanceID"];
+            var id = (int)mcpMessage["instanceId"];
             var componentType = mcpMessage["componentType"]?.ToString();
             var allowDuplicate = mcpMessage["allowDuplicate"]?.ToObject<bool>() ?? false;
 
@@ -61,7 +61,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             Type type = null;
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                type = assembly.GetType(componentType);
+                if (componentType != null) type = assembly.GetType(componentType);
                 if (type != null) break;
             }
             // Fallback: simple name match restricted to Component subclasses
@@ -77,7 +77,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 var existing = go.GetComponent(type);
                 if (existing != null)
-                    return $"Skipped: '{componentType}' already exists on '{go.name}' (instanceID: {existing.GetInstanceID()}). Set allowDuplicate=true to override.";
+                    return $"Skipped: '{componentType}' already exists on '{go.name}' (instanceId: {existing.GetInstanceID()}). Set allowDuplicate=true to override.";
             }
 
             var added = Undo.AddComponent(go, type);
@@ -85,12 +85,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             EditorUtility.SetDirty(go);
 
-            return $"Added '{type.FullName}' to '{go.name}'. New component instanceID: {added.GetInstanceID()}.";
+            return $"Added '{type.FullName}' to '{go.name}'. New component instanceId: {added.GetInstanceID()}.";
         }
 
-        public static string SetFieldValue(JObject mcpMessage)
+        public static string SetFieldValues(JObject mcpMessage)
         {
-            var id = (int)mcpMessage["instanceID"];
+            var id = (int)mcpMessage["instanceId"];
             var componentName = mcpMessage["componentName"]?.ToString();
             var fields = mcpMessage["fields"] as JObject;
             var componentIndex = mcpMessage["componentIndex"]?.ToObject<int>() ?? 0;

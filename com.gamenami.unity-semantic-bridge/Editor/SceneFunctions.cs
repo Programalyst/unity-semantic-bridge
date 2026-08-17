@@ -117,7 +117,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         public static string GetGameObjectTree(JObject mcpMessage)
         {
-            var id = (int)mcpMessage["instanceID"];
+            var id = (int)mcpMessage["instanceId"];
             var maxDepth = mcpMessage["depth"]?.ToObject<int>() ?? 5;
             var includeComponents = mcpMessage["includeComponents"]?.ToObject<bool>() ?? true;
             var includePositions = mcpMessage["includePositions"]?.ToObject<bool>() ?? false;
@@ -229,7 +229,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         
         public static string InspectGameObject(JObject mcpMessage)
         {
-            var instanceId = (int)mcpMessage["instanceID"];
+            var instanceId = (int)mcpMessage["instanceId"];
 
             var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
             if (go == null) return "GameObject not found.";
