@@ -100,14 +100,14 @@ def register_unity_tools(mcp):
     async def find_unity_files(
         filter: Annotated[str, "The search string (e.g., 't:Prefab Player' or 'l:LabelName')"], 
         limit: Annotated[int, "Max results to return (default 10)"] = 10, 
-        search_in_folders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
+        folders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
     ) -> str:
         """Finds assets in Unity. Default folders: ['Assets']."""
         return await send_to_unity({
             "action": "Search_Assets",
             "filter": filter,
             "limit": limit,
-            "searchInFolders": search_in_folders
+            "folders": folders
         })
 
     @mcp.tool()

@@ -14,7 +14,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         public static string GetLightsAffectingObject(JObject mcpMessage)
         {
-            var id = (int)mcpMessage["instanceID"];
+            var id = (int)mcpMessage["instanceId"];
 
             var go = EditorUtility.InstanceIDToObject(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";

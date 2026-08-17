@@ -43,10 +43,12 @@ async def send_to_unity(payload: dict) -> str:
 
         try:
             data = resp.json()
+        except json.JSONDecodeError:
+            return resp.text  # Defensive fallback for an unexpected non-JSON response
 
-        # Most handlers return plain text (e.g. "SUCCESS: compiled cleanly."), not JSON
-        except Exception:
-            return resp.text  
+        # Unity side EditorBridge will always JSON wrap response in "content"
+        if isinstance(data, dict) and "content" in data:
+            return str(data["content"])
 
-        return json.dumps(data) if isinstance(data, (dict, list)) else str(data)
+        return f"Error: Unexpected Unity response: {data}"
     
