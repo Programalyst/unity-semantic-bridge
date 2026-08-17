@@ -11,8 +11,11 @@ class AppState:
     # HTTP bridge to Unity Editor (replaces websocket)
     unity_base_url: str = "http://127.0.0.1:1073"
 
-    # Serialize MCP→Unity calls — Unity handles one request at a time (_isProcessing)
+    # Unity's HttpListener accepts concurrently, but the MainThreadMessageQueue drain only
+    # ever processes one item at a time — this keeps request ordering
+    # predictable and avoids concurrent access to last_reload_trigger_at
     unity_request_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    last_reload_trigger_at: float = 0
 
     # --- MCP client capability gating ---
     # Stores the last InitializeRequestParams received from the MCP client.

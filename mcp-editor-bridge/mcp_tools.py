@@ -20,8 +20,7 @@ def register_unity_tools(mcp):
         max_width: Annotated[int, "Max image width in pixels; height scales to preserve aspect ratio."] = 1280,
     ) -> Image:
         """
-        Captures a screenshot and returns it as an image. Useful for visually inspecting
-        lighting, UI layout, or general scene appearance.
+        Captures a screenshot and returns it as an image. Useful for visually inspecting lighting, UI layout, or general scene appearance.
         """
         payload = {
             "action": "Get_Screenshot",
@@ -135,10 +134,7 @@ def register_unity_tools(mcp):
     async def write_unity_script(
         path: Annotated[str, "Path should be relative to Assets/ (e.g., 'Assets/Scripts/MyNewSensor.cs')."], 
         content: Annotated[str, "Full C# source to write. Overwrites the entire file if it already exists."],
-        confirm: Annotated[bool, "Required to overwrite an existing file. Leave false on the first attempt: "
-                              "if the file already exists, the call returns CONFIRM_REQUIRED along with its "
-                              "current contents instead of writing, so you can review before retrying with "
-                              "confirm=true. Not needed when creating a new file."] = False
+        confirm: Annotated[bool, "Required to overwrite an existing file. Leave false on the first attempt: if the file already exists, the call returns CONFIRM_REQUIRED along with its current contents instead of writing, so you can review before retrying with confirm=true. Not needed when creating a new file."] = False
     ) -> str:
         """
         Writes or overwrites a C# script in the Unity project and triggers recompilation.
@@ -146,13 +142,11 @@ def register_unity_tools(mcp):
         Returns one of:
         - CONFIRM_REQUIRED: ... — the file already exists; nothing was written. Review the returned
         contents, then re-call with confirm=true if you want to overwrite it.
-        - Wrote {path}. Compilation triggered (token=...) — the write succeeded and Unity has started
-        recompiling. Compilation is asynchronous: call check_compilation_status afterward (polling
-        with a short delay if it reports PENDING) before assuming the script is error-free.
+        - Wrote {path}. Compilation triggered (token=...) — the write succeeded and Unity has started recompiling. Compilation is asynchronous: call check_compilation_status afterward (polling with a short delay if it reports PENDING) before assuming the script is error-free.
         - Failed to write script: ... — the write itself failed (bad path, IO error, etc).
         """
         return await send_to_unity({
-            "action": "WRITE_SCRIPT",
+            "action": "Write_Script",
             "path": path,
             "content": content,
             "confirm": confirm
@@ -161,30 +155,29 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def get_compilation_status() -> str:
         """
-        Returns a single non-blocking snapshot of Unity's current compilation state. Does not wait —
-        call this after write_unity_script and poll again if the result is PENDING.
+        Returns a single non-blocking snapshot of Unity's current compilation state. Does not wait. Call this after write_unity_script and poll again if the result is PENDING.
 
         Returns one of:
         - PENDING: still compiling, poll again shortly.
         - SUCCESS: compiled cleanly.
         - FAILED:\\n<file>:<line> <message> (one or more lines) — compilation errors from the most recent write. The script was written to disk even though it failed to compile.
         """
-        return await send_to_unity({"action": "GET_COMPILATION_STATUS"})
+        return await send_to_unity({"action": "Get_Compilation_Status"})
     
     @mcp.tool()
     async def get_unity_console_logs() -> str:
         """Returns the most recent errors and warnings from the Unity Console."""
-        return await send_to_unity({"action": "GET_CONSOLE_LOGS"})
+        return await send_to_unity({"action": "Get_Console_Logs"})
     
     @mcp.tool()
     async def set_unity_play_mode(enabled: bool) -> str:
         """Enters or exits Play Mode in the Unity Editor."""
-        return await send_to_unity({"action": "SET_PLAY_MODE", "enabled": enabled})
+        return await send_to_unity({"action": "Set_Play_Mode", "enabled": enabled})
     
     @mcp.tool()
     async def clear_unity_console_logs() -> str:
         """Clears old Unity Editor console logs."""
-        return await send_to_unity({"action": "CLEAR_CONSOLE_LOGS"})
+        return await send_to_unity({"action": "Clear_Console_Logs"})
     
     @mcp.tool()
     async def inspect_gameobject(
@@ -302,12 +295,8 @@ def register_unity_tools(mcp):
     
     @mcp.tool()
     async def get_urp_pipeline_settings() -> str:
-        """
-        Returns the URP render pipeline asset's current render path setting
-        """
-        return await send_to_unity({
-            "action": "Get_UrpPipelineSettings"
-        })
+        """Returns the URP render pipeline asset's current render path setting"""
+        return await send_to_unity({"action": "Get_UrpPipelineSettings"})
 
     @mcp.tool()
     async def diagnose_lighting_issue(
@@ -334,7 +323,6 @@ def register_unity_tools(mcp):
         global _lighting_agent
 
         # --- Vision gating: verify sampling profile supports image input ---
-        # diagnose_lighting_issue captures a screenshot internally, so it is a vision tool
         ctx_caps = None
         if ctx is not None:
             try:

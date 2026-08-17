@@ -94,8 +94,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (exists && !confirm)
                 {
                     var existing = File.ReadAllText(fullPath);
-                    return $"CONFIRM_REQUIRED: '{path}' already exists ({existing.Length} chars). " +
-                           $"Re-call with confirm=true to overwrite.";
+                    return $"CONFIRM_REQUIRED: '{path}' already exists ({existing.Length} chars). Re-call with confirm=true to overwrite.";
                 }
 
                 var directory = Path.GetDirectoryName(fullPath);
@@ -108,8 +107,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
                 AssetDatabase.Refresh();
 
-                return $"Wrote {path}. Compilation triggered (token={token}). " +
-                       $"Call get_compilation_status to get the result.";
+                return $"Wrote {path}. RELOAD_IMMINENT: Compilation triggered (token={token}). Call get_compilation_status to get the result.";
             }
             catch (Exception e)
             {

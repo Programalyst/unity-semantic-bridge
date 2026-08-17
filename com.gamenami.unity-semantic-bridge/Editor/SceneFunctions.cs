@@ -222,7 +222,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
             EditorApplication.delayCall += () => {
                 EditorApplication.isPlaying = enabled;
             };
-            return $"Initiating Play Mode: {enabled}. Connection will momentarily drop.";
+            return enabled? 
+                "Entering Play Mode. RELOAD_IMMINENT: connection will momentarily drop" : 
+                "Exiting Play Mode. RELOAD_IMMINENT: connection will momentarily drop";
         }
         
         public static string InspectGameObject(JObject mcpMessage)

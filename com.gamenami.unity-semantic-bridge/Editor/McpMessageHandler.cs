@@ -9,7 +9,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
     public static class McpMessageHandler
     {
 
-        public static async void HandleMcpMessage(JObject mcpMessage, TaskCompletionSource<string> completion)
+        public static void HandleMcpMessage(JObject mcpMessage, TaskCompletionSource<string> completion)
         {
             var action = mcpMessage["action"]?.ToString();
 
@@ -62,24 +62,24 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = AssetFunctions.GetFolderStructure(mcpMessage);
                         break;
 
-                    case "WRITE_SCRIPT":
+                    case "Write_Script":
                         resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
 
-                    case "GET_COMPILATION_STATUS":
+                    case "Get_Compilation_Status":
                         resultText = AssetFunctions.GetCompilationStatus(mcpMessage);
                         break;
 
-                    case "GET_CONSOLE_LOGS":
+                    case "Get_Console_Logs":
                         resultText = SceneFunctions.GetConsoleLogs();
                         break;
 
-                    case "SET_PLAY_MODE":
+                    case "Set_Play_Mode":
                         var enabled = (bool)mcpMessage["enabled"];
                         resultText = SceneFunctions.SetPlayMode(enabled);
                         break;
 
-                    case "CLEAR_CONSOLE_LOGS":
+                    case "Clear_Console_Logs":
                         resultText = SceneFunctions.ClearConsole();
                         break;
 
