@@ -18,9 +18,11 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 
 ## Prerequesites
 
- - Unity 2022 LTS or Unity 6.3 (versions of Unity newer than 6.3 use change the InstanceIds to EntityIds - not tested for compatibility yet)
-- uv (https://docs.astral.sh/uv/getting-started/installation/)
-- LLM with vision capabiltiies - this MCP server will block usage with an agent/LLM that lacks vision capability
+ - **Unity 2022 LTS or Unity 6.3** (versions of Unity newer than 6.3 use change the InstanceIds to EntityIds - not tested for compatibility yet)
+- **uv** (https://docs.astral.sh/uv/getting-started/installation/)
+
+####  Optional
+- **API key for LLM with strong vision capabiltiies** - lighting subagent can be powered by a separate LLM (ideally with vision-in-the-loop like Fable 5 or Kimi K3); see `/core/llm_provider.py`. Tools are still available to your main/orchestrator agent even without setting up the subagent. Previously used mcp sampling but this was deprecated. 
 
 ## Installation
 
@@ -70,18 +72,8 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 - `get_unity_physics_layers` — Physics layer/collision matrix info.
 - `notify_unity` — Send a message to the Unity Editor chat window.
 
-## Sub Agents
-
-### Lighting Subagent
-Uses the connected client's LLM via `RunnableConfig` (`config["configurable"]["llm"]`) — no separate API key. See `LightingAgent/README.md` for injection. Vision-gated: requires a vision-capable client (image sampling support) for screenshot context.
-
-### Environment Variables
-
-No separate API key is required for the bridge or subagent — they reuse the user's connected LLM via the vision capability gate. Optional `.env` vars are only needed if your injected LLM provider requires them.
-
 
 ## Known Limitations (for Agents using this tool to read)
 
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
-- **Screenshot capture (`get_screenshot`) currently only supports Edit Mode**, capturing the Scene view camera via `EditModeScreenshotTool`.
