@@ -38,6 +38,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             EditorApplication.quitting -= OnEditorQuitting;
             EditorApplication.quitting += OnEditorQuitting;
+            
+            // Start tracking undo / redo calls
+            CommandFunctions.InitializeCallbacks();
 
             var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref, false);
             if (!shouldAutoConnect || IsConnected) return;

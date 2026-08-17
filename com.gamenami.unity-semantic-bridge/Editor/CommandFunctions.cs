@@ -8,10 +8,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         private static bool _isSubscribed = false;
         private static string _lastInterceptedActionName = "None";
-
-        /// <summary>
-        /// Initializes global callback hooks. Call this during your bridge startup sequence.
-        /// </summary>
+        
+        // Call this during bridge startup
         public static void InitializeCallbacks()
         {
             if (_isSubscribed) return;
@@ -49,8 +47,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             // info.undoName contains the exact string assigned during creation (e.g. "Destroy GameObject")
             _lastInterceptedActionName = string.IsNullOrEmpty(info.undoName) ? "Unnamed Operation" : info.undoName;
         
-            // Optional: You can stream this out as a server-to-client MCP notification event 
-            // to let your Python script know the user altered the timeline manually!
+            // TODO: stream this out as a server-to-client MCP notification event to let Python know the user altered the timeline manually
         }
     }
 }
