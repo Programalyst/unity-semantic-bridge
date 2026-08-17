@@ -43,19 +43,10 @@ async def send_to_unity(payload: dict) -> str:
 
         try:
             data = resp.json()
+
+        # Most handlers return plain text (e.g. "SUCCESS: compiled cleanly."), not JSON
         except Exception:
-            return resp.text  # Fallback to raw text if Unity returned plain string
+            return resp.text  
 
-        # Unity may return {"content": "..."} or just a raw string/JSON
-        if isinstance(data, dict) and "content" in data:
-            content = data["content"]
-
-            # Preserve JSON strings as-is; serialize dicts/lists
-            if isinstance(content, str):
-                return content
-            return json.dumps(content) if isinstance(content, (dict, list)) else str(content)
-        # If no content wrapper, return serialized body
-        if isinstance(data, str):
-            return data
         return json.dumps(data) if isinstance(data, (dict, list)) else str(data)
     

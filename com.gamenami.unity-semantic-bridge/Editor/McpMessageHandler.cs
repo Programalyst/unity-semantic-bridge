@@ -117,7 +117,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");
-                        resultText = $"Unity Error: Unhandled action '{action}'.";
+                        resultText = $"Error: Unhandled action '{action}'.";
                         break;
                 }
             }
