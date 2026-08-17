@@ -85,6 +85,21 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             return $"Added '{type.FullName}' to '{go.name}'. New component instanceId: {added.GetInstanceID()}.";
         }
+        
+        public static string RemoveComponent(JObject mcpMessage)
+        {
+            var instanceId = mcpMessage["instanceId"].ToObject<int>();
+            var componentType = mcpMessage["componentType"]?.ToString();
+
+            var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            if (go == null) throw new BridgeToolException($"No GameObject found for instance_id {instanceId}.");
+
+            var comp = go.GetComponent(componentType);
+            if (comp == null) throw new BridgeToolException($"Component '{componentType}' not found on '{go.name}'.");
+
+            Undo.DestroyObjectImmediate(comp);
+            return $"Removed '{componentType}' from '{go.name}'.";
+        }
 
         public static string SetFieldValues(JObject mcpMessage)
         {

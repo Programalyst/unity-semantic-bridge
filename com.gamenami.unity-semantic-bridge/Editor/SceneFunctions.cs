@@ -6,7 +6,6 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
-using System.Reflection;
 
 namespace Gamenami.UnitySemanticBridge.Editor
 {

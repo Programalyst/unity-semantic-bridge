@@ -235,7 +235,7 @@ def register_unity_tools(mcp):
     
     @mcp.tool()
     async def add_component(
-        instance_id: Annotated[int, "The instance_id of the target GameObject. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
+        instance_id: Annotated[int, "The unique instance ID of the GameObject to add the component to. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
         component_type: Annotated[str, "Fully-qualified C# type name of the component to add. E.g. 'UnityEngine.Rigidbody', 'UnityEngine.CapsuleCollider', or a custom type like 'MyNamespace.UnitLimb'."],
         allow_duplicate: Annotated[bool, "If False (default), skips adding if a component of this type already exists and returns the existing component's instance_id. If True, adds a second instance regardless."] = False
     ) -> str:
@@ -251,7 +251,18 @@ def register_unity_tools(mcp):
             "allowDuplicate": allow_duplicate
         })
 
-
+    @mcp.tool()
+    async def remove_component(
+        instance_id: Annotated[int, "The unique instance ID of the GameObject to remove the component from. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
+        component_type: Annotated[str, "Fully-qualified C# type name of the component to remove from the GameObject. E.g. 'UnityEngine.Rigidbody', 'UnityEngine.CapsuleCollider'."],
+    ) -> str:
+        """Remove a component by instance_id"""
+        return await send_to_unity({
+            "action": "Remove_Component",
+            "instanceId": instance_id,
+            "componentType": component_type,
+        })
+    
     @mcp.tool()
     async def set_field_values(
         instance_id: Annotated[int, "The instance_id of the GameObject that owns the component. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
@@ -271,7 +282,32 @@ def register_unity_tools(mcp):
             "fields": fields,
             "componentIndex": component_index
         })
+
+    @mcp.tool()
+    async def undo_last_action() -> str:
+        """Triggers a native Undo operation (Ctrl+Z / Cmd+Z equivalent) in the Unity Editor.
+        
+        Use this tool immediately if a component removal, object modification, creation, 
+        or any scene layout change yielded an unintended result and needs to be rolled back.
+        
+        Returns:
+            str: A message confirming the action execution and the name of the operation 
+                that was reversed (if captured by the Unity bridge).
+        """
+        return await send_to_unity({"action": "Undo_Last_Action"})
     
+    @mcp.tool()
+    async def redo_last_action() -> str:
+        """Triggers a native Redo operation (Ctrl+Y / Cmd+Y equivalent) in the Unity Editor.
+        
+        Use this tool to re-apply an action that was previously undone by the 
+        'undo_last_action' tool or by the human user.
+        
+        Returns:
+            str: A message confirming the action execution and the name of the operation 
+                that was re-applied (if captured by the Unity bridge).
+        """
+        return await send_to_unity({"action": "Redo_Last_Action"})
     
     @mcp.tool()
     async def get_lights_affecting_object(
