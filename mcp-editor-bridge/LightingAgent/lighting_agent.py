@@ -1,303 +1,259 @@
-from typing import Annotated, TypedDict, Literal
-from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain_core.runnables import RunnableConfig
-from core.llm_provider import get_llm_from_config
-import textwrap
+"""LangGraph workflow for diagnosing Unity lighting via server-owned LLM.
 
+Sampling was deprecated in MCP spec revision 2026-07-28 (SEP-2577); this module
+uses get_diagnostic_llm() (core/llm_provider) directly and executes tools
+explicitly — no ctx.sample_step / execute_tools delegation.
+"""
+
+from __future__ import annotations
+
+import base64
 import logging
+import textwrap
+from typing import Any, Literal, TypedDict
+
+from langgraph.graph import END, StateGraph
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import BaseTool, StructuredTool, tool as lc_tool
+
+from core.llm_provider import get_diagnostic_llm
+
 logger = logging.getLogger(__name__)
 
-# Define the agent state
+
 class AgentState(TypedDict):
-    messages: Annotated[list, add_messages] # use reducer to preserve checkpointing, allow parallel paths and update old messages by id
+    messages: list[BaseMessage]
     iteration_count: int
     max_iterations: int
-    issue_resolved: bool
-    instance_id: int
-    consecutive_tool_errors: int
+    final_report: str
+    awaiting_final_report: bool
 
 
 class LightingDiagnosticAgent:
-    """
-    A LangGraph-based agent that iteratively diagnoses lighting issues in Unity.
-    It will keep trying different diagnostic approaches until the issue is resolved or max iterations reached.
+    """A bounded LangGraph workflow backed by a server-owned LLM."""
 
-    The LLM is supplied by the caller via RunnableConfig (config["configurable"]["llm"]),
-    so the agent reuses the user's connected LLM.
-    """
-
-    def __init__(self, unity_tools: dict, max_iterations: int = 5):
-        """
-        Args:
-            unity_tools: Dictionary of Unity MCP tools (get_lights_affecting_object,
-                get_urp_pipeline_settings, get_screenshot, etc.)
-            max_iterations: Maximum number of diagnostic iterations before giving up
-        """
-        
-        self.unity_tools = {
-            **unity_tools, 
-            "search_unity_docs" : self.search_unity_docs
-        }
+    def __init__(self, unity_tools: dict[str, object], max_iterations: int = 5):
         self.max_iterations = max_iterations
+        # Normalize every callable to a proper LangChain BaseTool so bind_tools works
+        # for both sync and async functions. FastMCP's @mcp.tool() returns plain
+        # callables, not BaseTools.
+        self._lc_tools: list[BaseTool] = []
+        self.unity_tools: dict[str, BaseTool] = {}
+        for name, fn in unity_tools.items():
+            lc = self._to_lc_tool(fn, name)
+            self.unity_tools[name] = lc
+            self._lc_tools.append(lc)
 
-        self.graph = self._build_graph()
-
-
-    # custom tool — uses the injected user's LLM
-    async def search_unity_docs(self, query: str, config: RunnableConfig | None = None) -> str:
-        """
-        Looks up current, accurate Unity/URP documentation or behavior.
-        Uses the user's LLM (via RunnableConfig) to answer factual questions about
-        Unity/URP features, settings, or rendering behavior.
-        """
-        logger.info(f"[search_unity_docs] Query: {query}")
+    @staticmethod
+    def _to_lc_tool(fn: object, name: str) -> BaseTool:
+        if isinstance(fn, BaseTool):
+            return fn
+        # Prefer the @tool decorator path which preserves Annotated signatures
+        # and async support. Fall back to StructuredTool.from_function.
         try:
-            llm = get_llm_from_config(config)
-        except ValueError as e:
-            # If called outside a graph context without config, return a helpful message
-            # rather than crashing; the main diagnose loop will surface the error.
-            logger.warning(f"[search_unity_docs] No LLM in config: {e}")
-            return (
-                f"search_unity_docs unavailable: {e}. "
-                "The lighting agent requires the caller's LLM via RunnableConfig."
+            # lc_tool is a decorator factory; calling it on fn returns a tool
+            wrapped = lc_tool(fn)  # type: ignore[arg-type]
+            if isinstance(wrapped, BaseTool):
+                # Ensure name matches the key the agent expects
+                if wrapped.name != name:
+                    wrapped.name = name  # type: ignore[attr-defined]
+                return wrapped
+        except Exception:
+            pass
+        try:
+            return StructuredTool.from_function(
+                func=fn,  # type: ignore[arg-type]
+                name=name,
+                description=getattr(fn, "__doc__", None) or f"Unity tool {name}",
+                infer_schema=True,
             )
+        except Exception as exc:
+            logger.warning(f"Falling back to generic wrapper for tool {name}: {exc}")
+            # Last resort: create a simple async wrapper
+            async def _generic(**kwargs: Any) -> str:
+                if callable(fn):
+                    res = fn(**kwargs)  # type: ignore[call-arg]
+                    if hasattr(res, "__await__"):
+                        res = await res  # type: ignore[no-redef]
+                    return str(res)
+                return f"Error: tool {name} is not callable"
 
-        # Use the user's LLM directly to answer the docs question.
-        try:
-            # Prefer async invoke
-            if hasattr(llm, "ainvoke"):
-                response = await llm.ainvoke(query)
-            else:
-                response = llm.invoke(query)
-        except Exception as e:
-            logger.error(f"[search_unity_docs] LLM invoke failed: {e}")
-            return f"Error querying docs via LLM: {e}"
+            _generic.__name__ = name
+            _generic.__doc__ = getattr(fn, "__doc__", f"Unity tool {name}")
+            return StructuredTool.from_function(func=_generic, name=name, description=_generic.__doc__ or name)  # type: ignore[arg-type]
 
-        content = getattr(response, "content", response)
-        if isinstance(content, list):
-            # Handle content blocks (LLM returning list of parts)
-            parts = []
-            for item in content:
-                if isinstance(item, str):
-                    parts.append(item)
-                elif isinstance(item, dict) and "text" in item:
-                    parts.append(item["text"])
-                else:
-                    parts.append(str(item))
-            content = "\n".join(parts)
-        content_str = str(content) if not isinstance(content, str) else content
-        logger.info(f"[search_unity_docs] Result: {content_str[:300]}")
-        return content_str
+    @staticmethod
+    def _system_prompt(instance_id: int, issue_description: str) -> str:
+        return textwrap.dedent(f"""\
+            You are a Unity URP lighting diagnostic expert.
 
-    def _build_graph(self):
-        """Build the LangGraph workflow"""
+            Diagnose the reported issue on GameObject instance_id={instance_id}.
+            Reported issue: {issue_description}
+
+            Use the provided Unity diagnostic tools to gather evidence before drawing
+            conclusions. Check nearby lights, URP configuration, and the affected
+            object's renderer/material settings as appropriate. Do not modify the
+            scene. When you have enough evidence, stop calling tools and return a
+            concise final report containing: root cause, evidence, and recommended
+            fixes. If evidence is insufficient, say what requires manual review.
+        """)
+
+    def _build_graph(self, system_prompt: str):
         workflow = StateGraph(AgentState)
 
-        # Define nodes
-        workflow.add_node("diagnose", self._diagnose_node)
-        workflow.add_node("check_resolution", self._check_resolution_node)
-        workflow.add_node("tools", ToolNode(list(self.unity_tools.values())))
+        async def diagnose_node(state: AgentState) -> dict[str, Any]:
+            # Fail-fast is handled in diagnose_lighting_issue before graph entry,
+            # but also guard here in case LLM was reconfigured mid-run.
+            try:
+                llm = get_diagnostic_llm()
+            except Exception as exc:
+                logger.exception("Failed to initialize diagnostic LLM")
+                return {"final_report": f"Error: {exc}", "awaiting_final_report": False}
 
-        # Define edges
+            # Bind tools and invoke with full history (system prompt prepended)
+            try:
+                llm_with_tools = llm.bind_tools(self._lc_tools)
+                # Prepend system prompt as SystemMessage for this invocation
+                invoke_messages: list[BaseMessage] = [SystemMessage(content=system_prompt)] + state["messages"]
+                response: AIMessage = await llm_with_tools.ainvoke(invoke_messages)  # type: ignore[assignment]
+            except Exception as exc:
+                logger.exception("LLM invocation failed")
+                return {"final_report": f"Error: LLM invocation failed: {exc}", "awaiting_final_report": False}
+
+            # No tool calls -> final report
+            tool_calls = getattr(response, "tool_calls", None)
+            if not tool_calls:
+                text = response.content if isinstance(response.content, str) else str(response.content)
+                return {
+                    "messages": [response],
+                    "final_report": text.strip() or "The model returned an empty diagnostic report.",
+                    "awaiting_final_report": False,
+                }
+
+            # Execute each tool call explicitly (MCP sampling's execute_tools is gone)
+            follow_ups: list[BaseMessage] = [response]
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    name = tc.get("name", "")
+                    args = tc.get("args", {}) or {}
+                    call_id = tc.get("id", "")
+                else:
+                    name = getattr(tc, "name", "")
+                    args = getattr(tc, "args", {}) or {}
+                    call_id = getattr(tc, "id", "") or getattr(tc, "tool_call_id", "")
+
+                tool = self.unity_tools.get(name)
+                if tool is None:
+                    follow_ups.append(
+                        ToolMessage(content=f"Error: unknown tool '{name}'", tool_call_id=call_id, name=name)
+                    )
+                    continue
+
+                try:
+                    # BaseTool.ainvoke handles async and sync transparently
+                    result = await tool.ainvoke(args)  # type: ignore[arg-type]
+                except Exception as exc:
+                    logger.exception(f"Tool {name} failed")
+                    follow_ups.append(
+                        ToolMessage(content=f"Error: tool '{name}' failed: {exc}", tool_call_id=call_id, name=name)
+                    )
+                    continue
+
+                # Vision plumbing: get_screenshot returns fastmcp.utilities.types.Image
+                # (data: bytes, format: str). LangChain ToolMessages are text-only by
+                # default, so we split into a ToolMessage + follow-up HumanMessage with
+                # an image_url block that vision models can actually see.
+                try:
+                    from fastmcp.utilities.types import Image as FastImage
+
+                    if isinstance(result, FastImage):
+                        b64 = base64.b64encode(result.data).decode()
+                        fmt = getattr(result, "_format", None) or getattr(result, "format", "jpeg")
+                        follow_ups.append(
+                            ToolMessage(
+                                content=f"Screenshot captured ({len(result.data)} bytes, format={fmt}) — see following image.",
+                                tool_call_id=call_id,
+                                name=name,
+                            )
+                        )
+                        follow_ups.append(
+                            HumanMessage(
+                                content=[
+                                    {"type": "text", "text": f"Result of {name} (image below):"},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                                ]
+                            )
+                        )
+                        continue
+                except ImportError:
+                    pass
+
+                # Generic result -> string ToolMessage
+                if isinstance(result, (bytes, bytearray)):
+                    # Fallback for unexpected bytes
+                    b64 = base64.b64encode(result).decode()
+                    follow_ups.append(
+                        ToolMessage(content=b64, tool_call_id=call_id, name=name)
+                    )
+                elif isinstance(result, str):
+                    follow_ups.append(ToolMessage(content=result, tool_call_id=call_id, name=name))
+                else:
+                    follow_ups.append(ToolMessage(content=str(result), tool_call_id=call_id, name=name))
+
+            return {
+                "messages": follow_ups,
+                "iteration_count": state["iteration_count"] + 1,
+                "awaiting_final_report": True,
+            }
+
+        def next_node(state: AgentState) -> Literal["continue", "end"]:
+            if not state["awaiting_final_report"]:
+                return "end"
+            if state["iteration_count"] >= state["max_iterations"]:
+                return "end"
+            return "continue"
+
+        workflow.add_node("diagnose", diagnose_node)
         workflow.set_entry_point("diagnose")
-        # Determine if the LLM requested a tool or returned a text response.
-        workflow.add_conditional_edges(
-            "diagnose", 
-            tools_condition, # # If the LLM returned tool calls, we route to tools
-            {
-                "tools": "tools",
-                END: "check_resolution"
-            }
-        )
-        workflow.add_edge("tools", "check_resolution")
-        workflow.add_conditional_edges(
-            "check_resolution",
-            self._should_continue,
-            {
-                "continue": "diagnose",
-                "end": END
-            }
-        )
-
+        workflow.add_conditional_edges("diagnose", next_node, {"continue": "diagnose", "end": END})
         return workflow.compile()
-
-    def _diagnose_node(self, state: AgentState, config: RunnableConfig) -> AgentState:
-        """Agent decides what diagnostic action to take next"""
-        messages = state["messages"]
-        iteration = state["iteration_count"]
-
-        logger.info(f"Diagnostic iteration {iteration}/{state['max_iterations']}")
-
-        for i, m in enumerate(messages):
-            logger.info(f"  msg[{i}] type={type(m).__name__} content={m.content!r} tool_calls={getattr(m, 'tool_calls', None)}")
-
-        llm = get_llm_from_config(config)
-
-        # Bind tools to LLM
-        llm_with_tools = llm.bind_tools(list(self.unity_tools.values()))
-
-        # Get response from LLM
-        response = llm_with_tools.invoke(messages)
-
-        return {"messages": [response]}
-
-    def _check_resolution_node(self, state: AgentState, config: RunnableConfig) -> AgentState:
-        """Check if the lighting issue has been resolved"""
-        messages = state["messages"]
-        iteration = state["iteration_count"] + 1
-
-        # Track repeated tool failures to allow early abort
-        consecutive_errors = state.get("consecutive_tool_errors", 0)
-        last_msg = messages[-1] if messages else None
-        if isinstance(last_msg, ToolMessage) and "error" in str(last_msg.content).lower():
-            consecutive_errors += 1
-        else:
-            consecutive_errors = 0
-
-        llm = get_llm_from_config(config)
-
-        # Ask LLM if issue is resolved based on diagnostic results
-        check_prompt = """
-        Based on the diagnostic information gathered so far, has the lighting issue been identified and resolved?
-        If RESOLVED, respond with a summary starting with 'RESOLVED:' followed by the root cause and recommendations.
-        If not, respond with ONLY 'CONTINUE'.
-        """
-
-        response = llm.invoke(messages + [HumanMessage(content=check_prompt)])
-        is_resolved = "RESOLVED" in str(response.content).upper()
-
-        logger.info(f"Resolution check: {'RESOLVED' if is_resolved else 'CONTINUE'} (consecutive_errors={consecutive_errors})")
-
-        result = {
-            "iteration_count": iteration,
-            "issue_resolved": is_resolved,
-            "consecutive_tool_errors": consecutive_errors
-        }
-
-        # Append the actual diagnosis text if resolved
-        if is_resolved:
-            result["messages"] = [AIMessage(content=response.content)]
-
-        return result 
-
-    def _should_continue(self, state: AgentState) -> Literal["continue", "end"]:
-        """Decide whether to continue diagnosing or end"""
-        if state["issue_resolved"]:
-            return "end"
-        
-        if state.get("consecutive_tool_errors", 0) >= 2:
-            logger.warning("Aborting: 2 consecutive tool errors")
-            return "end"
-
-        if state["iteration_count"] >= state["max_iterations"]:
-            logger.warning(f"Max iterations ({state['max_iterations']}) reached without resolution")
-            return "end"
-
-        return "continue"
 
     async def diagnose_lighting_issue(
         self,
         instance_id: int,
         issue_description: str,
-        config: RunnableConfig | None = None,
     ) -> str:
-        """
-        Main entry point to diagnose a lighting issue on a GameObject.
+        """Run the diagnostic workflow using the server-owned LLM."""
+        # Fail-fast on missing/misconfigured provider before building graph
+        try:
+            get_diagnostic_llm()
+        except Exception as exc:
+            return f"Error: {exc}"
 
-        Args:
-            instance_id: Unity GameObject instance ID
-            issue_description: Description of the lighting problem
-            config: RunnableConfig containing the user's LLM under
-                config["configurable"]["llm"] (a LangChain BaseChatModel).
-
-        Returns:
-            Final diagnostic report
-        """
-        system_prompt = textwrap.dedent(f"""\
-            You are a Unity lighting diagnostic expert. Your goal is to diagnose and resolve lighting issues.
-
-            Current task: Diagnose the lighting issue for GameObject with instance_id={instance_id}
-            Issue description: {issue_description}
-
-            You have access to a `search_unity_docs` tool that looks up current, accurate Unity/URP
-            documentation and behavior. Use it at least once during your diagnosis to verify any
-            assumptions about how a Unity/URP feature, setting, or limit actually works — especially
-            before concluding on a root cause or writing recommendations. Do not rely solely on your own
-            prior knowledge of Unity/URP internals, since engine behavior varies across versions and is
-            easy to misremember; treat anything you're not 100% certain about as worth verifying.
-
-            Follow this diagnostic process:
-            1. Check what lights are affecting the object.
-            2. Check URP pipeline settings for rendering configuration. Pay attention not just to binary
-            on/off settings, but to any numeric limits or caps (e.g. per-object light limits, shadow
-            distance, cascade counts) — these can cause partial or inconsistent lighting that's easy
-            to miss if you only check whether a setting is "enabled."
-            3. If a numeric limit is relevant, check how it compares against the actual conditions in the
-            scene (e.g. how many lights are near the object vs. the per-object limit) rather than just
-            noting the limit's existence. Use `search_unity_docs` to confirm how that limit actually
-            behaves and whether there are alternative configurations that avoid it entirely, rather than
-            only considering ways to work within it.
-            4. Inspect the object's Renderer component (material, rendering layer, etc.), including Culling
-            Mask and Rendering Layer Mask compatibility with the light.
-            5. Based on findings, identify the root cause — prefer explanations that are consistent with all
-            reported symptoms (e.g. if the issue is inconsistent or angle/position-dependent rather than
-            a complete absence of light, favor causes that would produce that specific pattern).
-            6. Provide clear recommendations to fix the issue. Include both immediate workarounds and any
-            more fundamental configuration changes that address the root cause directly, if
-            `search_unity_docs` revealed any.
-
-            Keep iterating through diagnostics until you find the root cause or have exhausted all possibilities.""")
-
-        # Vision is gated at the MCP tool level (check_vision_or_error) — no eager
-        # base64 screenshot here. The agent can call get_screenshot as a tool on
-        # demand, which is more token-efficient than seeding every run with a data URL.
+        system_prompt = self._system_prompt(instance_id, issue_description)
         initial_state: AgentState = {
             "messages": [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=f"Begin diagnosis for GameObject instance_id={instance_id}"),
+                HumanMessage(
+                    content=(
+                        f"Begin the diagnosis for GameObject instance_id={instance_id}. "
+                        f"Reported issue: {issue_description} "
+                        "Call get_screenshot with source='scene' and focus_instance_id if you need visual context."
+                    )
+                ),
             ],
             "iteration_count": 0,
             "max_iterations": self.max_iterations,
-            "consecutive_tool_errors": 0,
-            "issue_resolved": False,
-            "instance_id": instance_id
+            "final_report": "",
+            "awaiting_final_report": True,
         }
 
-        # helper method to handle LLM returning a list of content blocks instead of a string
-        def _content_to_str(content) -> str:
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                parts = []
-                for item in content:
-                    if isinstance(item, str):
-                        parts.append(item)
-                    elif isinstance(item, dict) and "text" in item:
-                        parts.append(item["text"])
-                return "\n".join(parts)
-            return str(content)
+        graph = self._build_graph(system_prompt)
+        final_state = await graph.ainvoke(initial_state)
+        report = final_state["final_report"].strip()
+        if report:
+            return report
 
-        try:
-            final_state = await self.graph.ainvoke(initial_state, config=config)
-
-            # Extract final report from messages
-            report_parts = []
-            for msg in final_state["messages"]:
-                if isinstance(msg, AIMessage):
-                    text = _content_to_str(msg.content)
-                    if text.strip(): # skip empty/tool-call-only messages
-                        report_parts.append(text)
-
-            final_report = "\n\n".join(report_parts)
-
-            if final_state["issue_resolved"]:
-                return f"✅ Lighting issue diagnosed successfully!\n\n{final_report}"
-            else:
-                return f"⚠️ Diagnostic completed ({final_state['iteration_count']} iterations) but issue may need manual review.\n\n{final_report}"
-
-        except Exception as e:
-            logger.error(f"Error during lighting diagnosis: {e}", exc_info=True)
-            return f"Error during diagnosis: {str(e)}"
+        return (
+            f"Diagnostic stopped after {final_state['iteration_count']} tool rounds. "
+            "The available evidence requires manual review."
+        )

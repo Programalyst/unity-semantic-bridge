@@ -51,4 +51,3 @@ async def send_to_unity(payload: dict) -> str:
             return str(data["content"])
 
         return f"Error: Unexpected Unity response: {data}"
-    

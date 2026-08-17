@@ -1,9 +1,7 @@
 from unity_bridge import send_to_unity
 from typing import Annotated, Literal
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
-from langchain_core.runnables import RunnableConfig
-from mcp.server.fastmcp import Image, Context
-from capability_gate import check_vision_or_error
+from fastmcp.utilities.types import Image
 import base64
 
 # Global reference to lighting agent (initialized after tools are registered)
@@ -30,7 +28,6 @@ def register_unity_tools(mcp):
         }
         if focus_instance_id is not None:
             payload["focusInstanceId"] = focus_instance_id
-
         result = await send_to_unity(payload)
         if result.startswith("Error:"):
             raise RuntimeError(result)
@@ -302,9 +299,7 @@ def register_unity_tools(mcp):
     async def diagnose_lighting_issue(
         instance_id: Annotated[int, "The instance_id of the GameObject with lighting issues. Get this from 'get_scene_hierarchy'."],
         issue_description: Annotated[str, "Description of the lighting problem (e.g., 'object appears too dark', 'shadows not rendering', 'lights not affecting object')"],
-        max_iterations: Annotated[int, "Maximum diagnostic iterations before stopping (default 10)"] = 10,
-        config: Annotated[RunnableConfig | None, "RunnableConfig containing the user's LLM under config['configurable']['llm'] (a LangChain BaseChatModel). The subagent reuses this LLM via the vision gate."] = None,
-        ctx: Context | None = None,
+        max_iterations: Annotated[int, "Maximum diagnostic tool rounds before stopping (default 10)"] = 10,
     ) -> str:
         """
         Launches an autonomous diagnostic agent that will iteratively investigate and diagnose lighting issues on a GameObject.
@@ -318,26 +313,14 @@ def register_unity_tools(mcp):
         Use this when you need deep, multistep lighting diagnostics rather than manual tool calls.
         Returns a comprehensive diagnostic report with findings and recommendations.
 
-        The subagent reuses the caller's LLM supplied via RunnableConfig (config["configurable"]["llm"]).
+        Uses a server-owned LLM via core.llm_provider.get_diagnostic_llm() — no MCP
+        sampling required. Configure the provider/model via LIGHTING_LLM_PROVIDER
+        and LIGHTING_LLM_MODEL env vars and set the provider's API key
+        (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY); the tool will return
+        "Error: ..." if credentials are missing or invalid.
         """
         global _lighting_agent
 
-        # --- Vision gating: verify sampling profile supports image input ---
-        ctx_caps = None
-        if ctx is not None:
-            try:
-                sess = getattr(getattr(ctx, "request_context", None), "session", None) or getattr(ctx, "session", None)
-                if sess and getattr(sess, "client_params", None):
-                    ctx_caps = sess.client_params.capabilities
-            except Exception:
-                pass
-        err = check_vision_or_error("diagnose_lighting_issue", ctx_caps)
-        if err:
-            return err
-
-        # Initialize agent with Unity tools on first use (no LLM created here — supplied via RunnableConfig).
-        # get_screenshot is exposed as a tool so the agent can capture on demand;
-        # vision gating is handled by check_vision_or_error above — no eager base64.
         if _lighting_agent is None:
             unity_tools = {
                 "get_lights_affecting_object": get_lights_affecting_object,
@@ -348,7 +331,9 @@ def register_unity_tools(mcp):
             }
             _lighting_agent = LightingDiagnosticAgent(unity_tools, max_iterations=max_iterations)
         else:
-            # Respect the latest max_iterations if caller changed it between invocations
             _lighting_agent.max_iterations = max_iterations
 
-        return await _lighting_agent.diagnose_lighting_issue(instance_id, issue_description, config=config)
+        return await _lighting_agent.diagnose_lighting_issue(
+            instance_id,
+            issue_description,
+        )

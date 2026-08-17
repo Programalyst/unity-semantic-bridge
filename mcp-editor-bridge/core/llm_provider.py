@@ -1,36 +1,31 @@
-from langchain_core.runnables import RunnableConfig
+# core/llm_provider.py — server-owned, not client-borrowed
+# Sampling was formally deprecated in MCP spec revision 2026-07-28, under SEP-2577.
+# This module replaces the old RunnableConfig / client-sampling approach with a
+# direct provider call owned by the server.
+import os
+from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
-def get_llm_from_config(config: RunnableConfig | None) -> BaseChatModel:
-        """Extract the caller's LLM from RunnableConfig.
 
-        Expected shape: config["configurable"]["llm"] is a LangChain BaseChatModel.
-        This allows the sub-agent to reuse the user's connected LLM.
-        """
-        if config is None:
-            raise ValueError(
-                "No LLM provided via RunnableConfig. "
-                "Pass the user's LLM as `config={'configurable': {'llm': your_chat_model}}` "
-                "when invoking the graph or diagnose_lighting_issue()."
-            )
-        
-        # RunnableConfig is a dict-like with optional "configurable" key
-        # Coerces both dicts and object-based RunnableConfigs safely
-        configurable = (
-            config.get("configurable") if isinstance(config, dict) 
-            else getattr(config, "configurable", None)
-        )
+def get_diagnostic_llm(
+    provider: str | None = None,
+    model: str | None = None,
+) -> BaseChatModel:
+    """
+    Returns a server-owned BaseChatModel for the lighting diagnostic sub-agent.
 
-        if not isinstance(configurable, dict):
-            raise ValueError(
-                "Invalid RunnableConfig: expected config['configurable']['llm'] to be a BaseChatModel. "
-                f"Got configurable={configurable!r}"
-            )
-
-        llm = configurable.get("llm")
-        if llm is None:
-            raise ValueError(
-                "No LLM found in RunnableConfig. "
-                "Provide it as `{'configurable': {'llm': your_chat_model}}`."
-            )
-        return llm
+    Provider/model default to LIGHTING_LLM_PROVIDER / LIGHTING_LLM_MODEL env vars
+    (falling back to "anthropic" / "claude-sonnet-4-0"). The provider's own
+    credential env vars (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY) must be set —
+    no client sampling or API key forwarding is used.
+    """
+    provider = provider or os.environ.get("LIGHTING_LLM_PROVIDER", "anthropic")
+    model = model or os.environ.get("LIGHTING_LLM_MODEL", "claude-sonnet-4-0")
+    try:
+        return init_chat_model(model=model, model_provider=provider, temperature=0.0)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Error: Could not initialize LLM provider='{provider}' model='{model}'. "
+            f"Check LIGHTING_LLM_PROVIDER/LIGHTING_LLM_MODEL and the provider's "
+            f"required credentials/env vars are set. Underlying error: {exc}"
+        ) from exc
