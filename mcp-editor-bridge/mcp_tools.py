@@ -1,4 +1,4 @@
-from unity_bridge import send_to_unity, fetch_screenshot_base64
+from unity_bridge import send_to_unity
 from typing import Annotated, Literal
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from langchain_core.runnables import RunnableConfig
@@ -347,13 +347,16 @@ def register_unity_tools(mcp):
         if err:
             return err
 
-        # Initialize agent with Unity tools on first use (no LLM created here — supplied via RunnableConfig)
+        # Initialize agent with Unity tools on first use (no LLM created here — supplied via RunnableConfig).
+        # get_screenshot is exposed as a tool so the agent can capture on demand;
+        # vision gating is handled by check_vision_or_error above — no eager base64.
         if _lighting_agent is None:
             unity_tools = {
                 "get_lights_affecting_object": get_lights_affecting_object,
                 "get_urp_pipeline_settings": get_urp_pipeline_settings,
                 "get_component_inspector_values": get_component_inspector_values,
                 "inspect_gameobject": inspect_gameobject,
+                "get_screenshot": get_screenshot,
             }
             _lighting_agent = LightingDiagnosticAgent(unity_tools, max_iterations=max_iterations)
         else:

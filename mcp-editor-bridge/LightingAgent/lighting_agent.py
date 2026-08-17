@@ -6,7 +6,6 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from core.llm_provider import get_llm_from_config
 import textwrap
-from unity_bridge import fetch_screenshot_base64
 
 import logging
 logger = logging.getLogger(__name__)
@@ -33,7 +32,8 @@ class LightingDiagnosticAgent:
     def __init__(self, unity_tools: dict, max_iterations: int = 5):
         """
         Args:
-            unity_tools: Dictionary of Unity MCP tools (get_lights_affecting_object, get_urp_pipeline_settings, etc.)
+            unity_tools: Dictionary of Unity MCP tools (get_lights_affecting_object,
+                get_urp_pipeline_settings, get_screenshot, etc.)
             max_iterations: Maximum number of diagnostic iterations before giving up
         """
         
@@ -250,16 +250,14 @@ class LightingDiagnosticAgent:
             `search_unity_docs` revealed any.
 
             Keep iterating through diagnostics until you find the root cause or have exhausted all possibilities.""")
-        
-        screenshot_b64 = await fetch_screenshot_base64()
 
+        # Vision is gated at the MCP tool level (check_vision_or_error) — no eager
+        # base64 screenshot here. The agent can call get_screenshot as a tool on
+        # demand, which is more token-efficient than seeding every run with a data URL.
         initial_state: AgentState = {
             "messages": [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=[
-                    {"type": "text", "text": f"Begin diagnosis for GameObject instance_id={instance_id}"},
-                    {"type": "image_url", "image_url": f"data:image/jpeg;base64,{screenshot_b64}"},
-                ])
+                HumanMessage(content=f"Begin diagnosis for GameObject instance_id={instance_id}"),
             ],
             "iteration_count": 0,
             "max_iterations": self.max_iterations,
