@@ -3,7 +3,8 @@ import logging
 from fastmcp import FastMCP
 
 from mcp_tools import register_unity_tools
-import event_server
+from events.event_server import event_server
+from events.event_handlers import register_event_handlers
 from state_manager import app_state
 
 from dotenv import load_dotenv
@@ -11,37 +12,17 @@ load_dotenv()  # Load environment variables from .env file
 
 # --- CONFIG & STATE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 mcp = FastMCP("UnitySemanticBridge")
 register_unity_tools(mcp)
-
-# Default event handlers — users can add more via event_server.register_handler.
-# These simply log; replace with custom logic if needed.
-@event_server.on_event("unity/hierarchyChanged")
-def _on_hierarchy_changed(params):
-    logging.info(f"[event] hierarchyChanged: {params}")
-    return "ack"
-
-@event_server.on_event("unity/selectionChanged")
-def _on_selection_changed(params):
-    logging.info(f"[event] selectionChanged: {params}")
-    return "ack"
-
-@event_server.on_event("unity/playModeStateChanged")
-def _on_playmode_changed(params):
-    logging.info(f"[event] playModeStateChanged: {params}")
-    return "ack"
-
-@event_server.on_event("unity/consoleLog")
-def _on_console_log(params):
-    logging.info(f"[event] consoleLog: {params}")
-    return "ack"
-
-@event_server.on_event("unity/ping")
-def _on_ping(params):
-    return {"pong": True, "echo": params}
-
+register_event_handlers() # must run/register before event_server.start_event_server()
 
 async def run_servers():
+    # Capture the main event loop so async event handlers can schedule work
+    # onto it via run_coroutine_threadsafe
+    # makes it possible for events recieved to be put on a shared queue/state
+    event_server.set_main_loop(asyncio.get_running_loop())
+
     # Unity hosts the HTTP server at 127.0.0.1:1073/rpc (JSON-RPC 2.0).
     # Python also hosts a JSON-RPC event server at 127.0.0.1:1074/rpc so Unity
     # can push notifications (hierarchy/selection/play-mode changes etc.).

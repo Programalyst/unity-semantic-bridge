@@ -3,6 +3,9 @@ from typing import Annotated, Literal
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from fastmcp.utilities.types import Image
 import base64
+import json
+import time
+import events_buffer
 
 # Global reference to lighting agent (initialized after tools are registered)
 _lighting_agent = None
@@ -303,6 +306,19 @@ def register_unity_tools(mcp):
                 that was re-applied (if captured by the Unity bridge).
         """
         return await call_unity("Get_Last_Undo_Redo_Action")
+
+    @mcp.tool()
+    async def get_recent_unity_events(
+        since_seconds_ago: float = 60,
+        limit: int = 50,
+    ) -> str:
+        """Returns Unity Editor events (hierarchy/selection/play-mode/console changes)
+        pushed since the given time window — use this to check what changed in the
+        Editor (including manual edits by the user) since your last check."""
+        events = events_buffer.get_recent_events(since=time.time() - since_seconds_ago, limit=limit)
+        if not events:
+            return "No Unity events recorded in that window."
+        return json.dumps(events, indent=2)
     
     @mcp.tool()
     async def get_lights_affecting_object(

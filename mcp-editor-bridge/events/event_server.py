@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import threading
+import inspect
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Dict, Optional
 
@@ -34,6 +35,8 @@ _handlers_lock = threading.Lock()
 _server: Optional[ThreadingHTTPServer] = None
 _server_thread: Optional[threading.Thread] = None
 
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
 # JSON-RPC error codes
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -41,6 +44,13 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Call once from the main async app at startup (e.g. right after 
+    top-level asyncio.run() begins, via loop = asyncio.get_running_loop()),
+    so async event handlers can safely schedule work onto the real app loop
+    instead of each getting a disposable one-shot loop of their own."""
+    global _main_loop
+    _main_loop = loop
 
 def register_handler(method: str, handler: Callable[..., Any]) -> None:
     """Register a handler for a JSON-RPC method.  `handler(params)` is called
@@ -70,31 +80,30 @@ def _get_handler(method: str) -> Optional[Callable[..., Any]]:
         return _handlers.get(method)
 
 
-async def _invoke_handler(handler: Callable[..., Any], params: Any) -> Any:
-    """Support both sync and async handlers."""
-    if asyncio.iscoroutinefunction(handler):
-        return await handler(params)
-    # plain callable – run in default executor if it might block? just call directly
-    result = handler(params)
-    if asyncio.iscoroutine(result):
-        return await result
-    return result
-
-
 def _invoke_sync(handler: Callable[..., Any], params: Any) -> Any:
-    """Invoke handler from the HTTP thread.  Bridges async if needed."""
+    """Invoke handler from the HTTP request thread. Bridges async if needed."""
     try:
-        # If there's a running event loop in this thread, we can't asyncio.run
-        # Instead, create a new loop.
-        if asyncio.iscoroutinefunction(handler):
+        if inspect.iscoroutinefunction(handler):
+            if _main_loop is not None and _main_loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(handler(params), _main_loop)
+                return future.result(timeout=10)  # blocks this request thread only
+            # No main loop registered — fall back to the old isolated-loop behavior.
+            # Safe only for handlers with no cross-loop state.
+            logger.warning(
+                "_invoke_sync: no main loop registered via set_main_loop() — "
+                f"running '{handler.__name__}' on an isolated throwaway loop instead."
+            )
             return asyncio.run(handler(params))  # type: ignore
+
         result = handler(params)
-        if asyncio.iscoroutine(result):
+        if inspect.iscoroutine(result):
+            if _main_loop is not None and _main_loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(result, _main_loop)
+                return future.result(timeout=10)  # blocks this request thread only
             return asyncio.run(result)  # type: ignore
         return result
-    except Exception as e:
-        # re-raise to be caught by caller and turned into JSON-RPC error
-        raise
+    except Exception:
+        raise  # re-raised, caught by _handle_single and turned into a JSON-RPC error
 
 
 def _make_error(id_val: Any, code: int, message: str, data: Any = None) -> dict:
