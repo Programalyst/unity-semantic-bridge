@@ -269,45 +269,6 @@ def register_unity_tools(mcp):
         })
 
     @mcp.tool()
-    async def undo_last_action() -> str:
-        """Triggers a native Undo operation (Ctrl+Z / Cmd+Z equivalent) in the Unity Editor.
-        
-        Use this tool immediately if a component removal, object modification, creation, 
-        or any scene layout change yielded an unintended result and needs to be rolled back.
-        
-        Returns:
-            str: A message confirming the action execution and the name of the operation 
-                that was reversed (if captured by the Unity bridge).
-        """
-        return await call_unity("Undo_Last_Action")
-    
-    @mcp.tool()
-    async def redo_last_action() -> str:
-        """Triggers a native Redo operation (Ctrl+Y / Cmd+Y equivalent) in the Unity Editor.
-        
-        Use this tool to re-apply an action that was previously undone by the 
-        'undo_last_action' tool or by the human user.
-        
-        Returns:
-            str: A message confirming the action execution and the name of the operation 
-                that was re-applied (if captured by the Unity bridge).
-        """
-        return await call_unity("Redo_Last_Action")
-
-    @mcp.tool()
-    async def get_last_undo_redo_action() -> str:
-        """Triggers a native Redo operation (Ctrl+Y / Cmd+Y equivalent) in the Unity Editor.
-        
-        Use this tool to re-apply an action that was previously undone by the 
-        'undo_last_action' tool or by the human user.
-        
-        Returns:
-            str: A message confirming the action execution and the name of the operation 
-                that was re-applied (if captured by the Unity bridge).
-        """
-        return await call_unity("Get_Last_Undo_Redo_Action")
-
-    @mcp.tool()
     async def get_recent_unity_events(
         since_seconds_ago: float = 60,
         limit: int = 50,

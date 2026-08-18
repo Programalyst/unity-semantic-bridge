@@ -110,18 +110,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     case "Set_FieldValues":
                         resultText = ComponentFunctions.SetFieldValues(mcpMessage);
                         break;
-                    
-                    case "Undo_Last_Action":
-                        resultText = CommandFunctions.PerformEditorUndo(mcpMessage);
-                        break;
-                    
-                    case "Redo_Last_Action":
-                        resultText = CommandFunctions.PerformEditorRedo(mcpMessage);
-                        break;
-                    
-                    case "Get_Last_Undo_Redo_Action":
-                        resultText = CommandFunctions.GetLastUndoRedoAction(mcpMessage);
-                        break;
 
                     case "Get_LightsAffectingObject":
                         resultText = LightingFunctions.GetLightsAffectingObject(mcpMessage);
