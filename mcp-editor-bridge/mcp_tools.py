@@ -5,7 +5,7 @@ from fastmcp.utilities.types import Image
 import base64
 import json
 import time
-import events_buffer
+from events import events_buffer
 
 # Global reference to lighting agent (initialized after tools are registered)
 _lighting_agent = None

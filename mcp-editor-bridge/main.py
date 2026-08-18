@@ -3,7 +3,7 @@ import logging
 from fastmcp import FastMCP
 
 from mcp_tools import register_unity_tools
-from events.event_server import event_server
+from events import event_server
 from events.event_handlers import register_event_handlers
 from state_manager import app_state
 
