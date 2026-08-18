@@ -55,21 +55,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var go = EditorUtility.InstanceIDToObject(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
-            // Resolve the type across all loaded assemblies
-            Type type = null;
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                if (componentType != null) type = assembly.GetType(componentType);
-                if (type != null) break;
-            }
-            // Fallback: simple name match restricted to Component subclasses
-            if (type == null)
-            {
-                type = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(a => { try { return a.GetTypes(); } catch { return Type.EmptyTypes; } })
-                    .FirstOrDefault(t => t.Name == componentType && typeof(Component).IsAssignableFrom(t));
-            }
-            if (type == null) return $"Error: Type '{componentType}' not found in any loaded assembly.";
+            if (!TryResolveComponentType(componentType, out var type))
+                return $"Error: Type '{componentType}' not found in any loaded assembly.";
 
             if (!allowDuplicate)
             {
@@ -94,11 +81,40 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
             if (go == null) throw new BridgeToolException($"No GameObject found for instance_id {instanceId}.");
 
-            var comp = go.GetComponent(componentType);
-            if (comp == null) throw new BridgeToolException($"Component '{componentType}' not found on '{go.name}'.");
+            if (!TryResolveComponentType(componentType, out var type))
+                throw new BridgeToolException($"Type '{componentType}' not found in any loaded assembly.");
+
+            var comp = go.GetComponent(type);
+            if (comp == null) throw new BridgeToolException($"Component '{type.Name}' not found on '{go.name}'.");
 
             Undo.DestroyObjectImmediate(comp);
-            return $"Removed '{componentType}' from '{go.name}'.";
+            return $"Removed '{type.FullName}' from '{go.name}'.";
+        }
+
+        /// <summary>
+        /// Resolves a component type from a fully-qualified name (e.g. UnityEngine.AudioSource)
+        /// or a short name (e.g. AudioSource). GetComponent(string) only accepts short names,
+        /// so callers must resolve to Type first.
+        /// </summary>
+        private static bool TryResolveComponentType(string componentType, out Type type)
+        {
+            type = null;
+            if (string.IsNullOrWhiteSpace(componentType)) return false;
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                type = assembly.GetType(componentType);
+                if (type != null) break;
+            }
+
+            if (type == null)
+            {
+                type = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(a => { try { return a.GetTypes(); } catch { return Type.EmptyTypes; } })
+                    .FirstOrDefault(t => t.Name == componentType && typeof(Component).IsAssignableFrom(t));
+            }
+
+            return type != null && typeof(Component).IsAssignableFrom(type);
         }
 
         public static string SetFieldValues(JObject mcpMessage)

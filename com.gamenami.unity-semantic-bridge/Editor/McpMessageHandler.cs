@@ -137,7 +137,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             finally
             {
-                Debug.Log($"[MCP] {action} took {sw.ElapsedMilliseconds}ms");
+                //Debug.Log($"[MCP] {action} took {sw.ElapsedMilliseconds}ms");
             }
 
             completion.TrySetResult(resultText);

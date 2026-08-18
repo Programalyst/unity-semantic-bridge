@@ -82,7 +82,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref, false);
             if (!shouldAutoConnect || IsConnected) return;
 
-            Debug.Log("<color=cyan>[Bridge]</color> Bridge ReInitializing (HTTP JSON-RPC)...");
+            Debug.Log("<color=lime>[Bridge]</color> Bridge ReInitializing (HTTP JSON-RPC)...");
             EditorApplication.delayCall += () =>
             {
                 if (!IsConnected)
@@ -117,7 +117,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             Application.logMessageReceivedThreaded -= OnLogMessageReceived;
             Application.logMessageReceivedThreaded += OnLogMessageReceived;
-            Debug.Log("<color=cyan>[Bridge]</color> Unity event hooks installed (hierarchy/selection/playMode/console -> Python).");
+            //Debug.Log("<color=lime>[Bridge]</color> Unity event hooks installed (hierarchy/selection/playMode/console -> Python).");
         }
 
         private static void RemoveEventHooks()
@@ -128,7 +128,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             Selection.selectionChanged -= OnSelectionChanged;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             Application.logMessageReceivedThreaded -= OnLogMessageReceived;
-            Debug.Log("<color=cyan>[Bridge]</color> Unity event hooks removed.");
+            //Debug.Log("<color=lime>[Bridge]</color> Unity event hooks removed.");
         }
 
         private static void OnHierarchyChanged()
