@@ -8,8 +8,14 @@ class AppState:
     # Claude / other agents may launch MCP server from a different path
     base_dir: Path = Path(__file__).parent.resolve()
 
-    # HTTP bridge to Unity Editor (replaces websocket)
+    # HTTP bridge to Unity Editor (JSON-RPC over HTTP)
     unity_base_url: str = "http://127.0.0.1:1073"
+    unity_rpc_path: str = "/rpc"
+
+    # Python JSON-RPC event server (Unity -> Python notifications)
+    python_event_host: str = "127.0.0.1"
+    python_event_port: int = 1074
+    python_event_path: str = "/rpc"
 
     # Unity's HttpListener accepts concurrently, but the MainThreadMessageQueue drain only
     # ever processes one item at a time — this keeps request ordering
@@ -17,17 +23,12 @@ class AppState:
     unity_request_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_reload_trigger_at: float = 0
 
-    # --- MCP client capability gating ---
-    # Stores the last InitializeRequestParams received from the MCP client.
-    # Used for upfront feature-gating of vision tools (screenshot analysis).
-    client_capabilities: Optional[Any] = None
-    client_info: Optional[Any] = None
-    client_protocol_version: Optional[str] = None
-    initialize_params: Optional[Any] = None
+    @property
+    def unity_rpc_url(self) -> str:
+        return f"{self.unity_base_url}{self.unity_rpc_path}"
 
-    # --- Injected LLM for RunnableConfig ---
-    # The user's LLM can be injected here via config["configurable"]["llm"]
-    # and will be used by LightingAgent
-    llm_config: Optional[Any] = None
+    @property
+    def python_event_url(self) -> str:
+        return f"http://{self.python_event_host}:{self.python_event_port}{self.python_event_path}"
 
 app_state = AppState()

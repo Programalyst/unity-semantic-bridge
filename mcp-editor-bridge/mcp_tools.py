@@ -1,4 +1,4 @@
-from unity_bridge import send_to_unity
+from unity_bridge import call_unity
 from typing import Annotated, Literal
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from fastmcp.utilities.types import Image
@@ -20,15 +20,14 @@ def register_unity_tools(mcp):
         """
         Captures a screenshot and returns it as an image. Useful for visually inspecting lighting, UI layout, or general scene appearance.
         """
-        payload = {
-            "action": "Get_Screenshot",
+        params: dict = {
             "source": source,
             "jpgQuality": jpg_quality,
             "maxWidth": max_width,
         }
         if focus_instance_id is not None:
-            payload["focusInstanceId"] = focus_instance_id
-        result = await send_to_unity(payload)
+            params["focusInstanceId"] = focus_instance_id
+        result = await call_unity("Get_Screenshot", params)
         if result.startswith("Error:"):
             raise RuntimeError(result)
         return Image(data=base64.b64decode(result), format="jpeg")
@@ -52,18 +51,15 @@ def register_unity_tools(mcp):
         Tip: set includeComponents=True to confirm a component exists on a GameObject before inspecting it.
         Tip: for a specific known subtree (e.g. a UI Canvas), pass its instance_id as root_instance_id instead of raising max_nodes to reach it from the scene root.
         """
-        payload = {
-            "action": "Get_SceneHierarchy",
+        return await call_unity("Get_SceneHierarchy", {
             "depth": depth,
             "maxNodes": max_nodes,
             "includeLayers": include_layers,
             "includeComponents": include_components,
             "includePositions": include_positions,
             "onlyMainCamVisible": only_main_cam_visible,
-            # If root_instance_id is None, Unity will receive: "rootInstanceId": null
             "rootInstanceId": root_instance_id
-        }
-        return await send_to_unity(payload)
+        })
     
     @mcp.tool()
     async def get_gameobject_tree(
@@ -77,8 +73,7 @@ def register_unity_tools(mcp):
         Use this instead of get_scene_hierarchy when you already know the root object
         and want to avoid fetching the entire scene (faster, less likely to time out).
         """
-        return await send_to_unity({
-            "action": "Get_GameObjectTree",
+        return await call_unity("Get_GameObjectTree", {
             "instanceId": instance_id,
             "depth": depth,
             "includeComponents": include_components,
@@ -88,8 +83,7 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def notify_unity(text: str) -> str:
         """Sends a message to the Unity Editor chat window."""
-        return await send_to_unity({
-            "action": "Notify_Unity",
+        return await call_unity("Notify_Unity", {
             "message": f"IDE Agent: {text}",
         })
 
@@ -100,8 +94,7 @@ def register_unity_tools(mcp):
         folders: Annotated[list[str], "List of folder paths to search, e.g. ['Assets/Scripts']"] = ["Assets"]
     ) -> str:
         """Finds assets in Unity. Default folders: ['Assets']."""
-        return await send_to_unity({
-            "action": "Search_Assets",
+        return await call_unity("Search_Assets", {
             "filter": filter,
             "limit": limit,
             "folders": folders
@@ -112,8 +105,7 @@ def register_unity_tools(mcp):
         folder_path: Annotated[str, "The project-relative path (e.g., 'Assets/Scripts') to start the tree from"] = "Assets"
     ) -> str:
         """Returns the folder structure starting from the given path."""
-        return await send_to_unity({
-            "action": "Get_FolderStructure", 
+        return await call_unity("Get_FolderStructure", {
             "path": folder_path
         })
 
@@ -122,8 +114,7 @@ def register_unity_tools(mcp):
         asset_path: Annotated[str, "The full project-relative path to the asset, including extension (e.g., 'Assets/Prefabs/Player.prefab')"]
     ) -> str:
         """Finds all assets or scenes that reference a specific asset path."""
-        return await send_to_unity({
-            "action": "Find_AssetReferences", 
+        return await call_unity("Find_AssetReferences", {
             "path": asset_path
         })
     
@@ -142,8 +133,7 @@ def register_unity_tools(mcp):
         - Wrote {path}. Compilation triggered (token=...) — the write succeeded and Unity has started recompiling. Compilation is asynchronous: call check_compilation_status afterward (polling with a short delay if it reports PENDING) before assuming the script is error-free.
         - Failed to write script: ... — the write itself failed (bad path, IO error, etc).
         """
-        return await send_to_unity({
-            "action": "Write_Script",
+        return await call_unity("Write_Script", {
             "path": path,
             "content": content,
             "confirm": confirm
@@ -159,22 +149,22 @@ def register_unity_tools(mcp):
         - SUCCESS: compiled cleanly.
         - FAILED:\\n<file>:<line> <message> (one or more lines) — compilation errors from the most recent write. The script was written to disk even though it failed to compile.
         """
-        return await send_to_unity({"action": "Get_Compilation_Status"})
+        return await call_unity("Get_Compilation_Status")
     
     @mcp.tool()
     async def get_unity_console_logs() -> str:
         """Returns the most recent errors and warnings from the Unity Console."""
-        return await send_to_unity({"action": "Get_Console_Logs"})
+        return await call_unity("Get_Console_Logs")
     
     @mcp.tool()
     async def set_unity_play_mode(enabled: bool) -> str:
         """Enters or exits Play Mode in the Unity Editor."""
-        return await send_to_unity({"action": "Set_Play_Mode", "enabled": enabled})
+        return await call_unity("Set_Play_Mode", {"enabled": enabled})
     
     @mcp.tool()
     async def clear_unity_console_logs() -> str:
         """Clears old Unity Editor console logs."""
-        return await send_to_unity({"action": "Clear_Console_Logs"})
+        return await call_unity("Clear_Console_Logs")
     
     @mcp.tool()
     async def inspect_gameobject(
@@ -183,8 +173,7 @@ def register_unity_tools(mcp):
         """
         Detailed inspection of a GameObject including components and public fields.
         """
-        return await send_to_unity({
-            "action": "Inspect_GameObject",
+        return await call_unity("Inspect_GameObject", {
             "instanceId": instance_id
         })
     
@@ -203,8 +192,7 @@ def register_unity_tools(mcp):
         
         To read the component's source logic instead of its values, use get_component_code.
         """
-        return await send_to_unity({
-            "action": "Get_InspectorValues",
+        return await call_unity("Get_InspectorValues", {
             "instanceId": instance_id,
             "componentName": component_name
         })
@@ -217,8 +205,7 @@ def register_unity_tools(mcp):
         Locates and returns the full C# source code for a specific Unity component.
         Use this to analyze the logic of scripts identified via 'inspect_gameobject'.
         """
-        return await send_to_unity({
-            "action": "Get_ComponentCode",
+        return await call_unity("Get_ComponentCode", {
             "componentName": component_name
         })
 
@@ -229,9 +216,7 @@ def register_unity_tools(mcp):
         Shows which layers are configured to collide with each other or ignore each other.
         Essential for diagnosing 'friend or foe' collision or trigger issues.
         """
-        return await send_to_unity({
-            "action": "Get_PhysicsMatrix"
-        })
+        return await call_unity("Get_PhysicsMatrix")
     
     @mcp.tool()
     async def add_component(
@@ -244,8 +229,7 @@ def register_unity_tools(mcp):
         If the component already exists, behaviour is controlled by allow_duplicate.
         Returns the new (or existing) component's instance_id and the added type name.
         """
-        return await send_to_unity({
-            "action": "Add_Component",
+        return await call_unity("Add_Component", {
             "instanceId": instance_id,
             "componentType": component_type,
             "allowDuplicate": allow_duplicate
@@ -257,8 +241,7 @@ def register_unity_tools(mcp):
         component_type: Annotated[str, "Fully-qualified C# type name of the component to remove from the GameObject. E.g. 'UnityEngine.Rigidbody', 'UnityEngine.CapsuleCollider'."],
     ) -> str:
         """Remove a component by instance_id"""
-        return await send_to_unity({
-            "action": "Remove_Component",
+        return await call_unity("Remove_Component", {
             "instanceId": instance_id,
             "componentType": component_type,
         })
@@ -275,8 +258,7 @@ def register_unity_tools(mcp):
         Records an Undo operation so changes are reversible in the Editor.
         Use 'get_component_inspector_values' first to discover field names and current values.
         """
-        return await send_to_unity({
-            "action": "Set_FieldValues",
+        return await call_unity("Set_FieldValues", {
             "instanceId": instance_id,
             "componentName": component_name,
             "fields": fields,
@@ -294,7 +276,7 @@ def register_unity_tools(mcp):
             str: A message confirming the action execution and the name of the operation 
                 that was reversed (if captured by the Unity bridge).
         """
-        return await send_to_unity({"action": "Undo_Last_Action"})
+        return await call_unity("Undo_Last_Action")
     
     @mcp.tool()
     async def redo_last_action() -> str:
@@ -307,7 +289,7 @@ def register_unity_tools(mcp):
             str: A message confirming the action execution and the name of the operation 
                 that was re-applied (if captured by the Unity bridge).
         """
-        return await send_to_unity({"action": "Redo_Last_Action"})
+        return await call_unity("Redo_Last_Action")
     
     @mcp.tool()
     async def get_lights_affecting_object(
@@ -321,15 +303,14 @@ def register_unity_tools(mcp):
         - Whether the target is within range of each light
         - Total count of lights in range (to spot per-object limit issues)
         """
-        return await send_to_unity({
-            "action": "Get_LightsAffectingObject",
+        return await call_unity("Get_LightsAffectingObject", {
             "instanceId": instance_id
         })
     
     @mcp.tool()
     async def get_urp_pipeline_settings() -> str:
         """Returns the URP render pipeline asset's current render path setting"""
-        return await send_to_unity({"action": "Get_UrpPipelineSettings"})
+        return await call_unity("Get_UrpPipelineSettings")
 
     @mcp.tool()
     async def diagnose_lighting_issue(

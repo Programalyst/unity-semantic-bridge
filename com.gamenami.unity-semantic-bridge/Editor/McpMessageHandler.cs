@@ -11,12 +11,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         public static void HandleMcpMessage(JObject mcpMessage, TaskCompletionSource<string> completion)
         {
-            var action = mcpMessage["action"]?.ToString();
+            var action = mcpMessage["method"]?.ToString() ?? mcpMessage["action"]?.ToString();
 
             var parameters = new List<string>();
             foreach (var property in mcpMessage.Properties())
             {
-                if (property.Name is "action" or "request_id") continue;
+                if (property.Name is "method" or "action" or "request_id" or "jsonrpc" or "id") continue;
                 var value = property.Value.ToString();
                 if (value.Length > 100)
                     value = value.Substring(0, 97) + "...";
