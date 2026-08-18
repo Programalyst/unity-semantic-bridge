@@ -290,6 +290,19 @@ def register_unity_tools(mcp):
                 that was re-applied (if captured by the Unity bridge).
         """
         return await call_unity("Redo_Last_Action")
+
+    @mcp.tool()
+    async def get_last_undo_redo_action() -> str:
+        """Triggers a native Redo operation (Ctrl+Y / Cmd+Y equivalent) in the Unity Editor.
+        
+        Use this tool to re-apply an action that was previously undone by the 
+        'undo_last_action' tool or by the human user.
+        
+        Returns:
+            str: A message confirming the action execution and the name of the operation 
+                that was re-applied (if captured by the Unity bridge).
+        """
+        return await call_unity("Get_Last_Undo_Redo_Action")
     
     @mcp.tool()
     async def get_lights_affecting_object(

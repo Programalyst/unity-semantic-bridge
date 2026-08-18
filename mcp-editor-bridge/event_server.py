@@ -139,8 +139,7 @@ def _handle_single(obj: Any) -> dict:
 
 class _RpcHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        # Accept /rpc and /events and /mcp as aliases
-        if self.path not in ("/rpc", "/events", "/mcp", "/jsonrpc"):
+        if self.path not in ("/rpc", "/jsonrpc"):
             self.send_response(404)
             self.send_header("Content-Type", "application/json")
             self.end_headers()

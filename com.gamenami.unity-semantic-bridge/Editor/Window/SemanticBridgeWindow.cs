@@ -64,9 +64,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             var isConnected = EditorBridge.IsConnected;
             if (isConnected) 
-                EditorGUILayout.HelpBox($"HTTP bridge active at http://127.0.0.1:{EditorBridge.ListeningPort}/mcp — ready to receive MCP commands.", MessageType.Info);
+                EditorGUILayout.HelpBox($"HTTP bridge active at http://127.0.0.1:{EditorBridge.ListeningPort}/rpc — ready to receive JSON-RPC commands.", MessageType.Info);
             else
-                EditorGUILayout.HelpBox("Start the HTTP listener to receive MCP commands.", MessageType.Info);
+                EditorGUILayout.HelpBox("Start the HTTP listener to receive commands from MCP server", MessageType.Info);
             
             DrawLogArea("MCP Activity Log", _agentHistory);
         }
