@@ -1,6 +1,6 @@
 import logging
-import event_server
-import events_buffer
+from . import event_server
+from . import events_buffer
 
 # wire up Unity side for new handlers in EditorBridge.InstallEventHooks()
 def register_event_handlers() -> None:
