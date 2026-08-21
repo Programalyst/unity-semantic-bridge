@@ -122,6 +122,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = LightingFunctions.GetUrpPipelineSettings();
                         break;
 
+                    case "Get_ProjectSettings":
+                        resultText = ProjectSettingsFunctions.GetProjectSettings(mcpMessage);
+                        break;
+
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");
                         resultText = $"Error: Unhandled action '{action}'.";

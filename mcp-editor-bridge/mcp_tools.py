@@ -14,6 +14,35 @@ def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
 
     @mcp.tool()
+    async def get_project_settings(
+        sections: Annotated[list[str] | None, "Which sections to return. Valid: 'core', 'rendering', 'input', 'ui', 'scripting', 'tags_layers'. Omit or pass empty for all."] = None,
+    ) -> str:
+        """
+        Returns Unity Project Settings as JSON. Selectively fetch sections to keep output small.
+
+        Sections:
+        - core: Unity version, editor platform, active build target/group, company/product/bundleVersion
+        - rendering: active pipeline (Built-in/URP/HDRP), URP asset path, color space, MSAA/quality, plus URP details (folded from get_urp_pipeline_settings)
+        - input: Active Input Handling (Old/New/Both) and default InputActionAsset assets if any
+        - ui: uGUI vs UI Toolkit signals — EventSystem/Canvas in open scenes, UIDocument/VisualTreeAsset/StyleSheet counts
+        - scripting: API compatibility level, #define symbols (group), allowUnsafeCode, scripting backend
+        - tags_layers: Tag list and layer names/index map (physics collision matrix stays in get_unity_physics_layers)
+
+        Example: get_project_settings(sections=["core","rendering"]) for a focused query.
+        """
+        params: dict = {}
+        if sections is not None:
+            # Normalize to lower-case, handle tags alias
+            normed = []
+            for s in sections:
+                t = s.strip().lower()
+                if t in ("tags", "tagslayers"):
+                    t = "tags_layers"
+                normed.append(t)
+            params["sections"] = normed
+        return await call_unity("Get_ProjectSettings", params)
+
+    @mcp.tool()
     async def get_screenshot(
         source: Annotated[Literal["game", "scene"], "'game': renders from Camera.main — what the player sees in Play mode or a build. 'scene': renders from the Editor's Scene view camera — wherever it's currently aimed by the user."] = "game",
         focus_instance_id: Annotated[int | None, "Scene view only. Frame the Scene camera on this GameObject before capturing, instead of using its current position. Ignored when source='game'."] = None,

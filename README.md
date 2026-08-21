@@ -12,6 +12,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
 - Optimized scene heirarchy query and gameobject inspection tools with workflow hints for agents - more token efficient than official Unity CLI tool
 - In Editor connection status and reconnect. Not tied to Unity Licensing - Runs 100% local. No need to reauthenticate when token expires
+- Dedicated tools for agent to see human actions and changes
 - In Editor MCP log so you can see what tools are called
 - Dedicated Lighting tools for URP projects
 
@@ -55,7 +56,8 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - `inspect_gameobject` — Full details for a single GameObject.
 - `get_component_inspector_values` — Inspector values for a specific component on a GameObject.
 - `get_component_code` — Source code for a component.
-- `add_component` / `set_field_value` — Add components or modify field values on a GameObject.
+- `add_component` / `remove_component`
+- `set_field_values` — Modify field values on a GameObject.
 
 **Lighting**
 - `get_lights_affecting_object` — Lights within range of a target object, using distance to the object's actual bounds (not just its transform pivot) — important for large/flat objects like terrain.
