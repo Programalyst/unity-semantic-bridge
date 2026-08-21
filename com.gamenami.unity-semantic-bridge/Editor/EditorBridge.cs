@@ -143,7 +143,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 var payload = new JObject
                 {
                     ["scene"] = scene.name,
-                    ["timestamp"] = DateTime.UtcNow.ToString("o")
+                    ["timestamp"] = DateTime.UtcNow.ToString("o"),
+                    ["source"] = McpMessageHandler.CurrentActionSource
                 };
                 SendNotification("unity/hierarchyChanged", payload);
             }
@@ -158,7 +159,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 var payload = new JObject
                 {
                     ["instanceIds"] = new JArray(ids),
-                    ["count"] = ids.Length
+                    ["count"] = ids.Length,
+                    ["source"] = McpMessageHandler.CurrentActionSource
                 };
                 // Include first selected object's name if available
                 if (ids.Length > 0)
@@ -175,7 +177,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             try
             {
-                var payload = new JObject { ["state"] = state.ToString() };
+                var payload = new JObject
+                {
+                    ["state"] = state.ToString(),
+                    ["source"] = McpMessageHandler.CurrentActionSource
+                };
                 SendNotification("unity/playModeStateChanged", payload);
             }
             catch (Exception e) { Debug.LogWarning($"[Bridge] OnPlayModeStateChanged failed: {e.Message}"); }
@@ -190,7 +196,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 var payload = new JObject
                 {
                     ["message"] = message.Length > 1000 ? message.Substring(0, 1000) : message,
-                    ["type"] = type.ToString()
+                    ["type"] = type.ToString(),
+                    ["source"] = McpMessageHandler.CurrentActionSource
                 };
                 if (!string.IsNullOrEmpty(stackTrace) && stackTrace.Length < 1000)
                     payload["stackTrace"] = stackTrace.Substring(0, Math.Min(1000, stackTrace.Length));

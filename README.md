@@ -4,8 +4,7 @@
 ![Static Badge](https://img.shields.io/badge/unity_version-6000.3%20%3C%3D-blue)
 ![Static Badge](https://img.shields.io/badge/runtime-uv-purple)
 
-
-A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and understand Unity scenes efficiently (reduced the number of tool calls required).
+A Unity MCP Bridge built for agents working alongside you in a live Editor session — not just querying a static project. Token-efficient tools give your agent visibility into what changed in the scene while you were both working in it.
 
 <img src="images/usb-editor-mode.png" alt="Alt text" width="600">
 
@@ -46,6 +45,10 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 
 ## Available Tools
 
+**Human-Agent Cowork**
+- `get_recent_unity_events` - Returns Unity Editor events (hierarchy/selection/play-mode/console changes)
+- `get_project_settings` - Allows agent to orientate itself to the project
+
 **Scene & GameObject inspection**
 - `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), and optional filtering to only main-camera-visible objects.
 - `get_gameobject_tree` — Full hierarchy under a specific GameObject.
@@ -64,6 +67,7 @@ A MCP server to allow AI coding tools (like Cursor, Claude, etc.) to query and u
 - `find_unity_files` — Finds assets matching a query.
 - `get_project_tree` — Project folder structure.
 - `write_unity_script` — Creates/writes a C# script file.
+- `get_compilation_status` - Allows agent to check if there's a domain reload
 
 **Editor & runtime**
 - `get_screenshot` — Captures the Scene view (Edit Mode) as a JPEG.

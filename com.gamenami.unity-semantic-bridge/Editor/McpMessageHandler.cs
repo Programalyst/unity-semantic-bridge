@@ -8,15 +8,18 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class McpMessageHandler
     {
-
+        public static string CurrentActionSource => _currentActionSource;
+        private static string _currentActionSource = "human";
         public static void HandleMcpMessage(JObject mcpMessage, TaskCompletionSource<string> completion)
         {
-            var action = mcpMessage["method"]?.ToString() ?? mcpMessage["action"]?.ToString();
+            var action = mcpMessage["method"]?.ToString();
+            _currentActionSource = $"agent:{action}";
 
             var parameters = new List<string>();
             foreach (var property in mcpMessage.Properties())
             {
-                if (property.Name is "method" or "action" or "request_id" or "jsonrpc" or "id") continue;
+                // only process "params" key
+                if (property.Name is "method" or "jsonrpc" or "id") continue;
                 var value = property.Value.ToString();
                 if (value.Length > 100)
                     value = value.Substring(0, 97) + "...";
@@ -137,6 +140,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             finally
             {
+                _currentActionSource = "human";
                 //Debug.Log($"[MCP] {action} took {sw.ElapsedMilliseconds}ms");
             }
 
