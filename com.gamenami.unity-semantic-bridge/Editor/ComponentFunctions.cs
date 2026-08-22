@@ -169,6 +169,34 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void ApplyPropertyValue(SerializedProperty prop, JToken value)
         {
+            // Handle arrays / Generic structs recursively — needed for RigBuilder.m_RigLayers and Constraint.m_Data
+            if (prop.isArray)
+            {
+                if (value.Type != JTokenType.Array)
+                    throw new NotSupportedException($"Property '{prop.name}' is an array but value is {value.Type}, expected JSON array.");
+                var arr = (JArray)value;
+                prop.arraySize = arr.Count;
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var element = prop.GetArrayElementAtIndex(i);
+                    // Array elements are usually Generic structs — recurse via relative properties
+                    if (element.propertyType == SerializedPropertyType.Generic)
+                    {
+                        ApplyGenericValue(element, arr[i]);
+                    }
+                    else
+                    {
+                        ApplyPropertyValue(element, arr[i]);
+                    }
+                }
+                return;
+            }
+            if (prop.propertyType == SerializedPropertyType.Generic)
+            {
+                ApplyGenericValue(prop, value);
+                return;
+            }
+
             switch (prop.propertyType)
             {
                 case SerializedPropertyType.Integer:
@@ -198,20 +226,73 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     break;
                 case SerializedPropertyType.Quaternion:
                     var jq = (JObject)value;
-                    prop.quaternionValue = new Quaternion(jq["x"].ToObject<float>(), jq["y"].ToObject<float>(), jq["z"].ToObject<float>(), jq["w"].ToObject<float>()); 
+                    // Support both quaternion {x,y,z,w} and euler {x,y,z} or {euler:{x,y,z}}
+                    if (jq["w"] != null)
+                        prop.quaternionValue = new Quaternion(jq["x"].ToObject<float>(), jq["y"].ToObject<float>(), jq["z"].ToObject<float>(), jq["w"].ToObject<float>());
+                    else if (jq["euler"] != null)
+                    {
+                        var e = (JObject)jq["euler"];
+                        prop.quaternionValue = Quaternion.Euler(e["x"].ToObject<float>(), e["y"].ToObject<float>(), e["z"].ToObject<float>());
+                    }
+                    else
+                        prop.quaternionValue = Quaternion.Euler(jq["x"].ToObject<float>(), jq["y"].ToObject<float>(), jq["z"].ToObject<float>());
                     break;
                 case SerializedPropertyType.Color:
                     var jc = (JObject)value;
                     prop.colorValue = new Color(jc["r"].ToObject<float>(), jc["g"].ToObject<float>(), jc["b"].ToObject<float>(), jc["a"]?.ToObject<float>() ?? 1f); 
                     break;
                 case SerializedPropertyType.ObjectReference:
-                    prop.objectReferenceValue = EditorUtility.InstanceIDToObject(value.ToObject<int>()); 
+                    // Allow null/0/None to clear, integer instanceId, or JObject with instanceId
+                    if (value.Type == JTokenType.Null || (value.Type == JTokenType.String && value.ToString() == "None"))
+                        prop.objectReferenceValue = null;
+                    else if (value.Type == JTokenType.Integer)
+                        prop.objectReferenceValue = EditorUtility.InstanceIDToObject(value.ToObject<int>());
+                    else if (value is JObject jo && jo["instanceId"] != null)
+                        prop.objectReferenceValue = EditorUtility.InstanceIDToObject(jo["instanceId"].ToObject<int>());
+                    else
+                        prop.objectReferenceValue = EditorUtility.InstanceIDToObject(value.ToObject<int>()); 
                     break;
                 case SerializedPropertyType.LayerMask:
                     prop.intValue = value.ToObject<int>(); 
                     break;
+                case SerializedPropertyType.Vector2Int:
+                    var j2i = (JObject)value;
+                    prop.vector2IntValue = new Vector2Int(j2i["x"].ToObject<int>(), j2i["y"].ToObject<int>());
+                    break;
+                case SerializedPropertyType.Vector3Int:
+                    var j3i = (JObject)value;
+                    prop.vector3IntValue = new Vector3Int(j3i["x"].ToObject<int>(), j3i["y"].ToObject<int>(), j3i["z"].ToObject<int>());
+                    break;
                 default:
-                    throw new NotSupportedException($"SerializedPropertyType '{prop.propertyType}' is not supported.");
+                    throw new NotSupportedException($"SerializedPropertyType '{prop.propertyType}' is not supported for '{prop.name}'.");
+            }
+        }
+
+        private static void ApplyGenericValue(SerializedProperty prop, JToken value)
+        {
+            if (value is JObject obj)
+            {
+                foreach (var kvp in obj)
+                {
+                    var child = prop.FindPropertyRelative(kvp.Key);
+                    if (child == null)
+                        throw new NotSupportedException($"Generic property '{prop.name}' has no child '{kvp.Key}'.");
+                    ApplyPropertyValue(child, kvp.Value);
+                }
+            }
+            else if (value is JArray arr && prop.isArray)
+            {
+                // Already handled via isArray branch; fallback for nested generic arrays like m_SourceObjects
+                prop.arraySize = arr.Count;
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var element = prop.GetArrayElementAtIndex(i);
+                    ApplyPropertyValue(element, arr[i]);
+                }
+            }
+            else
+            {
+                throw new NotSupportedException($"Generic property '{prop.name}' expects JObject value, got {value.Type}.");
             }
         }
     }

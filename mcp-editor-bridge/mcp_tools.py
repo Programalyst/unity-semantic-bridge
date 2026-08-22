@@ -298,6 +298,88 @@ def register_unity_tools(mcp):
         })
 
     @mcp.tool()
+    async def create_gameobject(
+        name: Annotated[str, "Name for the new GameObject."],
+        parent_instance_id: Annotated[int | None, "Optional parent GameObject instanceId. If omitted, creates at scene root."] = None,
+        local_position: Annotated[dict | None, "Optional local position {x,y,z}. Applied after parenting."] = None,
+        local_rotation: Annotated[dict | None, "Optional local rotation as quaternion {x,y,z,w} or euler {x,y,z} / {euler:{x,y,z}}."] = None,
+        local_scale: Annotated[dict | None, "Optional local scale {x,y,z}."] = None,
+    ) -> str:
+        """
+        Creates a new GameObject, optionally parented, with Undo support.
+        Uses new GameObject(name) + Undo.RegisterCreatedObjectUndo + SetParent(parent, false).
+        Returns {instanceId, path} as JSON.
+        """
+        params: dict = {"name": name}
+        if parent_instance_id is not None:
+            params["parentInstanceId"] = parent_instance_id
+        if local_position is not None:
+            params["localPosition"] = local_position
+        if local_rotation is not None:
+            params["localRotation"] = local_rotation
+        if local_scale is not None:
+            params["localScale"] = local_scale
+        return await call_unity("Create_GameObject", params)
+
+    @mcp.tool()
+    async def duplicate_gameobject(
+        instance_id: Annotated[int, "instanceId of the GameObject to clone (whole hierarchy)."],
+        new_name: Annotated[str | None, "Optional new name for the clone. If omitted, keeps source name."] = None,
+    ) -> str:
+        """
+        Duplicates a GameObject hierarchy via Instantiate + Undo.RegisterCreatedObjectUndo.
+        Use for cloning whole rig layers (e.g. Rig Layer (Rifle Idle)).
+        Returns {instanceId, path} as JSON.
+        """
+        params: dict = {"instanceId": instance_id}
+        if new_name is not None:
+            params["newName"] = new_name
+        return await call_unity("Duplicate_GameObject", params)
+
+    @mcp.tool()
+    async def set_parent(
+        instance_id: Annotated[int, "instanceId of the GameObject to reparent."],
+        parent_instance_id: Annotated[int | None, "New parent instanceId, or null to move to scene root."] = None,
+        keep_world_position: Annotated[bool, "If true, keep world position (worldPositionStays). Default false = keep local."] = False,
+    ) -> str:
+        """
+        Reparents a GameObject via Undo.SetTransformParent.
+        Pass parent_instance_id=null to unparent to root.
+        """
+        params: dict = {"instanceId": instance_id, "keepWorldPosition": keep_world_position}
+        # Need to explicitly pass null vs omit — use dict with None handling via call_unity serialization
+        params["parentInstanceId"] = parent_instance_id
+        return await call_unity("Set_Parent", params)
+
+    @mcp.tool()
+    async def delete_gameobject(
+        instance_id: Annotated[int, "instanceId of the GameObject to delete."],
+    ) -> str:
+        """
+        Deletes a GameObject via Undo.DestroyObjectImmediate (supports Undo).
+        """
+        return await call_unity("Delete_GameObject", {"instanceId": instance_id})
+
+    @mcp.tool()
+    async def copy_component(
+        source_instance_id: Annotated[int, "instanceId of the GameObject that owns the source component."],
+        source_component: Annotated[str, "Component type name to copy (e.g. 'Rig', 'MultiPositionConstraint'). Uses EditorUtility.CopySerialized for deep copy of Constraint.data structs."],
+        target_instance_id: Annotated[int, "instanceId of the destination GameObject to add the copied component to."],
+        source_component_index: Annotated[int, "Index if multiple components of same type exist on source (default 0)."] = 0,
+    ) -> str:
+        """
+        Deep-copies a component from one GameObject to another via Undo.AddComponent + EditorUtility.CopySerialized.
+        Required for Animation Rigging constraints because their m_Data is [Generic] and cannot be rebuilt via set_field_values.
+        Returns {targetComponentIndex, targetInstanceId} as JSON.
+        """
+        return await call_unity("Copy_Component", {
+            "sourceInstanceId": source_instance_id,
+            "sourceComponent": source_component,
+            "targetInstanceId": target_instance_id,
+            "sourceComponentIndex": source_component_index
+        })
+
+    @mcp.tool()
     async def get_recent_unity_events(
         since_seconds_ago: float = 60,
         limit: int = 50,

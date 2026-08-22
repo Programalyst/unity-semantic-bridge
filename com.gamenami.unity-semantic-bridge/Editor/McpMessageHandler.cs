@@ -114,6 +114,26 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ComponentFunctions.SetFieldValues(mcpMessage);
                         break;
 
+                    case "Create_GameObject":
+                        resultText = HierarchyFunctions.CreateGameObject(mcpMessage);
+                        break;
+
+                    case "Duplicate_GameObject":
+                        resultText = HierarchyFunctions.DuplicateGameObject(mcpMessage);
+                        break;
+
+                    case "Set_Parent":
+                        resultText = HierarchyFunctions.SetParent(mcpMessage);
+                        break;
+
+                    case "Delete_GameObject":
+                        resultText = HierarchyFunctions.DeleteGameObject(mcpMessage);
+                        break;
+
+                    case "Copy_Component":
+                        resultText = HierarchyFunctions.CopyComponent(mcpMessage);
+                        break;
+
                     case "Get_LightsAffectingObject":
                         resultText = LightingFunctions.GetLightsAffectingObject(mcpMessage);
                         break;
