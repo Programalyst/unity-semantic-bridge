@@ -302,9 +302,11 @@ def register_unity_tools(mcp):
         since_seconds_ago: float = 60,
         limit: int = 50,
     ) -> str:
-        """Returns Unity Editor events (hierarchy/selection/play-mode/console changes)
+        """Returns Unity Editor events (hierarchy/selection/play-mode/console/objectChanged changes)
         pushed since the given time window — use this to check what changed in the
-        Editor (including manual edits by the user) since your last check."""
+        Editor (including manual edits by the user) since your last check. objectChanged
+        covers fine-grained component/property edits (add_component, remove_component,
+        set_field_values and human Inspector edits) via ObjectChangeEvents.changesPublished."""
         events = events_buffer.get_recent_events(since=time.time() - since_seconds_ago, limit=limit)
         if not events:
             return "No Unity events recorded in that window."
@@ -315,6 +317,8 @@ def register_unity_tools(mcp):
         instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
     ) -> str:
         """
+        Finds all scene lights and determines if they overlap or illuminate a specific GameObject.
+        
         Returns:
         - All Light components in the scene
         - For each light: name, type, intensity, range, position, lightmapping mode, culling mask, rendering layer mask

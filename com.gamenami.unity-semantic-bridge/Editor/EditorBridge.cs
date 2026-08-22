@@ -104,6 +104,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static bool _eventHooksInstalled;
         private static double _lastHierarchyEventTime;
+        private static double _lastObjectChangeEventTime;
 
         private static void InstallEventHooks()
         {
@@ -111,13 +112,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
             _eventHooksInstalled = true;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
+            ObjectChangeEvents.changesPublished -= OnObjectChangesPublished;
+            ObjectChangeEvents.changesPublished += OnObjectChangesPublished;
             Selection.selectionChanged -= OnSelectionChanged;
             Selection.selectionChanged += OnSelectionChanged;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             Application.logMessageReceivedThreaded -= OnLogMessageReceived;
             Application.logMessageReceivedThreaded += OnLogMessageReceived;
-            //Debug.Log("<color=lime>[Bridge]</color> Unity event hooks installed (hierarchy/selection/playMode/console -> Python).");
+            //Debug.Log("<color=lime>[Bridge]</color> Unity event hooks installed (hierarchy/selection/playMode/console/objectChange -> Python).");
         }
 
         private static void RemoveEventHooks()
@@ -125,6 +128,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (!_eventHooksInstalled) return;
             _eventHooksInstalled = false;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+            ObjectChangeEvents.changesPublished -= OnObjectChangesPublished;
             Selection.selectionChanged -= OnSelectionChanged;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             Application.logMessageReceivedThreaded -= OnLogMessageReceived;
@@ -149,6 +153,115 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 SendNotification("unity/hierarchyChanged", payload);
             }
             catch (Exception e) { Debug.LogWarning($"[Bridge] OnHierarchyChanged failed: {e.Message}"); }
+        }
+
+        private static void OnObjectChangesPublished(ref ObjectChangeEventStream stream)
+        {
+            // Debounce aggregated stream batches (property drags can publish every tick)
+            var now = EditorApplication.timeSinceStartup;
+            if (now - _lastObjectChangeEventTime < 0.25) return;
+            _lastObjectChangeEventTime = now;
+
+            try
+            {
+                var changes = new JArray();
+                for (int i = 0; i < stream.length; i++)
+                {
+                    var kind = stream.GetEventType(i);
+                    var kindStr = kind.ToString();
+                    var entry = new JObject { ["kind"] = kindStr };
+                    try
+                    {
+                        switch (kind)
+                        {
+                            case ObjectChangeKind.ChangeGameObjectStructure:
+                            {
+                                stream.GetChangeGameObjectStructureEvent(i, out var evt);
+                                entry["instanceId"] = evt.instanceId;
+                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                if (obj != null) entry["name"] = obj.name;
+                                break;
+                            }
+                            case ObjectChangeKind.ChangeGameObjectOrComponentProperties:
+                            {
+                                stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var evt);
+                                entry["instanceId"] = evt.instanceId;
+                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                if (obj != null)
+                                {
+                                    entry["name"] = obj.name;
+                                    entry["objectType"] = obj.GetType().Name;
+                                }
+                                break;
+                            }
+                            case ObjectChangeKind.CreateGameObjectHierarchy:
+                            {
+                                stream.GetCreateGameObjectHierarchyEvent(i, out var evt);
+                                entry["instanceId"] = evt.instanceId;
+                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                if (obj != null) entry["name"] = obj.name;
+                                var sceneName = evt.scene.name;
+                                if (!string.IsNullOrEmpty(sceneName)) entry["scene"] = sceneName;
+                                break;
+                            }
+                            case ObjectChangeKind.DestroyGameObjectHierarchy:
+                            {
+                                stream.GetDestroyGameObjectHierarchyEvent(i, out var evt);
+                                entry["instanceId"] = evt.instanceId;
+                                var sceneName = evt.scene.name;
+                                if (!string.IsNullOrEmpty(sceneName)) entry["scene"] = sceneName;
+                                break;
+                            }
+                            case ObjectChangeKind.ChangeAssetObjectProperties:
+                            {
+                                stream.GetChangeAssetObjectPropertiesEvent(i, out var evt);
+                                entry["instanceId"] = evt.instanceId;
+                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                if (obj != null)
+                                {
+                                    entry["name"] = obj.name;
+                                    entry["objectType"] = obj.GetType().Name;
+                                }
+                                entry["guid"] = evt.guid.ToString();
+                                break;
+                            }
+                            case ObjectChangeKind.UpdatePrefabInstances:
+                            {
+                                stream.GetUpdatePrefabInstancesEvent(i, out var evt);
+                                var ids = new JArray();
+                                foreach (var id in evt.instanceIds) ids.Add(id);
+                                if (ids.Count > 0) entry["instanceIds"] = ids;
+                                var sceneName = evt.scene.name;
+                                if (!string.IsNullOrEmpty(sceneName)) entry["scene"] = sceneName;
+                                break;
+                            }
+                            default:
+                                // For kinds without a strongly-typed accessor (e.g. CreateAssetObjectHierarchy),
+                                // just report the kind; instance resolution not available generically
+                                break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        entry["error"] = ex.Message;
+                    }
+                    changes.Add(entry);
+                }
+
+                if (changes.Count == 0) return;
+
+                var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+                var payload = new JObject
+                {
+                    ["scene"] = scene.name,
+                    ["timestamp"] = DateTime.UtcNow.ToString("o"),
+                    ["source"] = McpMessageHandler.CurrentActionSource,
+                    ["changes"] = changes,
+                    ["changeCount"] = changes.Count
+                };
+                SendNotification("unity/objectChanged", payload);
+            }
+            catch (Exception e) { Debug.LogWarning($"[Bridge] OnObjectChangesPublished failed: {e.Message}"); }
         }
 
         private static void OnSelectionChanged()
