@@ -1,6 +1,6 @@
 # Unity Semantic Bridge (USB)
 
-![Static Badge](https://img.shields.io/badge/unity_version-2022.x-blue)
+![Static Badge](https://img.shields.io/badge/unity_version-%3E%3D%202022.3-blue)
 ![Static Badge](https://img.shields.io/badge/unity_version-6000.3%20%3C%3D-blue)
 ![Static Badge](https://img.shields.io/badge/runtime-uv-purple)
 
@@ -18,7 +18,9 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
 ## Prerequesites
 
- - **Unity 2022 LTS or Unity 6.3** (versions of Unity newer than 6.3 use change the InstanceIds to EntityIds - not tested for compatibility yet)
+ - **Unity 2022.3 LTS up to Unity 6.3** 
+	- uses `UnityEditor.ObjectChangeEvents.changesPublished` available in 2022.3 LTS and later
+	- versions of Unity newer than 6.3 use change `InstanceIds` for `EntityIds` - not tested for compatibility yet
 - **uv** (https://docs.astral.sh/uv/getting-started/installation/)
 
 ####  Optional
@@ -47,7 +49,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 ## Available Tools
 
 **Human-Agent Cowork**
-- `get_recent_unity_events` - Returns Unity Editor events (hierarchy/selection/play-mode/console changes)
+- `get_recent_unity_events` - Returns Unity Editor events (gameObject/hierarchy/selection/play-mode/console changes)
 - `get_project_settings` - Allows agent to orientate itself to the project
 
 **Scene & GameObject inspection**

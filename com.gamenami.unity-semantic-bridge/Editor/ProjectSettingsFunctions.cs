@@ -226,14 +226,19 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             catch (Exception e) { o["eventSystem_error"] = e.Message; }
 
+            // Filter to Assets/ only to avoid counting built-in/Package UI Toolkit assets
+            // (e.g. com.unity.ui ships ~66 VisualTreeAssets / 172 StyleSheets that skew the signal).
+            // We want uiSignal to reflect project-owned usage, not package internals.
             try
             {
-                var uidocGuids = AssetDatabase.FindAssets("t:UIDocument");
-                o["uiDocumentAssetCount"] = uidocGuids.Length;
-                if (uidocGuids.Length > 0)
+                var uiDocGuids = AssetDatabase.FindAssets("t:UIDocument");
+                // Exclude packages — only count project-owned UIDocuments under Assets/
+                var filteredUiDocGuids = uiDocGuids.Where(g => AssetDatabase.GUIDToAssetPath(g).StartsWith("Assets/")).ToArray();
+                o["uiDocumentAssetCount"] = filteredUiDocGuids.Length;
+                if (filteredUiDocGuids.Length > 0)
                 {
                     var arr = new JArray();
-                    foreach (var guid in uidocGuids.Take(5))
+                    foreach (var guid in filteredUiDocGuids.Take(5))
                         arr.Add(AssetDatabase.GUIDToAssetPath(guid));
                     o["uiDocumentSamplePaths"] = arr;
                 }
@@ -243,13 +248,17 @@ namespace Gamenami.UnitySemanticBridge.Editor
             try
             {
                 var vtaGuids = AssetDatabase.FindAssets("t:VisualTreeAsset");
-                o["visualTreeAssetCount"] = vtaGuids.Length;
+                // Exclude packages — only count project-owned VisualTreeAssets under Assets/
+                var filteredVtaGuids = vtaGuids.Where(g => AssetDatabase.GUIDToAssetPath(g).StartsWith("Assets/")).ToArray();
+                o["visualTreeAssetCount"] = filteredVtaGuids.Length;
             }
             catch { }
             try
             {
                 var styleGuids = AssetDatabase.FindAssets("t:StyleSheet");
-                o["uiToolkitStyleSheetCount"] = styleGuids.Length;
+                // Exclude packages — only count project-owned StyleSheets under Assets/
+                var filteredStyleGuids = styleGuids.Where(g => AssetDatabase.GUIDToAssetPath(g).StartsWith("Assets/")).ToArray();
+                o["uiToolkitStyleSheetCount"] = filteredStyleGuids.Length;
             }
             catch { }
 
