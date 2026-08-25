@@ -49,36 +49,48 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 ## Available Tools
 
 **Human-Agent Cowork**
-- `get_recent_unity_events` - Returns Unity Editor events (gameObject/hierarchy/selection/play-mode/console changes)
-- `get_project_settings` - Allows agent to orientate itself to the project
+- `get_recent_unity_events` — Returns Unity Editor events (`hierarchy`/`selection`/`play-mode`/`console`/`objectChanged` via `ObjectChangeEvents.changesPublished`) pushed since a time window — use to see human edits, `add_component`/`remove_component`/`set_field_values` etc.
+- `notify_unity` — Sends a message to the Unity Editor chat window (`BridgeRelay.OnAgentMessage`).
 
-**Scene & GameObject inspection**
-- `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), and optional filtering to only main-camera-visible objects.
-- `get_gameobject_tree` — Full hierarchy under a specific GameObject.
-- `inspect_gameobject` — Full details for a single GameObject.
-- `get_component_inspector_values` — Inspector values for a specific component on a GameObject.
-- `get_component_code` — Source code for a component.
-- `add_component` / `remove_component`
-- `set_field_values` — Modify field values on a GameObject.
+**Project & Settings**
+- `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`.
 
-**Lighting**
-- `get_lights_affecting_object` — Lights within range of a target object, using distance to the object's actual bounds (not just its transform pivot) — important for large/flat objects like terrain.
-- `get_urp_pipeline_settings` — Current URP render pipeline configuration, including active Rendering Path (Forward / Forward+ / Deferred) and per-object light limits.
-- `diagnose_lighting_issue` — Autonomous multi-step diagnostic subagent for lighting problems. See `LightingAgent/README.md` for details.
+**Scene & GameObject Inspection**
+- `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), optional filtering to only main-camera-visible objects, and `root_instance_id` subtree queries.
+- `get_gameobject_tree` — Full hierarchy under a specific GameObject (faster than `get_scene_hierarchy` for rigs; avoids `SkinnedMeshRenderer` pruning).
+- `inspect_gameobject` — Detailed inspection of a GameObject including components and public fields (uses `ComponentInspector` with expanded `Generic` structs).
+- `get_component_inspector_values` — All serialized field values visible in the Inspector for a specific component (live Editor values, expands `RigBuilder`/`Rig`/`*Constraint.m_Data`/`Transform.m_LocalRotation` as structured `quat`+`euler`).
+- `get_component_code` — Locates and returns the full C# source for a named component (`MonoScript` via `AssetDatabase`).
+- `get_unity_physics_layers` — Physics layer collision matrix (`Physics.GetIgnoreLayerCollision`).
 
-**Assets & project**
-- `find_asset_references` — Finds all assets/scenes referencing a specific asset path.
-- `find_unity_files` — Finds assets matching a query.
-- `get_project_tree` — Project folder structure.
-- `write_unity_script` — Creates/writes a C# script file.
-- `get_compilation_status` - Allows agent to check if there's a domain reload
+**Scene & GameObject Authoring (Hierarchy & Rigging)**
+- `create_gameobject` — Creates a new `GameObject` (`new GameObject(name)`) with `Undo.RegisterCreatedObjectUndo`, optional `parentInstanceId` via `SetParent(parent,false)`, and optional `localPosition`/`localRotation` (`{x,y,z,w}` or `{euler}`) / `localScale`. Returns `{instanceId,path}`.
+- `duplicate_gameobject` — Duplicates a hierarchy via `Instantiate` + `Undo.RegisterCreatedObjectUndo` (use for cloning whole rig layers, e.g. `Rig Layer (Rifle Idle)`). Returns `{instanceId,path}`.
+- `set_parent` — Reparents via `Undo.SetTransformParent` (or `RegisterCompleteObjectUndo`+`SetParent` when `keepWorldPosition:true`). Pass `null` to unparent to root.
+- `delete_gameobject` — Deletes a `GameObject` via `Undo.DestroyObjectImmediate` (supports Undo).
+- `copy_component` — Deep-copies a component via `Undo.AddComponent` + `EditorUtility.CopySerialized` (required for Animation Rigging `Constraint.data` structs where `m_Data: [Generic]` cannot be rebuilt via `set_field_values`). Returns `{targetComponentIndex,targetInstanceId}`.
+- `add_component` — Adds a component by `instance_id` (`Type.GetType` + assembly fallback, respects `allowDuplicate`).
+- `remove_component` — Removes a component by `instance_id` (`Undo.DestroyObjectImmediate`).
+- `set_field_values` — Sets one or more serialized field values via `SerializedObject`/`FindProperty` + `Undo.RecordObject` (supports primitives, enums as strings, `Vector2/3`, `Quaternion`, `Color`, `ObjectReference` as `instanceId`, `Generic`/`Array` for `RigBuilder`/`Constraint` data).
 
-**Editor & runtime**
-- `get_screenshot` — Captures the Scene view (Edit Mode) as a JPEG.
-- `set_unity_play_mode` — Enter/exit Play Mode.
-- `get_unity_console_logs` / `clear_unity_console_logs` — Read or clear Editor console output.
-- `get_unity_physics_layers` — Physics layer/collision matrix info.
-- `notify_unity` — Send a message to the Unity Editor chat window.
+**Assets & ScriptableObjects**
+- `find_unity_files` — Finds assets in Unity via `AssetDatabase.FindAssets` (`t:Prefab`, `l:Label`, etc.), default `folders:['Assets']`.
+- `find_asset_references` — Finds assets/scenes referencing a specific asset path (`AssetDatabase.GetDependencies`).
+- `get_project_tree` — Project folder structure from a path (`AssetDatabase.GetSubFolders` + direct-file filter).
+- `write_unity_script` — Creates/overwrites a C# script (`Assets/...cs`) and triggers recompilation (`AssetDatabase.ImportAsset`/`Refresh`, `CONFIRM_REQUIRED` pattern).
+- `create_scriptable_object` — Creates a `ScriptableObject` asset atomically without `write_unity_script`: `Type.GetType` + assembly fallback, `ScriptableObject.CreateInstance`, field init via `SerializedObject` (primitives, enums as `"cross"`→`UnitId.cross`, `Vector3` `{x,y,z}`, `Object` refs as `instanceId`/`guid`/`{fileID,guid}`), `Undo.RegisterCreatedObjectUndo` + `AssetDatabase.CreateAsset/SaveAssets/Refresh`. Validates `Assets/` + `.asset`, parent folder exists, `ScriptableObject` subclass, `CONFIRM_REQUIRED` on overwrite. Returns `{instanceId,guid,path}`.
+- `delete_asset` — Deletes an asset via `AssetDatabase.DeleteAsset` (supports Undo, validates `Assets/`).
+- `get_compilation_status` — Non-blocking snapshot of compilation (`PENDING`/`SUCCESS`/`FAILED` with errors) — poll after `write_unity_script`.
+
+**Editor & Runtime**
+- `get_screenshot` — Captures `game` (`Camera.main`) or `scene` (Scene view) as JPEG; `scene` can `Frame` a `focus_instance_id` bounds before capture.
+- `set_unity_play_mode` — Enters/exits Play Mode (`EditorApplication.isPlaying` via `delayCall`).
+- `get_unity_console_logs` / `clear_unity_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
+
+**Lighting Diagnostics**
+- `get_lights_affecting_object` — Lights within range of a target object using actual bounds distance, per-light `type`/`intensity`/`range`/`cullingMask` (uses `GetLightsAffectingObject`).
+- `get_urp_pipeline_settings` — URP asset’s current render path setting (`GetUrpPipelineSettings`).
+- `diagnose_lighting_issue` — Autonomous diagnostic subagent (lights → URP → renderer/materials) via `core.llm_provider`; see `LightingAgent/README.md`. Requires `LIGHTING_LLM_PROVIDER`/`MODEL` + API key.
 
 
 ## Known Limitations (for Agents using this tool to read)
