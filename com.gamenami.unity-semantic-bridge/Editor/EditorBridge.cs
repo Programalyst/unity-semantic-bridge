@@ -158,8 +158,21 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static void OnObjectChangesPublished(ref ObjectChangeEventStream stream)
         {
             // Debounce aggregated stream batches (property drags can publish every tick)
+            // But do NOT debounce asset changes (ScriptableObject updates) — they are infrequent and must not be lost
             var now = EditorApplication.timeSinceStartup;
-            if (now - _lastObjectChangeEventTime < 0.25) return;
+            bool hasAssetChange = false;
+            for (int i = 0; i < stream.length; i++)
+            {
+                var kindStrTmp = stream.GetEventType(i).ToString();
+                if (kindStrTmp == "ChangeAssetObjectProperties"
+                    || kindStrTmp == "CreateAssetObjectHierarchy"
+                    || kindStrTmp == "DestroyAssetObjectHierarchy")
+                {
+                    hasAssetChange = true;
+                    break;
+                }
+            }
+            if (!hasAssetChange && now - _lastObjectChangeEventTime < 0.25) return;
             _lastObjectChangeEventTime = now;
 
             try
@@ -236,8 +249,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                                 break;
                             }
                             default:
-                                // For kinds without a strongly-typed accessor (e.g. CreateAssetObjectHierarchy),
-                                // just report the kind; instance resolution not available generically
+                                // For kinds without a strongly-typed accessor, just report the kind
                                 break;
                         }
                     }
