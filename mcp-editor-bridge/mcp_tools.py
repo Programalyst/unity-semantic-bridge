@@ -151,6 +151,13 @@ def register_unity_tools(mcp):
         })
     
     @mcp.tool()
+    async def delete_asset(
+        path: Annotated[str, "Project-relative path to delete, e.g. 'Assets/DataScriptableObjects/Unit Visual - Test.asset'. Must be under Assets/."],
+    ) -> str:
+        """Deletes an asset via AssetDatabase.DeleteAsset (supports Undo)."""
+        return await call_unity("Delete_Asset", {"path": path})
+
+    @mcp.tool()
     async def write_unity_script(
         path: Annotated[str, "Path should be relative to Assets/ (e.g., 'Assets/Scripts/MyNewSensor.cs')."], 
         content: Annotated[str, "Full C# source to write. Overwrites the entire file if it already exists."],
@@ -378,6 +385,24 @@ def register_unity_tools(mcp):
             "targetInstanceId": target_instance_id,
             "sourceComponentIndex": source_component_index
         })
+
+    @mcp.tool()
+    async def create_scriptable_object(
+        type: Annotated[str, "e.g. \"Data.AssetData.UnitVisualInfoSo\", \"Data.AssetData.WeaponAssetInfoSo\", \"GridSystem.Units.GridUnitData\""],
+        path: Annotated[str, "project-relative, must start \"Assets/\" and end \".asset\", e.g. \"Assets/DataScriptableObjects/Unit Visual - Rook.asset\""],
+        fields: Annotated[dict | None, "optional initial field values, enum strings or instanceIds for Object refs"] = None,
+        confirm: Annotated[bool, "set true to overwrite if path exists (same pattern as write_unity_script)"] = False,
+    ) -> str:
+        """
+        Create a ScriptableObject asset via ScriptableObject.CreateInstance + AssetDatabase.CreateAsset.
+        Resolves type via Type.GetType + Assembly fallback, handles Data.AssetData vs GridSystem assemblies.
+        Sets fields via SerializedObject/FindProperty (primitives, enums as string \"cross\" → UnitId.cross, Vector3 as {x,y,z}, Object refs as instanceId or guid, Sprite/Mesh/Material as fileID+guid).
+        Registers Undo, calls CreateAsset/SaveAssets/Refresh. Returns {instanceId, guid, path} as JSON.
+        """
+        params: dict = {"type": type, "path": path, "confirm": confirm}
+        if fields is not None:
+            params["fields"] = fields
+        return await call_unity("Create_ScriptableObject", params)
 
     @mcp.tool()
     async def get_recent_unity_events(

@@ -69,6 +69,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
 
+                    case "Delete_Asset":
+                        resultText = AssetFunctions.DeleteAsset(mcpMessage);
+                        break;
+
                     case "Get_Compilation_Status":
                         resultText = AssetFunctions.GetCompilationStatus(mcpMessage);
                         break;
@@ -144,6 +148,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                     case "Get_ProjectSettings":
                         resultText = ProjectSettingsFunctions.GetProjectSettings(mcpMessage);
+                        break;
+
+                    case "Create_ScriptableObject":
+                        resultText = ScriptableObjectFunctions.CreateScriptableObject(mcpMessage);
                         break;
 
                     default:

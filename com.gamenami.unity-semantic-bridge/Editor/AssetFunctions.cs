@@ -115,6 +115,26 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
         }
 
+        public static string DeleteAsset(JObject mcpMessage)
+        {
+            var path = mcpMessage["path"]?.ToString();
+            if (string.IsNullOrWhiteSpace(path))
+                return "Error: 'path' is required.";
+            if (!path.StartsWith("Assets/", StringComparison.Ordinal))
+                return "Error: path must start with \"Assets/\".";
+            var fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", path));
+            var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            if (!fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+                return "Error: path escapes project root.";
+            if (!File.Exists(fullPath) && AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path) == null)
+                return $"Error: asset not found at '{path}'.";
+            // Use AssetDatabase.DeleteAsset (supports Undo)
+            bool ok = AssetDatabase.DeleteAsset(path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            return ok ? $"Deleted asset '{path}'." : $"Failed to delete asset '{path}'.";
+        }
+
         // Separate tool — the client calls this after a short delay / in a poll loop.
         public static string GetCompilationStatus(JObject mcpMessage)
         {
