@@ -405,6 +405,23 @@ def register_unity_tools(mcp):
         return await call_unity("Create_ScriptableObject", params)
 
     @mcp.tool()
+    async def update_scriptable_object(
+        path: Annotated[str, "Assets/DataScriptableObjects/Unit Visual - Cross.asset"],
+        fields: Annotated[dict, "partial — only keys to change, e.g. {baseOutfitMaterials:[{fileID:2100000,guid:\"4cee...\"}]}"],
+        add_to_array: Annotated[str | None, "optional — e.g. \"unitVisualInfoList\" to push guid into AssetLibrarySO"] = None,
+    ) -> str:
+        """
+        Patch an existing ScriptableObject .asset without wiping other fields.
+        Load via AssetDatabase.LoadAssetAtPath<Object>(path), SerializedObject → FindProperty per key (supports Material[] as fileID+guid array, enums as string, Vector3 as {x,y,z}). Only touched keys are modified; other m_Script/unitId/baseOutfitMesh preserved. Undo.RecordObject, ApplyModifiedProperties, SaveAssets, Refresh.
+        If add_to_array is set, appends the provided array elements to that array field instead of replacing it.
+        Returns {guid, path} as JSON.
+        """
+        params: dict = {"path": path, "fields": fields}
+        if add_to_array is not None:
+            params["addToArray"] = add_to_array
+        return await call_unity("Update_ScriptableObject", params)
+
+    @mcp.tool()
     async def get_recent_unity_events(
         since_seconds_ago: float = 60,
         limit: int = 50,

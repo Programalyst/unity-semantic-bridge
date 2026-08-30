@@ -339,11 +339,44 @@ namespace Gamenami.UnitySemanticBridge.Editor
                             }
                             else if (jo["fileID"] != null && jo["guid"] != null)
                             {
-                                // For Sprite/Mesh/Material as fileID+guid — fallback to guid load
                                 string g = jo["guid"].ToString();
                                 string ap = AssetDatabase.GUIDToAssetPath(g);
                                 if (!string.IsNullOrEmpty(ap))
-                                    prop.objectReferenceValue = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(ap);
+                                {
+                                    long fileID = jo["fileID"].ToObject<long>();
+                                    // Try to find sub-asset with matching fileID (for Mesh/Material inside FBX)
+                                    var all = AssetDatabase.LoadAllAssetsAtPath(ap);
+                                    UnityEngine.Object found = null;
+                                    System.Text.StringBuilder dbg = new System.Text.StringBuilder();
+                                    foreach (var o in all)
+                                    {
+                                        if (o == null) continue;
+                                        if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(o, out string guid2, out long localId))
+                                        {
+                                            dbg.Append($"{o.name}:{o.GetType().Name}:{localId} ");
+                                            if (localId == fileID)
+                                            {
+                                                found = o;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (found == null)
+                                    {
+                                        // Fallback: try direct type-based load for Mesh/Material
+                                        // For Mesh, guid's asset may be FBX with multiple meshes; try loading as Mesh
+                                        var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(ap);
+                                        if (mesh != null && fileID == 4300000) found = mesh;
+                                        // Also try Material
+                                        if (found == null)
+                                        {
+                                            var mat = AssetDatabase.LoadAssetAtPath<Material>(ap);
+                                            if (mat != null) found = mat;
+                                        }
+                                        UnityEngine.Debug.LogWarning($"[Bridge] fileID {fileID} not found in {ap} (guid {g}). Found: {dbg} Fallback to {(found != null ? found.name : "null")}");
+                                    }
+                                    prop.objectReferenceValue = found ?? AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(ap);
+                                }
                                 else
                                     prop.objectReferenceValue = null;
                             }
@@ -421,6 +454,119 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (!it.NextVisible(false)) break;
             }
             return null;
+        }
+
+        public static string UpdateScriptableObject(JObject mcpMessage)
+        {
+            var path = mcpMessage["path"]?.ToString();
+            var fields = mcpMessage["fields"] as JObject;
+            var addToArray = mcpMessage["addToArray"]?.ToString();
+
+            if (string.IsNullOrWhiteSpace(path))
+                return "Error: 'path' is required.";
+            if (!path.StartsWith("Assets/", StringComparison.Ordinal))
+                return "Error: path must start with \"Assets/\".";
+            if (fields == null || fields.Count == 0)
+                return "Error: 'fields' is required and must contain at least one key.";
+
+            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+            if (asset == null)
+                return $"Error: Asset not found at '{path}'.";
+
+            var so = new SerializedObject(asset);
+            Undo.RecordObject(asset, "Update " + asset.name);
+
+            // Handle addToArray first if provided — append mode
+            if (!string.IsNullOrWhiteSpace(addToArray))
+            {
+                var arrayProp = so.FindProperty(addToArray);
+                if (arrayProp == null)
+                    arrayProp = FindPropertyCaseInsensitive(so, addToArray);
+                if (arrayProp == null)
+                    return $"Error: Unknown field '{addToArray}' for asset at '{path}'.";
+                if (!arrayProp.isArray)
+                    return $"Error: Invalid type for field '{addToArray}': expected array but got {arrayProp.propertyType}.";
+
+                // Expect fields contains the same key with array value to append
+                JToken toAppend = null;
+                if (fields[addToArray] != null)
+                    toAppend = fields[addToArray];
+                else if (fields.Count == 1)
+                    toAppend = fields.Properties().First().Value;
+                else
+                    return $"Error: addToArray '{addToArray}' requires fields to contain that key with array value.";
+
+                if (toAppend == null || toAppend.Type != JTokenType.Array)
+                    return $"Error: Invalid type for field '{addToArray}': expected array value to append.";
+
+                var arr = (JArray)toAppend;
+                int startSize = arrayProp.arraySize;
+                arrayProp.arraySize = startSize + arr.Count;
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var element = arrayProp.GetArrayElementAtIndex(startSize + i);
+                    try
+                    {
+                        if (element.propertyType == SerializedPropertyType.Generic)
+                            ApplyGenericValue(element, arr[i]);
+                        else
+                            ApplyPropertyValue(element, arr[i]);
+                    }
+                    catch (Exception e)
+                    {
+                        return $"Error: Failed to append to '{addToArray}[{startSize + i}]': {e.Message}";
+                    }
+                }
+                // Also apply any other fields besides addToArray
+                foreach (var kvp in fields)
+                {
+                    if (kvp.Key == addToArray) continue;
+                    var prop = so.FindProperty(kvp.Key);
+                    if (prop == null) prop = FindPropertyCaseInsensitive(so, kvp.Key);
+                    if (prop == null) return $"Error: Unknown field '{kvp.Key}' for asset at '{path}'.";
+                    try { ApplyPropertyValue(prop, kvp.Value); }
+                    catch (Exception e) { return $"Error: Failed to set field '{kvp.Key}': {e.Message}"; }
+                }
+            }
+            else
+            {
+                foreach (var kvp in fields)
+                {
+                    var prop = so.FindProperty(kvp.Key);
+                    if (prop == null)
+                    {
+                        prop = FindPropertyCaseInsensitive(so, kvp.Key);
+                        if (prop == null)
+                            return $"Error: Unknown field '{kvp.Key}' for asset at '{path}'.";
+                    }
+                    try
+                    {
+                        ApplyPropertyValue(prop, kvp.Value);
+                    }
+                    catch (Exception e)
+                    {
+                        if (e is ArgumentException || e.Message.Contains("enum"))
+                            return $"Error: Invalid enum value '{kvp.Value}' for field '{kvp.Key}': {e.Message}";
+                        // Detect type mismatch for Material[] etc.
+                        if (e.Message.Contains("array") || e.Message.Contains("Invalid type"))
+                            return $"Error: Invalid type for field '{kvp.Key}': {e.Message}";
+                        return $"Error: Failed to set field '{kvp.Key}': {e.Message}";
+                    }
+                }
+            }
+
+            so.ApplyModifiedProperties();
+            EditorUtility.SetDirty(asset);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            var guid = AssetDatabase.AssetPathToGUID(path);
+            var result = new JObject
+            {
+                ["guid"] = guid,
+                ["path"] = path
+            };
+            return result.ToString(Newtonsoft.Json.Formatting.None);
         }
 
         private static bool IsHexString(string s)

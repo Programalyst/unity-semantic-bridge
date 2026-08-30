@@ -41,11 +41,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             get
             {
-                if (_eventClient == null)
-                {
-                    _eventClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                    _eventClient.DefaultRequestHeaders.Add("Accept", "application/json");
-                }
+                if (_eventClient != null) return _eventClient;
+                _eventClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                _eventClient.DefaultRequestHeaders.Add("Accept", "application/json");
                 return _eventClient;
             }
         }
@@ -160,13 +158,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
             // Debounce aggregated stream batches (property drags can publish every tick)
             // But do NOT debounce asset changes (ScriptableObject updates) — they are infrequent and must not be lost
             var now = EditorApplication.timeSinceStartup;
-            bool hasAssetChange = false;
-            for (int i = 0; i < stream.length; i++)
+            var hasAssetChange = false;
+            for (var i = 0; i < stream.length; i++)
             {
                 var kindStrTmp = stream.GetEventType(i).ToString();
-                if (kindStrTmp == "ChangeAssetObjectProperties"
-                    || kindStrTmp == "CreateAssetObjectHierarchy"
-                    || kindStrTmp == "DestroyAssetObjectHierarchy")
+                if (kindStrTmp is 
+                    "ChangeAssetObjectProperties" or 
+                    "CreateAssetObjectHierarchy" or 
+                    "DestroyAssetObjectHierarchy")
                 {
                     hasAssetChange = true;
                     break;
@@ -178,7 +177,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             try
             {
                 var changes = new JArray();
-                for (int i = 0; i < stream.length; i++)
+                for (var i = 0; i < stream.length; i++)
                 {
                     var kind = stream.GetEventType(i);
                     var kindStr = kind.ToString();

@@ -154,6 +154,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ScriptableObjectFunctions.CreateScriptableObject(mcpMessage);
                         break;
 
+                    case "Update_ScriptableObject":
+                        resultText = ScriptableObjectFunctions.UpdateScriptableObject(mcpMessage);
+                        break;
+
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");
                         resultText = $"Error: Unhandled action '{action}'.";
