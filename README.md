@@ -61,7 +61,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - `inspect_gameobject` — Detailed inspection of a GameObject including components and public fields (uses `ComponentInspector` with expanded `Generic` structs).
 - `get_component_inspector_values` — All serialized field values visible in the Inspector for a specific component (live Editor values, expands `RigBuilder`/`Rig`/`*Constraint.m_Data`/`Transform.m_LocalRotation` as structured `quat`+`euler`).
 - `get_component_code` — Locates and returns the full C# source for a named component (`MonoScript` via `AssetDatabase`).
-- `get_unity_physics_layers` — Physics layer collision matrix (`Physics.GetIgnoreLayerCollision`).
+- `get_physics_layers` — Physics layer collision matrix (`Physics.GetIgnoreLayerCollision`).
 
 **Scene & GameObject Authoring (Hierarchy & Rigging)**
 - `create_gameobject` — Creates a new `GameObject` (`new GameObject(name)`) with `Undo.RegisterCreatedObjectUndo`, optional `parentInstanceId` via `SetParent(parent,false)`, and optional `localPosition`/`localRotation` (`{x,y,z,w}` or `{euler}`) / `localScale`. Returns `{instanceId,path}`.
@@ -84,8 +84,8 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
 **Editor & Runtime**
 - `get_screenshot` — Captures `game` (`Camera.main`) or `scene` (Scene view) as JPEG; `scene` can `Frame` a `focus_instance_id` bounds before capture.
-- `set_unity_play_mode` — Enters/exits Play Mode (`EditorApplication.isPlaying` via `delayCall`).
-- `get_unity_console_logs` / `clear_unity_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
+- `set_play_mode` — Enters/exits Play Mode (`EditorApplication.isPlaying` via `delayCall`).
+- `get_console_logs` / `clear_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
 
 **Lighting Diagnostics**
 - `get_lights_affecting_object` — Lights within range of a target object using actual bounds distance, per-light `type`/`intensity`/`range`/`cullingMask` (uses `GetLightsAffectingObject`).
