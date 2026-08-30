@@ -22,7 +22,7 @@ IDE Agent --(stdio MCP)--> FastMCP Server (Server/main.py) --(WS :8765)--> Edito
   - Scene: `get_scene_hierarchy`, `get_gameobject_tree`, `inspect_gameobject`, `get_component_inspector_values`, `get_component_code`, `add_component`, `set_field_value`
   - Lighting: `get_lights_affecting_object`, `get_urp_pipeline_settings`, `diagnose_lighting_issue`
   - Assets: `find_unity_files` (→ `Search_Assets`), `find_asset_references`, `get_project_tree` (`Get_FolderStructure`), `write_unity_script` (`WRITE_SCRIPT`)
-  - Editor/runtime: `get_screenshot`, `set_unity_play_mode`, `get_unity_console_logs`/`clear_unity_console_logs`, `get_unity_physics_layers`, `notify_unity`
+  - Editor/runtime: `get_screenshot`, `set_play_mode`, `get_console_logs`/`clear_console_logs`, `get_physics_layers`, `notify_unity`
   - Note `get_screenshot` returns `mcp.server.fastmcp.Image` (base64→bytes conversion in tool).
 - **`Runtime/image_analysis.py`** — Gameplay vision agent. Now uses injected `RunnableConfig` LLM (`analyze_gameplay_scene` with `@tool click_screen_position`/`click_ui_button`, vision-gated, no `genai.Client`). Loads `system_prompt.txt`, builds `HumanMessage(image_url=data:...)` + JSON context, `llm.bind_tools(GAMEPLAY_TOOLS).ainvoke(...)` → `AIMessage.tool_calls`.
 - **`Runtime/system_prompt.txt`** — Ares tactician prompt (turn-based game). Movement/attack phrasing, viewportPos semantics, unit selection at feet, etc.

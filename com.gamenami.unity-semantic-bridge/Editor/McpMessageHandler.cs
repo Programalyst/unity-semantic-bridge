@@ -35,126 +35,128 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 switch (action)
                 {
-                    case "Get_Screenshot":
+                    case "get_screenshot":
                         resultText = SceneFunctions.GetScreenshot(mcpMessage);
                         break;
 
-                    case "Get_SceneHierarchy":
+                    case "get_scene_hierarchy":
                         resultText = SceneFunctions.GetSceneHierarchy(mcpMessage);
                         break;
 
-                    case "Get_GameObjectTree":
+                    case "get_gameobject_tree":
                         resultText = SceneFunctions.GetGameObjectTree(mcpMessage);
                         break;
 
-                    case "Notify_Unity":
+                    case "notify_unity":
                         var message = mcpMessage["message"]?.ToString();
                         BridgeRelay.OnAgentMessage?.Invoke($"MCP agent: {message}");
                         resultText = "Notification displayed.";
                         break;
 
-                    case "Search_Assets":
+                    case "find_unity_files":
                         resultText = AssetFunctions.SearchAssets(mcpMessage);
                         break;
 
-                    case "Find_AssetReferences":
+                    case "find_asset_references":
                         resultText = AssetFunctions.FindAssetReferences(mcpMessage);
                         break;
 
-                    case "Get_FolderStructure":
+                    case "get_project_tree":
                         resultText = AssetFunctions.GetFolderStructure(mcpMessage);
                         break;
 
-                    case "Write_Script":
+                    case "write_unity_script":
                         resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
 
-                    case "Delete_Asset":
+                    case "delete_asset":
                         resultText = AssetFunctions.DeleteAsset(mcpMessage);
                         break;
 
-                    case "Get_Compilation_Status":
+                    case "get_compilation_status":
                         resultText = AssetFunctions.GetCompilationStatus(mcpMessage);
                         break;
 
-                    case "Get_Console_Logs":
+                    case "get_console_logs":
                         resultText = SceneFunctions.GetConsoleLogs();
                         break;
 
-                    case "Set_Play_Mode":
+                    case "set_play_mode":
                         var enabled = (bool)mcpMessage["enabled"];
                         resultText = SceneFunctions.SetPlayMode(enabled);
                         break;
 
-                    case "Clear_Console_Logs":
+                    case "clear_console_logs":
                         resultText = SceneFunctions.ClearConsole();
                         break;
 
-                    case "Inspect_GameObject":
+                    case "inspect_gameobject":
                         resultText = SceneFunctions.InspectGameObject(mcpMessage);
                         break;
 
+                    case "get_component_inspector_values":
                     case "Get_InspectorValues":
                         resultText = ComponentFunctions.GetComponentInspectorValues(mcpMessage);
                         break;
 
+                    case "get_component_code":
                     case "Get_ComponentCode":
                         resultText = ComponentFunctions.GetComponentCode(mcpMessage);
                         break;
 
-                    case "Get_PhysicsMatrix":
+                    case "get_physics_layers":
                         resultText = SceneFunctions.GetPhysicsMatrix();
                         break;
 
-                    case "Add_Component":
+                    case "add_component":
                         resultText = ComponentFunctions.AddComponent(mcpMessage);
                         break;
                     
-                    case "Remove_Component":
+                    case "remove_component":
                         resultText = ComponentFunctions.RemoveComponent(mcpMessage);
                         break;
 
-                    case "Set_FieldValues":
+                    case "set_field_values":
                         resultText = ComponentFunctions.SetFieldValues(mcpMessage);
                         break;
 
-                    case "Create_GameObject":
+                    case "create_gameobject":
                         resultText = HierarchyFunctions.CreateGameObject(mcpMessage);
                         break;
 
-                    case "Duplicate_GameObject":
+                    case "duplicate_gameobject":
                         resultText = HierarchyFunctions.DuplicateGameObject(mcpMessage);
                         break;
 
-                    case "Set_Parent":
+                    case "set_parent":
                         resultText = HierarchyFunctions.SetParent(mcpMessage);
                         break;
 
-                    case "Delete_GameObject":
+                    case "delete_gameobject":
                         resultText = HierarchyFunctions.DeleteGameObject(mcpMessage);
                         break;
 
-                    case "Copy_Component":
+                    case "copy_component":
                         resultText = HierarchyFunctions.CopyComponent(mcpMessage);
                         break;
 
-                    case "Get_LightsAffectingObject":
+                    case "get_lights_affecting_object":
                         resultText = LightingFunctions.GetLightsAffectingObject(mcpMessage);
                         break;
 
-                    case "Get_UrpPipelineSettings":
+                    case "get_urp_pipeline_settings":
                         resultText = LightingFunctions.GetUrpPipelineSettings();
                         break;
 
-                    case "Get_ProjectSettings":
+                    case "get_project_settings":
                         resultText = ProjectSettingsFunctions.GetProjectSettings(mcpMessage);
                         break;
 
-                    case "Create_ScriptableObject":
+                    case "create_scriptable_object":
                         resultText = ScriptableObjectFunctions.CreateScriptableObject(mcpMessage);
                         break;
 
-                    case "Update_ScriptableObject":
+                    case "update_scriptable_object":
                         resultText = ScriptableObjectFunctions.UpdateScriptableObject(mcpMessage);
                         break;
 
@@ -172,7 +174,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 Debug.LogError($"[MCP] Unhandled exception in '{action}': {e}");
                 resultText = $"Error: {e.Message}";
-                // LLM can use get_unity_console_logs if it needs e.stacktrace
+                // LLM can use get_console_logs if it needs e.stacktrace
             }
             finally
             {
