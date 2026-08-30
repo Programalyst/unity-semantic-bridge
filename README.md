@@ -11,8 +11,10 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 ## Features
 
 - Optimized scene heirarchy query and gameobject inspection tools with workflow hints for agents - more token efficient than official Unity CLI tool
-- In Editor connection status and reconnect. Not tied to Unity Licensing - Runs 100% local. No need to reauthenticate when token expires
+- In Editor connection status and auto reconnect through domain reloads. 
+- Not tied to Unity Licensing - Runs 100% local. No need to reauthenticate when token expires
 - Dedicated tools for agent to see human actions and changes
+- Dedicated tools for working with Scriptable objects (error prone if agent uses bash to work SOs directly)
 - In Editor MCP log so you can see what tools are called
 - Dedicated Lighting tools for URP projects
 

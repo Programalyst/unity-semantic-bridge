@@ -73,6 +73,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             AssemblyReloadEvents.beforeAssemblyReload -= HandleDomainReloadCleanup;
             AssemblyReloadEvents.beforeAssemblyReload += HandleDomainReloadCleanup;
+            AssemblyReloadEvents.afterAssemblyReload -= HandleAfterReload;
+            AssemblyReloadEvents.afterAssemblyReload += HandleAfterReload;
 
             EditorApplication.quitting -= OnEditorQuitting;
             EditorApplication.quitting += OnEditorQuitting;
@@ -81,11 +83,34 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (!shouldAutoConnect || IsConnected) return;
 
             Debug.Log("<color=lime>[Bridge]</color> Bridge ReInitializing (HTTP JSON-RPC)...");
+            // delayCall only fires on next editor tick (throttled when unfocused). Use afterAssemblyReload (focus-independent) + one-shot update poll as fallback.
+            TryStartListener();
             EditorApplication.delayCall += () =>
             {
                 if (!IsConnected)
                     StartListener();
             };
+            EditorApplication.update -= TryReconnectOnce;
+            EditorApplication.update += TryReconnectOnce;
+        }
+
+        private static void HandleAfterReload()
+        {
+            if (EditorPrefs.GetBool(AutoConnectPref, false) && !IsConnected)
+                StartListener();
+        }
+
+        private static void TryReconnectOnce()
+        {
+            EditorApplication.update -= TryReconnectOnce;
+            if (EditorPrefs.GetBool(AutoConnectPref, false) && !IsConnected)
+                StartListener();
+        }
+
+        private static void TryStartListener()
+        {
+            if (EditorPrefs.GetBool(AutoConnectPref, false) && !IsConnected)
+                StartListener();
         }
 
         public static void ManualConnect()
