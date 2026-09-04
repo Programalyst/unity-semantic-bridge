@@ -7,8 +7,9 @@ from events import event_server
 from events.event_handlers import register_event_handlers
 from state_manager import app_state
 
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()  # Load environment variables from .env file
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)  # mcp-editor-bridge/.env (see .env.example); explicit path so uv --directory works regardless of CWD
 
 # --- CONFIG & STATE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

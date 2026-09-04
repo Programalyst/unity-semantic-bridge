@@ -206,16 +206,48 @@ class LightingDiagnosticAgent:
                 "awaiting_final_report": True,
             }
 
-        def next_node(state: AgentState) -> Literal["continue", "end"]:
+        async def summarize_node(state: AgentState) -> dict[str, Any]:
+            # Iteration budget exhausted but evidence was gathered: ask the LLM
+            # once, WITHOUT tools, to write the final report from history.
+            try:
+                llm = get_diagnostic_llm()
+            except Exception as exc:
+                logger.exception("Failed to initialize diagnostic LLM")
+                return {"final_report": f"Error: {exc}", "awaiting_final_report": False}
+            try:
+                closing = (
+                    system_prompt
+                    + "\n\nThe tool-round budget is exhausted. Do not call any tools. "
+                      "Write the final diagnostic report now from the evidence gathered, "
+                      "containing: root cause, evidence, and recommended fixes. "
+                      "If evidence is insufficient, say what requires manual review."
+                )
+                invoke_messages: list[BaseMessage] = [SystemMessage(content=closing)] + state["messages"]
+                response: AIMessage = await llm.ainvoke(invoke_messages)  # type: ignore[assignment]
+                text = response.content if isinstance(response.content, str) else str(response.content)
+                return {
+                    "messages": [response],
+                    "final_report": text.strip() or "The model returned an empty diagnostic report.",
+                    "awaiting_final_report": False,
+                }
+            except Exception as exc:
+                logger.exception("Final summarization failed")
+                return {"final_report": f"Error: LLM invocation failed: {exc}", "awaiting_final_report": False}
+
+        def next_node(state: AgentState) -> Literal["continue", "summarize", "end"]:
             if not state["awaiting_final_report"]:
                 return "end"
             if state["iteration_count"] >= state["max_iterations"]:
-                return "end"
+                return "summarize"
             return "continue"
 
         workflow.add_node("diagnose", diagnose_node)
+        workflow.add_node("summarize", summarize_node)
         workflow.set_entry_point("diagnose")
-        workflow.add_conditional_edges("diagnose", next_node, {"continue": "diagnose", "end": END})
+        workflow.add_conditional_edges(
+            "diagnose", next_node, {"continue": "diagnose", "summarize": "summarize", "end": END}
+        )
+        workflow.add_edge("summarize", END)
         return workflow.compile()
 
     async def diagnose_lighting_issue(

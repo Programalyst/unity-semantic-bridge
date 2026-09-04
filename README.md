@@ -22,7 +22,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
  - **Unity 2022.3 LTS up to Unity 6.3** 
 	- uses `UnityEditor.ObjectChangeEvents.changesPublished` available in 2022.3 LTS and later
-	- versions of Unity newer than 6.3 use change `InstanceIds` for `EntityIds` - not tested for compatibility yet
+	- versions of Unity 6.3+ use change `InstanceIds` for `EntityIds` - not tested for compatibility
 - **uv** (https://docs.astral.sh/uv/getting-started/installation/)
 
 ####  Optional

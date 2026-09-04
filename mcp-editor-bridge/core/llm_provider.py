@@ -2,9 +2,15 @@
 # Sampling was formally deprecated in MCP spec revision 2026-07-28, under SEP-2577.
 # This module replaces the old RunnableConfig / client-sampling approach with a
 # direct provider call owned by the server.
+# Credentials come from mcp-editor-bridge/.env (see .env.example) — loaded here
+# so direct get_diagnostic_llm() calls work even without main.py.
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env", override=False)
 
 
 def get_diagnostic_llm(
