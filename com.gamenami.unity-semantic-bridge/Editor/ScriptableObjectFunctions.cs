@@ -328,17 +328,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         {
                             if (jo["instanceId"] != null)
                                 prop.objectReferenceValue = EditorUtility.InstanceIDToObject(jo["instanceId"].ToObject<int>());
-                            else if (jo["guid"] != null)
-                            {
-                                string g = jo["guid"].ToString();
-                                string ap = AssetDatabase.GUIDToAssetPath(g);
-                                if (!string.IsNullOrEmpty(ap))
-                                    prop.objectReferenceValue = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(ap);
-                                else
-                                    throw new ArgumentException($"GUID '{g}' not found.");
-                            }
                             else if (jo["fileID"] != null && jo["guid"] != null)
                             {
+                                // NOTE: checked before bare guid — a {fileID, guid} pair must
+                                // resolve the sub-asset (e.g. Mesh inside an fbx), not the
+                                // main asset (which would null a Mesh field -> fileID: 0).
                                 string g = jo["guid"].ToString();
                                 string ap = AssetDatabase.GUIDToAssetPath(g);
                                 if (!string.IsNullOrEmpty(ap))
@@ -373,12 +367,22 @@ namespace Gamenami.UnitySemanticBridge.Editor
                                             var mat = AssetDatabase.LoadAssetAtPath<Material>(ap);
                                             if (mat != null) found = mat;
                                         }
-                                        UnityEngine.Debug.LogWarning($"[Bridge] fileID {fileID} not found in {ap} (guid {g}). Found: {dbg} Fallback to {(found != null ? found.name : "null")}");
+                                        if (found == null)
+                                            throw new ArgumentException($"fileID {fileID} not found in {ap} (guid {g}). Available: {dbg}");
                                     }
-                                    prop.objectReferenceValue = found ?? AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(ap);
+                                    prop.objectReferenceValue = found;
                                 }
                                 else
                                     prop.objectReferenceValue = null;
+                            }
+                            else if (jo["guid"] != null)
+                            {
+                                string g = jo["guid"].ToString();
+                                string ap = AssetDatabase.GUIDToAssetPath(g);
+                                if (!string.IsNullOrEmpty(ap))
+                                    prop.objectReferenceValue = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(ap);
+                                else
+                                    throw new ArgumentException($"GUID '{g}' not found.");
                             }
                             else
                                 throw new ArgumentException($"Unsupported object reference JObject: {jo}");
