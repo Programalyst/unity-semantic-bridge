@@ -68,12 +68,48 @@ namespace Gamenami.UnitySemanticBridge.Editor
             else
                 EditorGUILayout.HelpBox("Start the HTTP listener to receive commands from MCP server", MessageType.Info);
             
+            DrawTools();
+            EditorGUILayout.Space(10);
             DrawLogArea("MCP Activity Log", _agentHistory);
+        }
+
+        private string _scanRoots = "Assets/Synty";
+
+        private void DrawTools()
+        {
+            GUILayout.Label("Bridge Tools", EditorStyles.boldLabel);
+            _scanRoots = EditorGUILayout.TextField("Scan Roots (comma-separated)", _scanRoots);
+            if (GUILayout.Button("Generate Asset Catalog"))
+            {
+                var roots = ParseScanRoots(_scanRoots);
+                var start = AssetCatalogRunner.Start(roots, true, result =>
+                {
+                    if (result != null)
+                        AddAgentMessage($"[human] generate_asset_catalog -> {result["itemCount"]} items, {result["thumbnailCount"]} thumbs: {result["jsonPath"]}");
+                    else
+                        AddAgentMessage("[human] generate_asset_catalog cancelled or failed — see Console.");
+                });
+                AddAgentMessage($"[human] generate_asset_catalog started: {start}");
+            }
+        }
+
+        private static string[] ParseScanRoots(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null; // null = defaults
+            var roots = text.Split(new[] { ',', ';', '\n' }, System.StringSplitOptions.RemoveEmptyEntries);
+            for (var i = 0; i < roots.Length; i++)
+                roots[i] = roots[i].Trim().TrimEnd('/');
+            return roots.Length > 0 ? roots : null;
         }
         
         private void DrawLogArea(string areaTitle, IEnumerable<string> logs)
         {
+            EditorGUILayout.BeginHorizontal();
             GUILayout.Label(areaTitle, EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Copy Log", GUILayout.Width(90)))
+                GUIUtility.systemCopyBuffer = string.Join("\n", _agentHistory);
+            EditorGUILayout.EndHorizontal();
             _logScroll = EditorGUILayout.BeginScrollView(_logScroll, EditorStyles.helpBox);
             foreach (var log in logs)
             {

@@ -160,6 +160,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ScriptableObjectFunctions.UpdateScriptableObject(mcpMessage);
                         break;
 
+                    case "generate_asset_catalog":
+                        resultText = AssetCatalogGenerator.GenerateAssetCatalog(mcpMessage);
+                        break;
+
+                    case "get_asset_catalog_status":
+                        resultText = AssetCatalogGenerator.GetAssetCatalogStatus(mcpMessage);
+                        break;
+
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");
                         resultText = $"Error: Unhandled action '{action}'.";

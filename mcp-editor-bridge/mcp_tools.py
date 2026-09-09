@@ -422,6 +422,39 @@ def register_unity_tools(mcp):
         return await call_unity("update_scriptable_object", params)
 
     @mcp.tool()
+    async def generate_asset_catalog(
+        scan_roots: Annotated[list[str] | None, "Project-relative roots to scan, e.g. ['Assets/Synty']. Omit for the default (Assets/Synty, falling back to Assets)."] = None,
+        thumbnails: Annotated[bool, "Capture AssetPreview PNG thumbnails into <Project>/AssetCatalog/thumbs/."] = True,
+    ) -> str:
+        """
+        Starts a frame-pumped Editor-side scan of content-pack assets (large
+        packs take minutes — the Editor stays responsive with progress + cancel).
+        Covers .fbx (with Mesh sub-asset refs + bone counts), .prefab (resolved
+        skinned/static mesh composition) and .mat (pack-wide color variants with
+        albedo) records in <Project>/AssetCatalog/asset-catalog.json. Re-runs
+        upsert by id (no dupes) and reuse existing thumbnails. Returns {runId,
+        state, total} immediately — poll get_asset_catalog_status for {jsonPath,
+        itemCount, thumbnailCount} on completion.
+        """
+        params: dict = {"thumbnails": thumbnails}
+        if scan_roots is not None:
+            params["scan_roots"] = scan_roots
+        return await call_unity("generate_asset_catalog", params)
+
+    @mcp.tool()
+    async def get_asset_catalog_status(
+        run_id: Annotated[str | None, "Run id from generate_asset_catalog. Omit for the active/latest run."] = None,
+    ) -> str:
+        """
+        Polls an asset-catalog run: {runId, state (running|done|cancelled|error),
+        processed, total, pendingThumbs, plus jsonPath/itemCount/thumbnailCount when done}.
+        """
+        params: dict = {}
+        if run_id is not None:
+            params["run_id"] = run_id
+        return await call_unity("get_asset_catalog_status", params)
+
+    @mcp.tool()
     async def get_recent_unity_events(
         since_seconds_ago: float = 60,
         limit: int = 50,
