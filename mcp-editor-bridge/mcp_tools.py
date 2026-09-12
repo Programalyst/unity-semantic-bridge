@@ -169,7 +169,7 @@ def register_unity_tools(mcp):
         Returns one of:
         - CONFIRM_REQUIRED: ... — the file already exists; nothing was written. Review the returned
         contents, then re-call with confirm=true if you want to overwrite it.
-        - Wrote {path}. Compilation triggered (token=...) — the write succeeded and Unity has started recompiling. Compilation is asynchronous: call check_compilation_status afterward (polling with a short delay if it reports PENDING) before assuming the script is error-free.
+        - Wrote {path}. Compilation triggered (token=...) — the write succeeded and Unity has started recompiling. Compilation is asynchronous: call get_compilation_status afterward (polling with a short delay if it reports PENDING) before assuming the script is error-free.
         - Failed to write script: ... — the write itself failed (bad path, IO error, etc).
         """
         return await call_unity("write_unity_script", {
@@ -179,14 +179,27 @@ def register_unity_tools(mcp):
         })
 
     @mcp.tool()
+    async def refresh_assets() -> str:
+        """Queue AssetDatabase.Refresh on Unity's main thread after external file edits.
+
+        No arguments. Returns a token and RELOAD_IMMINENT hint (reload is conditional),
+        or BUSY without starting work. Poll get_compilation_status until terminal.
+        NO_COMPILATION means no new compiler result, not proof that scripts compile.
+        Does not rewrite files, force reload, change Play Mode, or save scenes.
+        """
+        return await call_unity("refresh_assets")
+
+    @mcp.tool()
     async def get_compilation_status() -> str:
         """
-        Returns a single non-blocking snapshot of Unity's current compilation state. Does not wait. Call this after write_unity_script and poll again if the result is PENDING.
+        Returns a single non-blocking snapshot of Unity's current compilation state. Does not wait. Call this after write_unity_script or refresh_assets and poll again if the result is PENDING.
 
         Returns one of:
-        - PENDING: still compiling, poll again shortly.
+        - PENDING: refresh/import/compilation in progress, poll again shortly.
         - SUCCESS: compiled cleanly.
-        - FAILED:\\n<file>:<line> <message> (one or more lines) — compilation errors from the most recent write. The script was written to disk even though it failed to compile.
+        - NO_COMPILATION: refresh completed without a new compilation result.
+        - UNKNOWN: no compilation result recorded this Editor session.
+        - FAILED:\\n<file>:<line> <message> (one or more lines) — latest compilation/refresh errors, retained until a new compilation result replaces them.
         """
         return await call_unity("get_compilation_status")
     

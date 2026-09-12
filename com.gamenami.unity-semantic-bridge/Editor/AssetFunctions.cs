@@ -83,6 +83,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (string.IsNullOrEmpty(path))
                 return "Failed: 'path' is required.";
 
+            if (CompileWatcher.IsBusy)
+                return "BUSY: Unity is compiling, importing, transitioning Play Mode, or a refresh is pending. Poll get_compilation_status and retry when idle.";
+
+            string token = null;
             try
             {
                 var fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", path));
@@ -103,16 +107,48 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                 File.WriteAllText(fullPath, content);
 
-                var token = CompileWatcher.BeginWrite();
+                token = CompileWatcher.BeginWrite();
                 AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
                 AssetDatabase.Refresh();
+                CompileWatcher.CompleteRefresh();
 
                 return $"Wrote {path}. RELOAD_IMMINENT: Compilation triggered (token={token}). Call get_compilation_status to get the result.";
             }
             catch (Exception e)
             {
+                if (token != null) CompileWatcher.FailRefresh(e);
                 return $"Failed to write script: {e.Message}";
             }
+        }
+
+        public static string RefreshAssets(JObject mcpMessage)
+        {
+            if (CompileWatcher.IsBusy)
+                return "BUSY: Unity is compiling, importing, transitioning Play Mode, or a refresh is pending. Poll get_compilation_status and retry when idle.";
+
+            var token = CompileWatcher.BeginWrite();
+            // Acknowledge before asking Unity to import/recompile. The dispatcher and
+            // delayCall both run on the main thread; this gives transport a chance to send the hint.
+            EditorApplication.delayCall += () =>
+            {
+                try
+                {
+                    // The Editor may have started other work since we accepted the request.
+                    if (EditorApplication.isCompiling || EditorApplication.isUpdating ||
+                        EditorApplication.isPlayingOrWillChangePlaymode != EditorApplication.isPlaying)
+                    {
+                        CompileWatcher.FailRefresh(new InvalidOperationException("Editor became busy before refresh; retry when idle."));
+                        return;
+                    }
+                    AssetDatabase.Refresh();
+                    CompileWatcher.CompleteRefresh();
+                }
+                catch (Exception e)
+                {
+                    CompileWatcher.FailRefresh(e);
+                }
+            };
+            return $"Refresh queued (token={token}). RELOAD_IMMINENT: Unity may compile/reload if needed. Call get_compilation_status to get the result.";
         }
 
         public static string DeleteAsset(JObject mcpMessage)
@@ -142,11 +178,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
             switch (status)
             {
                 case "compiling" or "pending":
-                    return "PENDING: still compiling, poll again shortly.";
+                    return "PENDING: refresh/import/compilation in progress, poll again shortly.";
                 case "failed":
                     return $"FAILED:\n{errors}";
-                default:
+                case "success":
                     return "SUCCESS: compiled cleanly.";
+                case "no_compilation":
+                    return "NO_COMPILATION: refresh completed without a new compilation result; this does not certify edited scripts.";
+                default:
+                    return "UNKNOWN: no compilation result recorded in this Editor session.";
             }
         }
     }

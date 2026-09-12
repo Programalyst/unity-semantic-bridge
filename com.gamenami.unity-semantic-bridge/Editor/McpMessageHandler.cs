@@ -73,6 +73,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = AssetFunctions.DeleteAsset(mcpMessage);
                         break;
 
+                    case "refresh_assets":
+                        resultText = AssetFunctions.RefreshAssets(mcpMessage);
+                        break;
+
                     case "get_compilation_status":
                         resultText = AssetFunctions.GetCompilationStatus(mcpMessage);
                         break;
