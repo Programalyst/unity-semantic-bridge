@@ -22,11 +22,11 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
  - **Unity 2022.3 LTS up to Unity 6.3** 
 	- uses `UnityEditor.ObjectChangeEvents.changesPublished` available in 2022.3 LTS and later
-	- versions of Unity 6.3+ use change `InstanceIds` for `EntityIds` - not tested for compatibility
+	- versions of Unity 6.5+ swap `InstanceIds` for `EntityIds` - current ID protocol still uses `int` instance IDs and `GetInstanceID()`, which is fine up to 6000.3 but deprecated in Unity 6.5. A full `EntityId` migration (protocol + Selection.entityIds throughout) is planned for supporting newer versions.
 - **uv** (https://docs.astral.sh/uv/getting-started/installation/)
 
 ####  Optional
-- **API key for LLM with strong vision capabiltiies** - lighting subagent can be powered by a separate LLM (ideally with vision-in-the-loop like Fable 5 or Kimi K3); see `/core/llm_provider.py`. Tools are still available to your main/orchestrator agent even without setting up the subagent. Previously used mcp sampling but this was deprecated. 
+- **API key for LLM with strong vision capabiltiies** - lighting subagent can be powered by a separate LLM (ideally with vision-in-the-loop like Astra or Kimi K3); see `/core/llm_provider.py`. Tools are still available to your main/orchestrator agent even without setting up the subagent. Previously used mcp sampling but this was deprecated. 
 
 ## Installation
 

@@ -25,7 +25,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 case "scene":
                     if (focusId.HasValue)
                     {
-                        var go = EditorUtility.InstanceIDToObject(focusId.Value) as GameObject;
+                        var go = EditorIdLookup.FromInstanceId(focusId.Value) as GameObject;
                         if (go == null)
                             throw new BridgeToolException($"No GameObject found for instance_id {focusId.Value}.");
 
@@ -121,7 +121,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var includeComponents = mcpMessage["includeComponents"]?.ToObject<bool>() ?? true;
             var includePositions = mcpMessage["includePositions"]?.ToObject<bool>() ?? false;
 
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
             var nodes = new List<object>();
@@ -230,7 +230,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             var instanceId = (int)mcpMessage["instanceId"];
 
-            var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(instanceId) as GameObject;
             if (go == null) return "GameObject not found.";
 
             var sb = new StringBuilder();

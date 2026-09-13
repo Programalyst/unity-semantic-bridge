@@ -2,7 +2,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 
 namespace Gamenami.UnitySemanticBridge
 {
@@ -40,7 +39,7 @@ namespace Gamenami.UnitySemanticBridge
             if (config.RootInstanceId.HasValue)
             {
                 var rootId = config.RootInstanceId.Value;
-                var rootObj = EditorUtility.InstanceIDToObject(rootId) as GameObject;
+                var rootObj = FindGameObjectByInstanceId(rootId);
 
                 if (rootObj == null) // rootObj can still be null if instanceId is invalid
                     throw new BridgeToolException($"No GameObject found for instance_id {rootId}.");
@@ -64,8 +63,41 @@ namespace Gamenami.UnitySemanticBridge
 
             return scene;
         }
-        
-        private static void AddNodesRecursively(GameObject go, SemanticScene scene, string parentPath, 
+
+        /// <summary>
+        /// Player-safe replacement for EditorUtility.InstanceIDToObject.
+        /// UnityEditor APIs don't exist in player builds (WebGL etc.), so resolve
+        /// scene objects by scanning loaded scenes and comparing GetInstanceID().
+        /// Covers inactive objects: GetRootGameObjects returns inactive roots and
+        /// Transform enumeration includes inactive children.
+        /// </summary>
+        private static GameObject FindGameObjectByInstanceId(int instanceId)
+        {
+            for (var i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                if (!scene.isLoaded) continue;
+                foreach (var root in scene.GetRootGameObjects())
+                {
+                    var found = FindInHierarchy(root.transform, instanceId);
+                    if (found != null) return found;
+                }
+            }
+            return null;
+        }
+
+        private static GameObject FindInHierarchy(Transform t, int instanceId)
+        {
+            if (t.gameObject.GetInstanceID() == instanceId) return t.gameObject;
+            foreach (Transform child in t)
+            {
+                var found = FindInHierarchy(child, instanceId);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        private static void AddNodesRecursively(GameObject go, SemanticScene scene, string parentPath,
             int currentDepth, SceneGenerateSettings config, Camera mainCamera)
         {
             scene.totalNodesVisited++;

@@ -215,7 +215,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                             {
                                 stream.GetChangeGameObjectStructureEvent(i, out var evt);
                                 entry["instanceId"] = evt.instanceId;
-                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                var obj = EditorIdLookup.FromInstanceId(evt.instanceId);
                                 if (obj != null) entry["name"] = obj.name;
                                 break;
                             }
@@ -223,7 +223,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                             {
                                 stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var evt);
                                 entry["instanceId"] = evt.instanceId;
-                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                var obj = EditorIdLookup.FromInstanceId(evt.instanceId);
                                 if (obj != null)
                                 {
                                     entry["name"] = obj.name;
@@ -235,7 +235,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                             {
                                 stream.GetCreateGameObjectHierarchyEvent(i, out var evt);
                                 entry["instanceId"] = evt.instanceId;
-                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                var obj = EditorIdLookup.FromInstanceId(evt.instanceId);
                                 if (obj != null) entry["name"] = obj.name;
                                 var sceneName = evt.scene.name;
                                 if (!string.IsNullOrEmpty(sceneName)) entry["scene"] = sceneName;
@@ -253,7 +253,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                             {
                                 stream.GetChangeAssetObjectPropertiesEvent(i, out var evt);
                                 entry["instanceId"] = evt.instanceId;
-                                var obj = EditorUtility.InstanceIDToObject(evt.instanceId);
+                                var obj = EditorIdLookup.FromInstanceId(evt.instanceId);
                                 if (obj != null)
                                 {
                                     entry["name"] = obj.name;
@@ -304,7 +304,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             try
             {
+#if UNITY_6000_3_OR_NEWER
+                // Selection.instanceIDs is obsolete in Unity 6.3+; entityIds carries the
+                // same identity values (EntityId converts implicitly to int).
+                var ids = Array.ConvertAll(Selection.entityIds, e => (int)e);
+#else
                 var ids = Selection.instanceIDs;
+#endif
                 var payload = new JObject
                 {
                     ["instanceIds"] = new JArray(ids),
@@ -314,7 +320,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 // Include first selected object's name if available
                 if (ids.Length > 0)
                 {
-                    var obj = EditorUtility.InstanceIDToObject(ids[0]);
+                    var obj = EditorIdLookup.FromInstanceId(ids[0]);
                     if (obj != null) payload["firstName"] = obj.name;
                 }
                 SendNotification("unity/selectionChanged", payload);

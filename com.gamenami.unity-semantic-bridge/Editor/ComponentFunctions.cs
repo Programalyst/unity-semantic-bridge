@@ -34,7 +34,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var id = (int)mcpMessage["instanceId"];
             var compName = mcpMessage["componentName"]?.ToString();
 
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
             var comp = go.GetComponent(compName);
@@ -52,7 +52,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var componentType = mcpMessage["componentType"]?.ToString();
             var allowDuplicate = mcpMessage["allowDuplicate"]?.ToObject<bool>() ?? false;
 
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
             if (!TryResolveComponentType(componentType, out var type))
@@ -78,7 +78,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var instanceId = mcpMessage["instanceId"].ToObject<int>();
             var componentType = mcpMessage["componentType"]?.ToString();
 
-            var go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(instanceId) as GameObject;
             if (go == null) throw new BridgeToolException($"No GameObject found for instance_id {instanceId}.");
 
             if (!TryResolveComponentType(componentType, out var type))
@@ -124,7 +124,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var fields = mcpMessage["fields"] as JObject;
             var componentIndex = mcpMessage["componentIndex"]?.ToObject<int>() ?? 0;
 
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
             var matches = go.GetComponents<Component>()
@@ -246,11 +246,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     if (value.Type == JTokenType.Null || (value.Type == JTokenType.String && value.ToString() == "None"))
                         prop.objectReferenceValue = null;
                     else if (value.Type == JTokenType.Integer)
-                        prop.objectReferenceValue = EditorUtility.InstanceIDToObject(value.ToObject<int>());
+                        prop.objectReferenceValue = EditorIdLookup.FromInstanceId(value.ToObject<int>());
                     else if (value is JObject jo && jo["instanceId"] != null)
-                        prop.objectReferenceValue = EditorUtility.InstanceIDToObject(jo["instanceId"].ToObject<int>());
+                        prop.objectReferenceValue = EditorIdLookup.FromInstanceId(jo["instanceId"].ToObject<int>());
                     else
-                        prop.objectReferenceValue = EditorUtility.InstanceIDToObject(value.ToObject<int>()); 
+                        prop.objectReferenceValue = EditorIdLookup.FromInstanceId(value.ToObject<int>()); 
                     break;
                 case SerializedPropertyType.LayerMask:
                     prop.intValue = value.ToObject<int>(); 

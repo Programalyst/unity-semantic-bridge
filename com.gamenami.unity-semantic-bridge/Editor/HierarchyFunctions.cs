@@ -25,7 +25,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             // Parent handling — false = keep local transform (worldPositionStays false)
             if (parentId.HasValue)
             {
-                var parentGo = EditorUtility.InstanceIDToObject(parentId.Value) as GameObject;
+                var parentGo = EditorIdLookup.FromInstanceId(parentId.Value) as GameObject;
                 if (parentGo == null)
                 {
                     UnityEngine.Object.DestroyImmediate(go);
@@ -69,7 +69,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (id == 0) throw new BridgeToolException("duplicate_gameobject: 'instanceId' is required.");
             var newName = mcpMessage["newName"]?.ToString();
 
-            var source = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var source = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (source == null)
                 throw new BridgeToolException($"duplicate_gameobject: GameObject instanceId {id} not found.");
 
@@ -104,14 +104,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
             var keepWorld = mcpMessage["keepWorldPosition"]?.ToObject<bool>() ?? false;
 
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null)
                 throw new BridgeToolException($"set_parent: GameObject instanceId {id} not found.");
 
             Transform newParent = null;
             if (parentId.HasValue)
             {
-                var parentGo = EditorUtility.InstanceIDToObject(parentId.Value) as GameObject;
+                var parentGo = EditorIdLookup.FromInstanceId(parentId.Value) as GameObject;
                 if (parentGo == null)
                     throw new BridgeToolException($"set_parent: parentInstanceId {parentId.Value} not found.");
                 newParent = parentGo.transform;
@@ -137,7 +137,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             var id = mcpMessage["instanceId"]?.ToObject<int>() ?? 0;
             if (id == 0) throw new BridgeToolException("delete_gameobject: 'instanceId' is required.");
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null)
                 throw new BridgeToolException($"delete_gameobject: GameObject instanceId {id} not found.");
             var name = go.name;
@@ -155,8 +155,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (srcId == 0 || tgtId == 0 || string.IsNullOrWhiteSpace(srcCompName))
                 throw new BridgeToolException("copy_component: sourceInstanceId, targetInstanceId and sourceComponent are required.");
 
-            var srcGo = EditorUtility.InstanceIDToObject(srcId) as GameObject;
-            var tgtGo = EditorUtility.InstanceIDToObject(tgtId) as GameObject;
+            var srcGo = EditorIdLookup.FromInstanceId(srcId) as GameObject;
+            var tgtGo = EditorIdLookup.FromInstanceId(tgtId) as GameObject;
             if (srcGo == null) throw new BridgeToolException($"copy_component: source GameObject {srcId} not found.");
             if (tgtGo == null) throw new BridgeToolException($"copy_component: target GameObject {tgtId} not found.");
 

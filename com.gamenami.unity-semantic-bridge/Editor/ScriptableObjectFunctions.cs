@@ -300,7 +300,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         }
                         else if (value.Type == JTokenType.Integer)
                         {
-                            prop.objectReferenceValue = EditorUtility.InstanceIDToObject(value.ToObject<int>());
+                            prop.objectReferenceValue = EditorIdLookup.FromInstanceId(value.ToObject<int>());
                         }
                         else if (value.Type == JTokenType.String)
                         {
@@ -327,7 +327,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         else if (value is JObject jo)
                         {
                             if (jo["instanceId"] != null)
-                                prop.objectReferenceValue = EditorUtility.InstanceIDToObject(jo["instanceId"].ToObject<int>());
+                                prop.objectReferenceValue = EditorIdLookup.FromInstanceId(jo["instanceId"].ToObject<int>());
                             else if (jo["fileID"] != null && jo["guid"] != null)
                             {
                                 // NOTE: checked before bare guid — a {fileID, guid} pair must

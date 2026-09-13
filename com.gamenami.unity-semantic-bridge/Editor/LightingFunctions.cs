@@ -16,7 +16,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             var id = (int)mcpMessage["instanceId"];
 
-            var go = EditorUtility.InstanceIDToObject(id) as GameObject;
+            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
             if (go == null) return "Error: GameObject not found.";
 
             // Use closest point on bounds rather than pivot, so large/flat objects (e.g. terrain)
