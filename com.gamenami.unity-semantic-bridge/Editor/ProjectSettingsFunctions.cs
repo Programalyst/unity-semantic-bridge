@@ -14,7 +14,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         private static readonly HashSet<string> AllSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "core", "rendering", "input", "ui", "scripting", "tags_layers", "tagslayers", "tags"
+            "core", "rendering", "input", "ui", "scripting", "editor_prefs", "tags_layers", "tagslayers", "tags"
         };
 
         public static string GetProjectSettings(JObject mcpMessage)
@@ -70,11 +70,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (Want("tags_layers"))
                 root["tags_layers"] = GetTagsLayers();
 
+            if (Want("editor_prefs"))
+                root["editor_prefs"] = EditorPreferencesFunctions.GetPreferences();
+
             if (requested != null)
             {
                 var unknown = requested.Where(r => !AllSections.Contains(r)).ToArray();
                 if (unknown.Length > 0)
-                    root["_warning"] = $"Unknown sections: {string.Join(", ", unknown)}. Valid: core, rendering, input, ui, scripting, tags_layers";
+                    root["_warning"] = $"Unknown sections: {string.Join(", ", unknown)}. Valid: core, rendering, input, ui, scripting, tags_layers, editor_prefs";
             }
 
             return root.ToString(Newtonsoft.Json.Formatting.Indented);

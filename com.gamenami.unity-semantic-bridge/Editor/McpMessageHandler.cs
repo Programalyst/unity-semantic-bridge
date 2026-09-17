@@ -152,6 +152,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = LightingFunctions.GetUrpPipelineSettings();
                         break;
 
+                    case "set_editor_throttling":
+                        resultText = EditorPreferencesFunctions.SetEditorThrottling(mcpMessage);
+                        break;
+
                     case "get_project_settings":
                         resultText = ProjectSettingsFunctions.GetProjectSettings(mcpMessage);
                         break;

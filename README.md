@@ -95,7 +95,8 @@ Merge this entry into your client's MCP configuration, replacing the path:
 - `notify_unity` — Sends a message to the Unity Editor chat window (`BridgeRelay.OnAgentMessage`).
 
 **Project & Settings**
-- `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`.
+- `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`. The `editor_prefs` section reports the current Interaction Mode, stored idle time, and restore availability; these are user-level Editor preferences.
+- `set_editor_throttling` — Allows agent to set no_throttling for long running tasks. Speeds up agentic flows by keeping Editor tick rate un-throttled when unfocused. 
 
 **Scene & GameObject Inspection**
 - `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), optional filtering to only main-camera-visible objects, and `root_instance_id` subtree queries.

@@ -15,7 +15,7 @@ def register_unity_tools(mcp):
 
     @mcp.tool()
     async def get_project_settings(
-        sections: Annotated[list[str] | None, "Which sections to return. Valid: 'core', 'rendering', 'input', 'ui', 'scripting', 'tags_layers'. Omit or pass empty for all."] = None,
+        sections: Annotated[list[str] | None, "Which sections to return. Valid: 'core', 'rendering', 'input', 'ui', 'scripting', 'tags_layers', 'editor_prefs'. Omit or pass empty for all."] = None,
     ) -> str:
         """
         Returns Unity Project Settings as JSON. Selectively fetch sections to keep output small.
@@ -26,6 +26,7 @@ def register_unity_tools(mcp):
         - input: Active Input Handling (Old/New/Both) and default InputActionAsset assets if any
         - ui: uGUI vs UI Toolkit signals — EventSystem/Canvas in open scenes, UIDocument/VisualTreeAsset/StyleSheet counts
         - scripting: API compatibility level, #define symbols (group), allowUnsafeCode, scripting backend
+        - editor_prefs: current Editor Interaction Mode, idle time, setter support and restore availability (user preferences, not project assets)
         - tags_layers: Tag list and layer names/index map (physics collision matrix stays in get_physics_layers)
 
         Example: get_project_settings(sections=["core","rendering"]) for a focused query.
@@ -41,6 +42,22 @@ def register_unity_tools(mcp):
                 normed.append(t)
             params["sections"] = normed
         return await call_unity("get_project_settings", params)
+
+    @mcp.tool()
+    async def set_editor_throttling(
+        mode: Annotated[Literal["no_throttling", "default", "restore"], "Interaction Mode override, or restore the setting saved before the first override in this Editor session."],
+    ) -> str:
+        """Explicitly change Unity's user-level Interaction Mode on the main thread.
+
+        Recommended for long-running tasks that interact with Unity: set mode="no_throttling" before starting, then set mode="default" when the task finishes, including on failure or cancellation. Use mode="restore" instead if you need to preserve a prior custom setting.
+
+        no_throttling disables frame idling; default restores Unity's default preference. restore restores the original mode and idle time (including Custom/Monitor modes).
+        Repeated overrides retain the first restore point across domain reloads, not Editor restarts. Changes persist until explicitly changed; restore before quitting if temporary.
+        Returns JSON with requestedMode, changed and editor_prefs, or Error: ... .
+        No Throttling can increase CPU/power use. Does not guarantee unfocused Editor updates.
+        Does not change Play Mode, refresh assets, or save scenes.
+        """
+        return await call_unity("set_editor_throttling", {"mode": mode})
 
     @mcp.tool()
     async def get_screenshot(

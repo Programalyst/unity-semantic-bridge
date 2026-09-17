@@ -115,3 +115,97 @@ Live integration checks remain separate and unperformed for this change:
 Astra Express consumes this package via a local file dependency and shares its
 Editor with another session. Coordinate with that session **before** any live
 reload tests there. No Astra Express gameplay/assets were edited by this change.
+
+## Editor throttling and preferences
+
+`set_editor_throttling(mode)` takes one required string: `"no_throttling"`,
+`"default"`, or `"restore"`. It changes **Preferences > General > Interaction
+Mode** on Unity's main thread. `no_throttling` sets the stored idle time to 0 ms;
+`default` removes the two preference overrides so Unity uses Default (4 ms).
+No Throttling may increase CPU usage and power consumption. This affects
+user-level Editor preferences, not project settings/assets, Play Mode, asset
+refresh, or scene saving.
+
+`restore` restores the mode and stored idle time captured before the first
+successful override, including Custom/Monitor Refresh Rate and whether the
+preference keys originally existed. Repeated `no_throttling`/`default` calls
+retain that original restore point. A successful restore consumes it; another
+restore returns `Error:` without changing preferences. A fresh override after
+restore captures a new baseline. Restore overwrites any intervening manual
+changes to these two preferences, so coordinate with other users of the Editor.
+The saved restore point is shared by bridge clients in this Editor session.
+
+The preference values persist, while the restore point uses `SessionState`:
+it survives script/domain reload and Python MCP reconnect, but **not an Editor
+restart**. Restore explicitly before quitting if the override is temporary;
+there is no automatic restoration on disconnect or quit. Other Editor instances
+may share the same user preference store.
+
+Requests to `POST http://127.0.0.1:1073/rpc`:
+
+```json
+{"jsonrpc":"2.0","id":"throttle-1","method":"set_editor_throttling","params":{"mode":"no_throttling"}}
+```
+
+```json
+{"jsonrpc":"2.0","id":"prefs-1","method":"get_project_settings","params":{"sections":["editor_prefs"]}}
+```
+
+```json
+{"jsonrpc":"2.0","id":"restore-1","method":"set_editor_throttling","params":{"mode":"restore"}}
+```
+
+The setter returns a JSON **string** in the usual JSON-RPC `result`, whose
+parsed contents look like:
+
+```json
+{
+  "requestedMode": "no_throttling",
+  "changed": true,
+  "editor_prefs": {
+    "interactionMode": "no_throttling",
+    "interactionModeLabel": "No Throttling",
+    "interactionModeRaw": 1,
+    "applicationIdleTimeMs": 0,
+    "restoreAvailable": true,
+    "canSetInteractionMode": true,
+    "scope": "editor_user"
+  }
+}
+```
+
+`get_project_settings(sections=["editor_prefs"])` returns the same `editor_prefs`
+object, without `requestedMode`/`changed`. Omitting sections or passing an empty
+list includes it with the existing sections. `interactionMode` reports
+`default`, `no_throttling`, `monitor_refresh_rate`, `custom`, or `unknown` (with
+the raw integer preserved). `applicationIdleTimeMs` is the stored preference,
+not a measured update interval. `changed` reports whether the stored keys or
+values changed; an idempotent override still keeps a restore point.
+
+The implementation follows Unity's
+[Preferences UI source](https://github.com/Unity-Technologies/UnityCsReference/blob/2022.3/Editor/Mono/PreferencesWindow/PreferencesSettingsProviders.cs):
+`EditorPrefs` plus the internal `EditorApplication.UpdateInteractionModeSettings`
+method, accessed by reflection. If that method is unavailable, the setter
+returns `Error:` without writing preferences and the getter reports
+`canSetInteractionMode: false`. Invalid modes and unavailable/corrupt restore
+points also return `Error:`. An apply failure attempts to roll back the previous
+values and reports any rollback failure.
+
+This does not bypass `EditorApplication.update`: a queued setter may itself
+need Unity to be focused before it executes. No guarantee is made about
+unfocused/minimized Editor responsiveness or OS background scheduling. Unity
+[ignores this throttling preference in Play Mode](https://docs.unity3d.com/2022.3/Documentation/Manual/Preferences.html).
+
+After installing the updated package, let Unity compile it and restart/resume
+the Python MCP client/server to discover the new setter. The existing
+`get_project_settings` tool gains the `editor_prefs` section.
+
+Validation: Python tests cover tool schema, all three mode routes, the
+`editor_prefs` filter, all-sections routing, and error pass-through. Unity
+`EditorThrottlingReadTests` covers the section and invalid input;
+`EditorThrottlingMutationTests` is opt-in (`Explicit`) because it temporarily
+changes user preferences. It covers repeated overrides, original Custom/Monitor
+restoration, absent keys, session snapshot restoration, and corrupt snapshots.
+Run mutation tests only in a coordinated test Editor. Live preference changes,
+actual domain reload restoration, and focus behavior were not tested in the
+shared Editor for this change.
