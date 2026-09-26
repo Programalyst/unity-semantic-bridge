@@ -18,75 +18,49 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - In Editor MCP log so you can see what tools are called
 - Dedicated Lighting tools for URP projects
 
-## Prerequesites
+## Prerequisites
 
- - **Unity 2022.3 LTS up to Unity 6.3** 
-	- uses `UnityEditor.ObjectChangeEvents.changesPublished` available in 2022.3 LTS and later
-	- versions of Unity 6.5+ swap `InstanceIds` for `EntityIds` - current ID protocol still uses `int` instance IDs and `GetInstanceID()`, which is fine up to 6000.3 but deprecated in Unity 6.5. A full `EntityId` migration (protocol + Selection.entityIds throughout) is planned for supporting newer versions.
-- **uv** (https://docs.astral.sh/uv/getting-started/installation/)
-
-####  Optional
-- **API key for LLM with strong vision capabiltiies** - lighting subagent can be powered by a separate LLM (ideally with vision-in-the-loop like Astra or Kimi K3); see `/core/llm_provider.py`. Tools are still available to your main/orchestrator agent even without setting up the subagent. Previously used mcp sampling but this was deprecated. 
+- Unity 2022.3–6.3.
+- [Git](https://git-scm.com/) on `PATH` and [uv](https://docs.astral.sh/uv/getting-started/installation/) for Python setup.
 
 ## Installation
 
-1. Clone this project.
-2. Add the Unity package in `/com.gamenami.unity-semantic-bridge` to your Unity project via "add package from disk".
-3. Install `uv`, then register the **Python MCP server** in `/mcp-editor-bridge` with your agent using one of the configurations below. The agent launches Python over **stdio**; Python POSTs JSON-RPC to Unity at `http://127.0.0.1:1073/rpc`. The Unity `/rpc` URL is the Python server's downstream connection; it cannot be used directly as an MCP server URL.
-4. In Unity, open **Tools > Unity Semantic Bridge**, then start the HTTP listener (port 1073). Health check: `GET http://127.0.0.1:1073/health`.
+Install both the Unity package and the Python MCP server:
 
-### Codex CLI
+1. In Unity, open **Window > Package Manager > + > Add package from Git URL**
+   and paste:
 
-Run this in your shell, replacing the example path with your clone's absolute path:
+   ```text
+   https://github.com/Programalyst/unity-semantic-bridge.git?path=/com.gamenami.unity-semantic-bridge
+   ```
 
-```sh
-codex mcp add unity-semantic-bridge -- uv --directory "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge" run main.py
-```
+2. Clone the matching Python server and install its dependencies:
 
-Alternatively, add this TOML entry to `~/.codex/config.toml`:
+   ```sh
+   git clone https://github.com/Programalyst/unity-semantic-bridge.git
+   uv --directory unity-semantic-bridge/mcp-editor-bridge sync --locked
+   ```
 
-```toml
-[mcp_servers.unity-semantic-bridge]
-command = "uv"
-args = [
-    "--directory",
-    "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge",
-    "run",
-    "main.py",
-]
-```
+3. Register the server with your MCP client. For Codex, replace the path below
+   with your clone's absolute path:
 
-Each array entry is **one command-line argument**. Do not combine arguments into
-strings such as `'"run", "main.py"'`: that passes the quotes and comma literally
-as one argument. In a UI with separate argument fields, enter one value per
-field without JSON punctuation.
+   ```sh
+   codex mcp add unity-semantic-bridge -- uv --directory "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge" run main.py
+   ```
 
-Check the saved configuration with `codex mcp get unity-semantic-bridge`.
-After changing the configuration or Python tool definitions, exit the running
-CLI with **Ctrl+D**, run `codex resume` from the same project directory, and
-select your conversation. Use `/mcp` to check connection/tool discovery.
-If it reports **failed (0 tools)**, check the Python startup command and error;
-restarting Unity's listener cannot fix malformed Python launch arguments.
+   [Other client configurations](docs/installation.md#clients-using-json-configuration).
 
-### Clients using JSON configuration
+4. In Unity, open **Tools > Unity Semantic Bridge > Start HTTP Listener**, then
+   start or reconnect your MCP client. The client launches Python over stdio;
+   Python connects to Unity on port 1073.
 
-Merge this entry into your client's MCP configuration, replacing the path:
+Commit both `Packages/manifest.json` and `Packages/packages-lock.json` to share
+the installation. Keep your MCP client's local clone path out of shared settings.
 
-```json
-{
-    "mcpServers": {
-        "unity-semantic-bridge": {
-            "command": "uv",
-            "args": [
-                "--directory",
-                "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge",
-                "run",
-                "main.py"
-            ]
-        }
-    }
-}
-```
+For upgrades, local-to-Git migration, or bridge development using **Add package
+from disk**, see the [installation reference](docs/installation.md). Do not commit
+personal absolute package paths. An API key is only needed for
+[optional lighting diagnostics](mcp-editor-bridge/LightingAgent/README.md).
 
 ## Available Tools
 

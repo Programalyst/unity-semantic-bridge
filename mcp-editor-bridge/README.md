@@ -1,3 +1,13 @@
+# Python MCP server
+
+For installation, follow the installation reference’s separate steps for the
+[Unity UPM package](../docs/installation.md#1-unity-package--recommended-git-url) and
+[Python MCP server](../docs/installation.md#2-python-mcp-server--local-agent-setup).
+The Unity Git package does not launch this server. Run it from a separate clone
+at the matching revision with `uv --directory <clone>/mcp-editor-bridge run main.py`
+via your MCP client's stdio configuration; keep that machine's clone path in the
+local client configuration, not the consuming Unity project's manifests.
+
 Bridge uses JSON-RPC 2.0 over HTTP.
 
 - Python -> Unity: `POST http://127.0.0.1:1073/rpc` with `{"jsonrpc":"2.0","id":"...","method":"...","params":{...}}` -> `{"jsonrpc":"2.0","id":"...","result":"..."}`.

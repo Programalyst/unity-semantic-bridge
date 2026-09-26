@@ -1,4 +1,9 @@
-# Unity Semantic Bridge — Repo Notes
+# Unity Semantic Bridge — Historical Repo Notes
+
+> Archived exploration from 2026-08-09. The `Server/` paths, WebSocket transport
+> and setup details below describe an older version. For current installation,
+> including pinned Git UPM dependencies and the separate Python server, use the
+> [root README](../README.md#installation).
 
 Exploration date: 2026-08-09 | Unity 2022.3 LTS | Package `com.gamenami.unity-semantic-bridge` + Python MCP Server (`Server/`)
 
@@ -66,10 +71,13 @@ IDE Agent --(stdio MCP)--> FastMCP Server (Server/main.py) --(WS :8765)--> Edito
 - `LightingAgent`: final synthesis can be empty if resolution is a tool-only turn; `search_unity_docs` not guaranteed to be called; 2 consecutive tool errors abort early (see `LightingAgent/README.md`).
 - WS `ReceiveLoop` reassembles fragmented frames into `MemoryStream` before JSON parse; `processing_lock` for gameplay prevents backlog.
 
-## 6. How to run
-1. `uv` installed; MCP config: `uv --directory <repo>/Server run main.py` (stdio).
-2. Unity: add package from disk (`com.gamenami.unity-semantic-bridge`), open `Tools > Unity Semantic Bridge > Connect to Server`.
-3. No `.env` key required — injected LLM via `RunnableConfig` + vision gate covers both subagents and gameplay. Add provider keys only for your chosen model.
+## 6. Current installation
+
+Follow the [root README installation guide](../README.md#installation). Use a
+pinned Git URL for the Unity package; local disk installation is for bridge
+development. Configure the separate Python server from `mcp-editor-bridge/`,
+not the historical `Server/` directory. The current bridge uses JSON-RPC over
+HTTP with MCP over stdio, not the WebSocket transport described in these notes.
 
 ## 7. Repo layout quick ref
 ```
