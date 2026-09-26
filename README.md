@@ -141,3 +141,11 @@ Merge this entry into your client's MCP configuration, replacing the path:
 
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
+
+## Imported model inspection
+
+Use `inspect_model_asset(path, include_details=False)` to read mesh IDs, bounds,
+geometry counts, imported transforms, importer scale/axis settings, material slots
+and outgoing dependencies without changing assets or scenes. See
+[model inspection and deletion-reference assessment](docs/model-inspection.md)
+for coordinate-space definitions, examples and tests.

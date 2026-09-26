@@ -168,6 +168,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ScriptableObjectFunctions.UpdateScriptableObject(mcpMessage);
                         break;
 
+                    case "inspect_model_asset":
+                        resultText = ModelInspectionFunctions.InspectModelAsset(mcpMessage);
+                        break;
+
                     case "generate_asset_catalog":
                         resultText = AssetCatalogGenerator.GenerateAssetCatalog(mcpMessage);
                         break;

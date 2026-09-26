@@ -42,7 +42,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
                 var path = AssetDatabase.GUIDToAssetPath(g);
                 foreach (var o in AssetDatabase.LoadAllAssetsAtPath(path))
                 {
-                    if (o is Mesh && AssetDatabase.TryGetGUIDAndLocalFileIdentifier(o, out _, out var lid))
+                    if (o is Mesh && AssetDatabase.TryGetGUIDAndLocalFileIdentifier(o, out _, out long lid))
                     {
                         guid = g;
                         fileId = lid;
@@ -75,7 +75,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             var so = AssetDatabase.LoadAssetAtPath<MeshRefProbeSo>(RoundTripPath);
             Assert.IsNotNull(so);
             Assert.IsNotNull(so.mesh, "Mesh ref was zeroed (fileID: 0).");
-            Assert.IsTrue(AssetDatabase.TryGetGUIDAndLocalFileIdentifier(so.mesh, out var actualGuid, out var actualFileId));
+            Assert.IsTrue(AssetDatabase.TryGetGUIDAndLocalFileIdentifier(so.mesh, out var actualGuid, out long actualFileId));
             Assert.AreEqual(guid, actualGuid);
             Assert.AreEqual(fileId, actualFileId);
         }

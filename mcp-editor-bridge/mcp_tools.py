@@ -159,6 +159,22 @@ def register_unity_tools(mcp):
         })
 
     @mcp.tool()
+    async def inspect_model_asset(
+        path: Annotated[str, "Imported model path in the connected Unity project, e.g. Assets/Models/Ship.fbx (Assets/ or Packages/)."],
+        include_details: Annotated[bool, "Include per-submesh topology/index counts, extra importer settings, other embedded subassets and recursive rather than direct dependencies."] = False,
+    ) -> str:
+        """Read-only inspection of an imported FBX/OBJ or other ModelImporter asset.
+
+        Returns mesh GUID/local file IDs, vertex/submesh counts, mesh-local bounds,
+        imported hierarchy/local transforms, hierarchy-transformed placement bounds,
+        scale/units/axis settings, material slots and embedded/external dependencies.
+        Bounds use imported Unity units; placement bounds include the root transform
+        in an identity parent frame, not a scene instance or animated/skinned pose.
+        Does not instantiate, reimport, modify assets/scenes, or change selection.
+        """
+        return await call_unity("inspect_model_asset", {"path": path, "include_details": include_details})
+
+    @mcp.tool()
     async def find_asset_references(
         asset_path: Annotated[str, "The full project-relative path to the asset, including extension (e.g., 'Assets/Prefabs/Player.prefab')"]
     ) -> str:
