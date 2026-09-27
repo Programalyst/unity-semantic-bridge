@@ -319,7 +319,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
         }
 
         // Extended in the wiring and transaction-control implementation.
-        static bool PrepareWiring(Plan plan, JObject op) => false;
         static string RememberUndo(int group, Scene scene) => group.ToString();
     }
 }
