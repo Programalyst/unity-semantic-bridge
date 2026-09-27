@@ -170,7 +170,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static void ApplyPropertyValue(SerializedProperty prop, JToken value)
         {
             // Handle arrays / Generic structs recursively — needed for RigBuilder.m_RigLayers and Constraint.m_Data
-            if (prop.isArray)
+            if (prop.isArray && prop.propertyType != SerializedPropertyType.String)
             {
                 if (value.Type != JTokenType.Array)
                     throw new NotSupportedException($"Property '{prop.name}' is an array but value is {value.Type}, expected JSON array.");
@@ -242,15 +242,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     prop.colorValue = new Color(jc["r"].ToObject<float>(), jc["g"].ToObject<float>(), jc["b"].ToObject<float>(), jc["a"]?.ToObject<float>() ?? 1f); 
                     break;
                 case SerializedPropertyType.ObjectReference:
-                    // Allow null/0/None to clear, integer instanceId, or JObject with instanceId
-                    if (value.Type == JTokenType.Null || (value.Type == JTokenType.String && value.ToString() == "None"))
-                        prop.objectReferenceValue = null;
-                    else if (value.Type == JTokenType.Integer)
-                        prop.objectReferenceValue = EditorIdLookup.FromInstanceId(value.ToObject<int>());
-                    else if (value is JObject jo && jo["instanceId"] != null)
-                        prop.objectReferenceValue = EditorIdLookup.FromInstanceId(jo["instanceId"].ToObject<int>());
-                    else
-                        prop.objectReferenceValue = EditorIdLookup.FromInstanceId(value.ToObject<int>()); 
+                    var expected = AuthoringReferences.FieldType(prop.serializedObject.targetObject.GetType(), prop.propertyPath);
+                    prop.objectReferenceValue = AuthoringReferences.Resolve(value, expected);
                     break;
                 case SerializedPropertyType.LayerMask:
                     prop.intValue = value.ToObject<int>(); 
