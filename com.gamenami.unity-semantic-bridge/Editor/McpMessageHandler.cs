@@ -168,6 +168,22 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ScriptableObjectFunctions.UpdateScriptableObject(mcpMessage);
                         break;
 
+                    case "author_ui":
+                        resultText = UiAuthoring.Batch(mcpMessage);
+                        break;
+                    case "inspect_ui":
+                        resultText = UiInspection.Inspect(mcpMessage);
+                        break;
+                    case "raycast_ui":
+                        resultText = UiInspection.Raycast(mcpMessage);
+                        break;
+                    case "undo_ui_batch":
+                        resultText = UiAuthoring.UndoBatch(mcpMessage);
+                        break;
+                    case "save_ui_context":
+                        resultText = UiAuthoring.SaveContext(mcpMessage);
+                        break;
+
                     case "inspect_model_asset":
                         resultText = ModelInspectionFunctions.InspectModelAsset(mcpMessage);
                         break;

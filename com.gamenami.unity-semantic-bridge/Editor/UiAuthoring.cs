@@ -97,7 +97,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         internal static void CheckWritablePath(string path, string extension)
         {
             var parts = (path ?? "").Replace('\\', '/').Split('/');
-            if (!path.StartsWith("Assets/", StringComparison.Ordinal) || !path.EndsWith(extension, StringComparison.OrdinalIgnoreCase) || parts.Contains("..") ||
+            if (string.IsNullOrEmpty(path) || !path.StartsWith("Assets/", StringComparison.Ordinal) || !path.EndsWith(extension, StringComparison.OrdinalIgnoreCase) || parts.Contains("..") ||
                 parts.Any(p => new[] { "packages", "synty", "thirdparty", "third party", "3rd party", "vendor", "plugins" }.Contains(p.ToLowerInvariant())))
                 throw new ArgumentException("Save/edit path must be a project-owned Assets/ path, outside Packages, Synty, ThirdParty, Vendor or Plugins folders. Copy vendor content into your own folder first.");
             if (!AssetDatabase.IsOpenForEdit(path)) throw new ArgumentException($"'{path}' is read-only or not open for edit. Check it out first.");
@@ -185,6 +185,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         static void Prepare(Plan plan, JObject op)
         {
+            foreach (var key in new[] { "properties", "rect" })
+                if (op[key] != null && !(op[key] is JObject)) throw new ArgumentException(key + " must be an object.");
+            if (op["allowDriven"] != null && op["allowDriven"].Type != JTokenType.Boolean) throw new ArgumentException("allowDriven must be boolean.");
             var verb = op["op"]?.Value<string>();
             switch (verb)
             {
@@ -223,6 +226,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     if (!(go.transform is RectTransform)) throw new ArgumentException("UI parent must have RectTransform (including Canvas).");
                 }
             }
+            else if (PrefabStageUtility.GetCurrentPrefabStage() != null) throw new ArgumentException("Creating a root in Prefab Mode is not supported; specify a parent inside the current prefab.");
             else if (type != typeof(Canvas)) throw new ArgumentException("Non-Canvas UI needs an explicit parent RectTransform.");
             var properties = op["properties"] as JObject;
             if (op["properties"] != null && properties == null) throw new ArgumentException("properties must be an object.");
@@ -318,7 +322,5 @@ namespace Gamenami.UnitySemanticBridge.Editor
             });
         }
 
-        // Extended in the wiring and transaction-control implementation.
-        static string RememberUndo(int group, Scene scene) => group.ToString();
     }
 }

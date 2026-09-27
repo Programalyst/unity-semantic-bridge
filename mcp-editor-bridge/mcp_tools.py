@@ -159,6 +159,77 @@ def register_unity_tools(mcp):
         })
 
     @mcp.tool()
+    async def author_ui(
+        operations: Annotated[list[dict], "Ordered uGUI operations: create, add_component, configure, set_rect, set_fields, button_on_click. References: {instanceId}, {guid,fileID}, {path}, or {ref: earlier_create_id}; add component/componentIndex to select a component. See docs/ugui-authoring.md."],
+        name: Annotated[str, "Name for the single Unity Undo group."] = "Author uGUI",
+    ) -> str:
+        """Create/revise ordinary uGUI in one Edit Mode transaction on Unity's main thread.
+
+        create: {op,id,kind,name,parent?,properties?,rect?}; kind is Canvas, Panel,
+        Image, Button, TextMeshProUGUI or RectTransform. Canvas requires renderMode;
+        camera/world-space also requires worldCamera. TMP requires explicit font.
+        add_component: {op,target,component,properties?}; layout components/CanvasGroup.
+        configure: {op,target: component_reference,properties}; allowlisted public UI properties.
+        set_rect: {op,target: gameobject_reference,rect,allowDriven?}; anchors/pivot first,
+        then position/size OR offsets, then local Euler rotation/scale. Driven edits rejected by default.
+        set_fields: {op,target: component_reference,fields}; typed references/arrays only.
+        button_on_click: {op,target: Button_reference,mode: append|replace,listeners};
+        listeners use {target,method,mode: void|int|float|bool|string|object,argument?,argumentType?,state?}.
+        Validates before mutation where possible; execution failures revert the Undo group.
+        Returns local-id -> object/component instance IDs, global IDs and undoToken. No save.
+        Existing instance-ID tools remain usable; global IDs persist only after saving.
+        """
+        return await call_unity("author_ui", {"operations": operations, "name": name})
+
+    @mcp.tool()
+    async def inspect_ui(
+        instance_id: Annotated[int, "Root GameObject instance ID with RectTransform."],
+        camera_instance_id: Annotated[int | None, "Optional viewing Camera/component or GameObject ID for world-space visibility."] = None,
+        max_nodes: Annotated[int, "Maximum hierarchy nodes, 1–1000."] = 100,
+        include_references: Annotated[bool, "Include up to 100 Inspector-visible serialized object references per node."] = False,
+    ) -> str:
+        """Inspect calculated uGUI layout, screen bounds, visibility estimates, interaction,
+        CanvasGroup restrictions, persistent callbacks and layout drivers. Rectangle overlap
+        does not prove input blocking: use raycast_ui. Does not save or author properties."""
+        params = {"instanceId": instance_id, "maxNodes": max_nodes, "includeReferences": include_references}
+        if camera_instance_id is not None:
+            params["cameraInstanceId"] = camera_instance_id
+        return await call_unity("inspect_ui", params)
+
+    @mcp.tool()
+    async def raycast_ui(
+        x: Annotated[float, "Primary-display screen pixel X, origin bottom-left."],
+        y: Annotated[float, "Primary-display screen pixel Y, origin bottom-left."],
+        camera_instance_id: Annotated[int | None, "Optional viewing camera to compare rendering visibility with actual raycast hits."] = None,
+    ) -> str:
+        """Query actual registered raycasters, returning each hit's object, camera and raycaster.
+        Diagnoses camera-mask-hidden UI hits. Uses EventSystem ordering when available;
+        without one, reports per-raycaster order. Does not synthesize clicks or consume input."""
+        params = {"x": x, "y": y}
+        if camera_instance_id is not None:
+            params["cameraInstanceId"] = camera_instance_id
+        return await call_unity("raycast_ui", params)
+
+    @mcp.tool()
+    async def undo_ui_batch(undo_token: Annotated[str, "undoToken from the untouched most recent author_ui result."]) -> str:
+        """Undo the latest UI batch only if no intervening Undo activity occurred.
+        Otherwise use Unity's Undo history. Tokens expire on reload or explicit save."""
+        return await call_unity("undo_ui_batch", {"undoToken": undo_token})
+
+    @mcp.tool()
+    async def save_ui_context(
+        instance_id: Annotated[int, "GameObject ID in the scene or current Prefab Stage to save."],
+        path: Annotated[str | None, "New Assets/.../*.unity path for an unsaved scene only. Existing contexts save at their existing path."] = None,
+    ) -> str:
+        """Explicitly save the entire containing scene or current prefab contents, including
+        other pending edits. Rejects package/vendor paths and Prefab Mode Auto Save.
+        Does not apply scene prefab-instance overrides back to prefab assets."""
+        params = {"instanceId": instance_id}
+        if path is not None:
+            params["path"] = path
+        return await call_unity("save_ui_context", params)
+
+    @mcp.tool()
     async def inspect_model_asset(
         path: Annotated[str, "Imported model path in the connected Unity project, e.g. Assets/Models/Ship.fbx (Assets/ or Packages/)."],
         include_details: Annotated[bool, "Include per-submesh topology/index counts, extra importer settings, other embedded subassets and recursive rather than direct dependencies."] = False,
