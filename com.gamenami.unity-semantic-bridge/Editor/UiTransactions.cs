@@ -56,6 +56,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     CheckWritablePath(path, ".prefab");
                     PrefabUtility.SaveAsPrefabAsset(stage.prefabContentsRoot, path, out bool ok);
                     if (!ok) throw new IOException("Unity could not save the prefab; inspect the Console.");
+                    stage.ClearDirtiness();
                 }
                 else
                 {

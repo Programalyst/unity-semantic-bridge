@@ -72,9 +72,30 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 return value != null ? value.GetType() : expected;
             }
 
+            // Return an existing mutation target, or null for a component created earlier
+            // in this request. Asset references may be read, never used as edit targets.
+            internal Component MutationTarget(JToken token)
+            {
+                Required(token, typeof(Component));
+                var spec = token as JObject;
+                if (spec?["ref"] != null) return null;
+                if (spec?["component"] != null)
+                {
+                    var baseSpec = (JObject)spec.DeepClone(); baseSpec.Remove("component"); baseSpec.Remove("componentIndex");
+                    var obj = AuthoringReferences.Resolve(baseSpec, typeof(Object));
+                    var go = obj as GameObject ?? (obj as Component)?.gameObject;
+                    Use(go);
+                    var type = AuthoringReferences.TypeNamed(spec["component"].Value<string>());
+                    var index = spec["componentIndex"]?.Value<int>() ?? 0;
+                    if (index >= go.GetComponents(type).Length) return null; // ReferenceType checked planned additions.
+                }
+                var target = (Component)AuthoringReferences.Resolve(token, typeof(Component));
+                Use(target.gameObject); return target;
+            }
+
             internal void Required(JToken token, Type type)
             {
-                if (token == null || token.Type == JTokenType.Null) throw new ArgumentException($"A {type.Name} reference is required.");
+                if (token == null || token.Type == JTokenType.Null || (token.Type == JTokenType.Integer && token.Value<int>() == 0)) throw new ArgumentException($"A {type.Name} reference is required.");
                 ReferenceType(token, type);
             }
         }
@@ -159,6 +180,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 foreach (var action in plan.actions) action(locals, warnings);
                 Canvas.ForceUpdateCanvases();
                 Undo.FlushUndoRecordObjects(); Undo.CollapseUndoOperations(group);
+                if (UnityEngine.EventSystems.EventSystem.current == null)
+                    warnings.Add("EventSystem is not registered in this mode (common in Edit Mode). Verify the project has an EventSystem/input module for runtime clicks; author_ui does not choose an input backend.");
                 var token = RememberUndo(group, plan.scene);
                 Undo.IncrementCurrentGroup();
                 return new JObject { ["status"] = "ok", ["undoToken"] = token, ["saved"] = false,
@@ -236,15 +259,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (properties["renderMode"].Value<string>() != "ScreenSpaceOverlay" && properties["worldCamera"] == null) throw new ArgumentException("Camera/world-space Canvas requires an explicit worldCamera reference.");
                 if (properties["renderMode"].Value<string>() != "ScreenSpaceOverlay") plan.Required(properties["worldCamera"], typeof(Camera));
             }
-            if (type.Name == "TextMeshProUGUI")
-            {
-                if (Resources.Load("TMP Settings") == null) throw new ArgumentException("TMP Essential Resources missing. Import them via Window > TextMeshPro > Import TMP Essential Resources before creating text.");
-                var fontType = AuthoringReferences.TypeNamed("TMPro.TMP_FontAsset");
-                plan.Required(properties?["font"], fontType);
-                var font = AuthoringReferences.Resolve(properties["font"], fontType);
-                var material = fontType.GetProperty("material")?.GetValue(font) as Material;
-                if (material == null || material.shader == null) throw new ArgumentException("The explicit TMP font has no usable material/shader. Import its font atlas/material resources.");
-            }
+            if (type.Name == "TextMeshProUGUI") ValidateFont(plan, properties?["font"]);
             if (properties != null) UiProperties.Validate(type, properties, (t, expected) => plan.ReferenceType(t, expected));
             UiLayout.Validate(op["rect"] as JObject);
             var components = new List<Type> { typeof(RectTransform) };
@@ -281,6 +296,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
             });
         }
 
+        static void ValidateFont(Plan plan, JToken reference)
+        {
+            if (Resources.Load("TMP Settings") == null) throw new ArgumentException("TMP Essential Resources missing. Import them via Window > TextMeshPro > Import TMP Essential Resources before authoring text.");
+            var fontType = AuthoringReferences.TypeNamed("TMPro.TMP_FontAsset");
+            plan.Required(reference, fontType);
+            var font = AuthoringReferences.Resolve(reference, fontType);
+            var material = (fontType.GetProperty("material")?.GetValue(font) ?? fontType.GetField("material")?.GetValue(font)) as Material;
+            if (material == null || material.shader == null) throw new ArgumentException("The explicit TMP font has no usable material/shader. Import its font atlas/material resources.");
+        }
+
         static void PrepareAdd(Plan plan, JObject op)
         {
             UiProperties.Keys(op, "op target component properties"); plan.Required(op["target"], typeof(GameObject));
@@ -311,9 +336,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         static void PrepareConfigure(Plan plan, JObject op)
         {
-            UiProperties.Keys(op, "op target properties"); plan.Required(op["target"], typeof(Component));
+            UiProperties.Keys(op, "op target properties"); plan.MutationTarget(op["target"]);
             var type = plan.ReferenceType(op["target"], typeof(Component));
             var values = op["properties"] as JObject ?? throw new ArgumentException("properties object is required.");
+            if (type.Name == "TextMeshProUGUI" && values["font"] != null) ValidateFont(plan, values["font"]);
             UiProperties.Validate(type, values, (t, e) => plan.ReferenceType(t, e));
             plan.actions.Add((locals, warnings) =>
             {

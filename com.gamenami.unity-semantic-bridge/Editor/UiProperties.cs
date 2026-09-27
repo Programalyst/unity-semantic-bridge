@@ -55,7 +55,17 @@ namespace Gamenami.UnitySemanticBridge.Editor
             foreach (var p in values.Properties())
             {
                 var property = target.GetType().GetProperty(p.Name);
-                property.SetValue(target, ConvertValue(p.Value, property.PropertyType, (token, expected) => AuthoringReferences.Resolve(token, expected, locals)));
+                if (property.PropertyType == typeof(Navigation) || property.PropertyType == typeof(ColorBlock))
+                {
+                    var current = property.GetValue(target);
+                    foreach (var part in ((JObject)p.Value).Properties())
+                    {
+                        var nested = property.PropertyType.GetProperty(part.Name);
+                        nested.SetValue(current, ConvertValue(part.Value, nested.PropertyType, (token, expected) => AuthoringReferences.Resolve(token, expected, locals)));
+                    }
+                    property.SetValue(target, current);
+                }
+                else property.SetValue(target, ConvertValue(p.Value, property.PropertyType, (token, expected) => AuthoringReferences.Resolve(token, expected, locals)));
             }
             UiAuthoring.Touch(target);
         }
@@ -85,31 +95,17 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 return new RectOffset((int)ConvertValue(o["left"], typeof(int), reference), (int)ConvertValue(o["right"], typeof(int), reference),
                     (int)ConvertValue(o["top"], typeof(int), reference), (int)ConvertValue(o["bottom"], typeof(int), reference));
             }
-            if (type == typeof(Navigation))
+            if (type == typeof(Navigation) || type == typeof(ColorBlock))
             {
-                Keys(o, "mode wrapAround selectOnUp selectOnDown selectOnLeft selectOnRight");
-                var n = Navigation.defaultNavigation;
-                if (o["mode"] == null) throw new ArgumentException("navigation.mode is required; navigation replaces the whole Navigation value.");
-                n.mode = (Navigation.Mode)ConvertValue(o["mode"], typeof(Navigation.Mode), reference);
-                if (o["wrapAround"] != null) n.wrapAround = (bool)ConvertValue(o["wrapAround"], typeof(bool), reference);
-                n.selectOnUp = (Selectable)reference(o["selectOnUp"], typeof(Selectable));
-                n.selectOnDown = (Selectable)reference(o["selectOnDown"], typeof(Selectable));
-                n.selectOnLeft = (Selectable)reference(o["selectOnLeft"], typeof(Selectable));
-                n.selectOnRight = (Selectable)reference(o["selectOnRight"], typeof(Selectable));
-                return n;
-            }
-            if (type == typeof(ColorBlock))
-            {
-                // Require the whole value: do not accidentally reset unspecified colors on revisions.
-                Keys(o, "normalColor highlightedColor pressedColor selectedColor disabledColor colorMultiplier fadeDuration", true);
-                var c = ColorBlock.defaultColorBlock;
-                c.normalColor = (Color)ConvertValue(o["normalColor"], typeof(Color), reference);
-                c.highlightedColor = (Color)ConvertValue(o["highlightedColor"], typeof(Color), reference);
-                c.pressedColor = (Color)ConvertValue(o["pressedColor"], typeof(Color), reference);
-                c.selectedColor = (Color)ConvertValue(o["selectedColor"], typeof(Color), reference);
-                c.disabledColor = (Color)ConvertValue(o["disabledColor"], typeof(Color), reference);
-                c.colorMultiplier = Number(o["colorMultiplier"]); c.fadeDuration = Number(o["fadeDuration"]);
-                return c;
+                Keys(o, type == typeof(Navigation) ? "mode wrapAround selectOnUp selectOnDown selectOnLeft selectOnRight" :
+                    "normalColor highlightedColor pressedColor selectedColor disabledColor colorMultiplier fadeDuration");
+                object result = type == typeof(Navigation) ? (object)Navigation.defaultNavigation : ColorBlock.defaultColorBlock;
+                foreach (var p in o.Properties())
+                {
+                    var property = type.GetProperty(p.Name);
+                    property.SetValue(result, ConvertValue(p.Value, property.PropertyType, reference));
+                }
+                return result;
             }
             throw new ArgumentException($"Unsupported authored value type {type.FullName}.");
         }

@@ -242,7 +242,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     prop.colorValue = new Color(jc["r"].ToObject<float>(), jc["g"].ToObject<float>(), jc["b"].ToObject<float>(), jc["a"]?.ToObject<float>() ?? 1f); 
                     break;
                 case SerializedPropertyType.ObjectReference:
-                    var expected = AuthoringReferences.FieldType(prop.serializedObject.targetObject.GetType(), prop.propertyPath);
+                    Type expected;
+                    try { expected = AuthoringReferences.FieldType(prop.serializedObject.targetObject.GetType(), prop.propertyPath); }
+                    catch (ArgumentException)
+                    {
+                        // Native components expose serialized fields without managed FieldInfo.
+                        // Keep the existing editor's native assignment path for those properties.
+                        expected = typeof(UnityEngine.Object);
+                    }
                     prop.objectReferenceValue = AuthoringReferences.Resolve(value, expected);
                     break;
                 case SerializedPropertyType.LayerMask:

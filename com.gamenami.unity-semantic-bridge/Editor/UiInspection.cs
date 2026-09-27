@@ -152,9 +152,18 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 var view = ViewCamera(message); var hits = new List<RaycastResult>();
                 Canvas.ForceUpdateCanvases();
                 var system = EventSystem.current;
+                var unrendered = Resources.FindObjectsOfTypeAll<Graphic>().Count(g => g != null && g.isActiveAndEnabled &&
+                    g.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(g) && g.raycastTarget && g.depth == -1);
                 var data = new PointerEventData(system) { position = pos, button = PointerEventData.InputButton.Left };
                 if (system != null) system.RaycastAll(data, hits);
-                else foreach (var raycaster in RaycasterManager.GetRaycasters().Where(r => r != null && r.IsActive()).ToArray()) raycaster.Raycast(data, hits);
+                else
+                {
+                    // BaseRaycaster registration is a Play Mode lifecycle detail. In Edit Mode,
+                    // query loaded, enabled scene components directly without enabling them.
+                    foreach (var raycaster in Resources.FindObjectsOfTypeAll<BaseRaycaster>()
+                        .Where(r => r != null && r.isActiveAndEnabled && r.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(r)))
+                        raycaster.Raycast(data, hits);
+                }
                 var output = new JArray();
                 foreach (var hit in hits.Take(200))
                 {
@@ -170,6 +179,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 }
                 return new JObject { ["position"] = V(pos), ["eventSystem"] = AuthoringReferences.Identity(system), ["hits"] = output,
                     ["totalHits"] = hits.Count, ["truncated"] = hits.Count > 200,
+                    ["unrenderedRaycastGraphics"] = unrendered,
+                    ["geometryWarning"] = unrendered > 0 ? "Some active raycast Graphics have no rendered depth yet. Let the Game view render, then retry; absence of hits is not conclusive for those Graphics." : null,
                     ["ordering"] = system != null ? "EventSystem.RaycastAll priority order (all active registered raycasters)." : "No EventSystem: hits queried directly per active raycaster; not global input-priority order. Add/configure your project's input module for runtime clicks.",
                     ["note"] = "Primary-display screen pixels, origin bottom-left. These are actual raycaster results, not rectangle overlaps. Hits do not prove a gameplay script consumes/blocks input; that depends on its input policy. UI alpha/interactability and camera rendering masks are not equivalent to raycast filtering." }.ToString();
             }

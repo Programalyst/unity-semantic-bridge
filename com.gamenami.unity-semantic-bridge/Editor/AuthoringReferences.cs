@@ -19,7 +19,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var types = AppDomain.CurrentDomain.GetAssemblies().SelectMany(a =>
             {
                 try { return a.GetTypes(); } catch (ReflectionTypeLoadException e) { return e.Types.Where(t => t != null); }
-            }).Where(t => t.FullName == name || t.Name == name).Distinct().ToArray();
+            }).Where(t => typeof(Object).IsAssignableFrom(t) && (t.FullName == name || t.Name == name)).Distinct().ToArray();
             var exact = types.FirstOrDefault(t => t.FullName == name);
             if (exact != null) return exact;
             if (types.Length != 1) throw new ArgumentException($"Type '{name}' is missing or ambiguous. Use its full namespace; install its package if missing.");
@@ -35,6 +35,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (token.Type == JTokenType.Integer) value = EditorIdLookup.FromInstanceId(token.Value<int>());
             else if (spec != null)
             {
+                UiProperties.Keys(spec, "ref instanceId globalObjectId guid path fileID component componentIndex");
                 var sources = new[] { "ref", "instanceId", "globalObjectId", "guid", "path" }.Count(k => spec[k] != null);
                 if (sources != 1) throw new ArgumentException("Object reference requires exactly one of ref, instanceId, globalObjectId, guid or path.");
                 if (spec["ref"] != null)
@@ -60,7 +61,17 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         value = AssetDatabase.LoadAllAssetsAtPath(path).FirstOrDefault(o =>
                             AssetDatabase.TryGetGUIDAndLocalFileIdentifier(o, out _, out long id) && id == fileId);
                     }
-                    else value = AssetDatabase.LoadAssetAtPath(path, expected);
+                    else
+                    {
+                        var main = AssetDatabase.LoadMainAssetAtPath(path);
+                        if (main != null && (spec["component"] != null || expected.IsInstanceOfType(main))) value = main;
+                        else
+                        {
+                            var candidates = AssetDatabase.LoadAllAssetsAtPath(path).Where(o => expected.IsInstanceOfType(o)).ToArray();
+                            if (candidates.Length > 1) throw new ArgumentException($"'{path}' contains multiple {expected.Name} subassets. Specify guid/path plus fileID explicitly.");
+                            value = candidates.SingleOrDefault();
+                        }
+                    }
                 }
                 if (spec["component"] != null)
                 {

@@ -35,7 +35,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         static void PrepareFields(Plan plan, JObject op)
         {
-            UiProperties.Keys(op, "op target fields"); plan.Required(op["target"], typeof(Component));
+            UiProperties.Keys(op, "op target fields"); var existing = plan.MutationTarget(op["target"]);
             var type = plan.ReferenceType(op["target"], typeof(Component));
             if (!(op["fields"] is JObject fields) || fields.Count == 0) throw new ArgumentException("fields must be a nonempty map of serialized property paths to references.");
             foreach (var field in fields.Properties())
@@ -43,17 +43,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (field.Name == "m_Script") throw new ArgumentException("Changing component scripts is not supported.");
                 ValidateFieldReference(plan, AuthoringReferences.FieldType(type, field.Name), field.Value);
             }
-            if (!(op["target"] is JObject t && t["ref"] != null))
+            if (existing != null)
             {
-                // Added components on existing objects are checked after addition, with rollback on failure.
-                try
-                {
-                    var existing = (Component)AuthoringReferences.Resolve(op["target"], typeof(Component));
-                    plan.Use(existing.gameObject);
-                    using (var serialized = new SerializedObject(existing))
-                        foreach (var f in fields.Properties()) if (serialized.FindProperty(f.Name) == null) throw new ArgumentException($"'{f.Name}' is not a serialized field on {type.Name}.");
-                }
-                catch (ArgumentException) { if (plan.added.Count == 0) throw; }
+                using (var serialized = new SerializedObject(existing))
+                    foreach (var f in fields.Properties())
+                        if (serialized.FindProperty(f.Name) == null) throw new ArgumentException($"'{f.Name}' is not a serialized field on {type.Name}.");
             }
             plan.actions.Add((locals, warnings) =>
             {
@@ -94,7 +88,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         static void PrepareClicks(Plan plan, JObject op)
         {
-            UiProperties.Keys(op, "op target mode listeners"); plan.Required(op["target"], typeof(Button));
+            UiProperties.Keys(op, "op target mode listeners"); plan.Required(op["target"], typeof(Button)); plan.MutationTarget(op["target"]);
             var mode = op["mode"]?.Value<string>() ?? "append";
             if (mode != "append" && mode != "replace") throw new ArgumentException("button_on_click.mode must be append or replace (replace with [] clears listeners).");
             if (!(op["listeners"] is JArray listeners) || listeners.Count > 100) throw new ArgumentException("listeners must be an array of at most 100 persistent calls.");
@@ -122,7 +116,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (string.IsNullOrWhiteSpace(call.method)) throw new ArgumentException("Listener method is required.");
                 var parameters = call.argumentType == null ? Type.EmptyTypes : new[] { call.argumentType };
                 call.methodInfo = targetType.GetMethod(call.method, BindingFlags.Instance | BindingFlags.Public, null, parameters, null);
-                if (call.methodInfo == null || call.methodInfo.ReturnType != typeof(void) || call.methodInfo.IsGenericMethod)
+                if (call.methodInfo == null || call.methodInfo.ReturnType != typeof(void) || call.methodInfo.IsGenericMethod ||
+                    !call.methodInfo.GetParameters().Select(p => p.ParameterType).SequenceEqual(parameters))
                     throw new ArgumentException($"{targetType.Name}.{call.method} must be a public instance void method with exactly ({string.Join(",", parameters.Select(t => t.Name))}).");
                 if (call.argumentType != null) UiProperties.ConvertValue(call.argument, call.argumentType, (t, e) => { plan.ReferenceType(t, e); return null; });
                 if (listener["state"] != null) call.state = (UnityEventCallState)UiProperties.ConvertValue(listener["state"], typeof(UnityEventCallState), null);

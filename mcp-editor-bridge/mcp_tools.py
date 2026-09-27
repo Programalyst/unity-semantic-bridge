@@ -202,7 +202,7 @@ def register_unity_tools(mcp):
         y: Annotated[float, "Primary-display screen pixel Y, origin bottom-left."],
         camera_instance_id: Annotated[int | None, "Optional viewing camera to compare rendering visibility with actual raycast hits."] = None,
     ) -> str:
-        """Query actual registered raycasters, returning each hit's object, camera and raycaster.
+        """Query actual raycasters, returning each hit's object, camera and raycaster.
         Diagnoses camera-mask-hidden UI hits. Uses EventSystem ordering when available;
         without one, reports per-raycaster order. Does not synthesize clicks or consume input."""
         params = {"x": x, "y": y}
