@@ -2,7 +2,8 @@
     "name": "UnitySemanticBridge.Editor",
     "rootNamespace": "",
     "references": [
-        "UnitySemanticBridge.Runtime"
+        "UnitySemanticBridge.Runtime",
+        "UnityEngine.UI"
     ],
     "includePlatforms": [
         "Editor"
