@@ -8,6 +8,8 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
 <img src="images/usb-editor-mode.png" alt="Alt text" width="600">
 
+**Note: Unity Semantic Bridge is optimized for projects that use uGUI and URP (Universal Render Pipeline).<br>If your project uses UI Toolkit, HDRP or BiRP use the official Unity CLI instead**
+
 ## Features
 
 - Optimized scene heirarchy query and gameobject inspection tools with workflow hints for agents - more token efficient than official Unity CLI tool
@@ -15,6 +17,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - Not tied to Unity Licensing - Runs 100% local. No need to reauthenticate when token expires
 - Dedicated tools for agent to see human actions and changes
 - Dedicated tools for working with Scriptable objects (error prone if agent uses bash to work SOs directly)
+- Dedicated tools for uGUI. Makes uGUI accessible for agents to create a hierarchy, set layout properties, assign references, and inspect the result
 - In Editor MCP log so you can see what tools are called
 - Dedicated Lighting tools for URP projects
 
