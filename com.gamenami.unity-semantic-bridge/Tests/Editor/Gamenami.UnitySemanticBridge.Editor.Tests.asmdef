@@ -2,7 +2,9 @@
     "name": "Gamenami.UnitySemanticBridge.Editor.Tests",
     "rootNamespace": "",
     "references": [
-        "UnitySemanticBridge.Editor"
+        "UnitySemanticBridge.Editor",
+        "UnityEngine.UI",
+        "Gamenami.UnitySemanticBridge.TestFixtures"
     ],
     "includePlatforms": [
         "Editor"

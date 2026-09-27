@@ -1,0 +1,6 @@
+{
+  "name": "Gamenami.UnitySemanticBridge.TestFixtures",
+  "references": ["UnityEngine.UI"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}
