@@ -283,7 +283,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
                 result=Call("set_field_values",new JObject { ["instanceId"]=camera.gameObject.GetInstanceID(),["componentName"]="Camera",["fields"]=new JObject { ["m_TargetTexture"]=Ref(texture) } });
                 StringAssert.DoesNotContain("ERROR",result); Assert.AreEqual(texture,camera.targetTexture);
             }
-            finally { Object.DestroyImmediate(texture); }
+            finally { camera.targetTexture=null; Object.DestroyImmediate(texture); }
         }
 
         [Test]

@@ -219,3 +219,10 @@ restoration, absent keys, session snapshot restoration, and corrupt snapshots.
 Run mutation tests only in a coordinated test Editor. Live preference changes,
 actual domain reload restoration, and focus behavior were not tested in the
 shared Editor for this change.
+
+## uGUI authoring
+
+`author_ui`, `inspect_ui`, `raycast_ui`, `undo_ui_batch` and `save_ui_context`
+provide transactional UI editing and diagnostics. See the [operation/reference
+format and example requests](../docs/ugui-authoring.md). Update both the UPM package
+and Python server, then reconnect your MCP client to discover the new tools.

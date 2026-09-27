@@ -90,6 +90,12 @@ personal absolute package paths. An API key is only needed for
 - `remove_component` — Removes a component by `instance_id` (`Undo.DestroyObjectImmediate`).
 - `set_field_values` — Sets one or more serialized field values via `SerializedObject`/`FindProperty` + `Undo.RecordObject` (supports primitives, enums as strings, `Vector2/3`, `Quaternion`, `Color`, `ObjectReference` as `instanceId`, `Generic`/`Array` for `RigBuilder`/`Constraint` data).
 
+**uGUI Authoring & Diagnostics**
+- `author_ui` — Create, lay out and wire Canvas/Image/Button/TMP hierarchies in one undoable batch.
+- `inspect_ui` / `raycast_ui` — Inspect layout, visibility and actual input hits, including camera-mask-hidden UI.
+- `undo_ui_batch` / `save_ui_context` — Undo a batch or explicitly save its scene/prefab.
+- [Usage and examples](docs/ugui-authoring.md).
+
 **Assets & ScriptableObjects**
 - `find_unity_files` — Finds assets in Unity via `AssetDatabase.FindAssets` (`t:Prefab`, `l:Label`, etc.), default `folders:['Assets']`.
 - `find_asset_references` — Finds assets/scenes referencing a specific asset path (`AssetDatabase.GetDependencies`).

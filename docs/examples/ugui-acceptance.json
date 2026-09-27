@@ -1,0 +1,406 @@
+{
+  "author": {
+    "tool": "author_ui",
+    "arguments": {
+      "name": "Create movement HUD",
+      "operations": [
+        {
+          "op": "create",
+          "id": "hud",
+          "kind": "Canvas",
+          "name": "MovementHUD",
+          "properties": {
+            "renderMode": "ScreenSpaceOverlay"
+          }
+        },
+        {
+          "op": "configure",
+          "target": {
+            "ref": "hud",
+            "component": "CanvasScaler"
+          },
+          "properties": {
+            "uiScaleMode": "ScaleWithScreenSize",
+            "referenceResolution": {
+              "x": 1280,
+              "y": 720
+            },
+            "matchWidthOrHeight": 0.5
+          }
+        },
+        {
+          "op": "create",
+          "id": "panel",
+          "kind": "Panel",
+          "name": "MovementPanel",
+          "parent": {
+            "ref": "hud"
+          },
+          "rect": {
+            "anchorMin": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchorMax": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "pivot": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchoredPosition": {
+              "x": 0,
+              "y": -180
+            },
+            "sizeDelta": {
+              "x": 520,
+              "y": 240
+            }
+          },
+          "properties": {
+            "color": {
+              "r": 0.1,
+              "g": 0.15,
+              "b": 0.2,
+              "a": 0.9
+            },
+            "raycastTarget": false
+          }
+        },
+        {
+          "op": "create",
+          "id": "forward",
+          "kind": "Button",
+          "name": "Forward",
+          "parent": {
+            "ref": "panel"
+          },
+          "rect": {
+            "anchorMin": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchorMax": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "pivot": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchoredPosition": {
+              "x": -180,
+              "y": 0
+            },
+            "sizeDelta": {
+              "x": 100,
+              "y": 50
+            }
+          },
+          "properties": {
+            "interactable": true,
+            "navigation": {
+              "mode": "None"
+            }
+          }
+        },
+        {
+          "op": "configure",
+          "target": {
+            "ref": "forward",
+            "component": "Image"
+          },
+          "properties": {
+            "color": {
+              "r": 0.2,
+              "g": 0.5,
+              "b": 0.8,
+              "a": 1
+            },
+            "raycastTarget": true
+          }
+        },
+        {
+          "op": "create",
+          "id": "left",
+          "kind": "Button",
+          "name": "Left",
+          "parent": {
+            "ref": "panel"
+          },
+          "rect": {
+            "anchorMin": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchorMax": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "pivot": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchoredPosition": {
+              "x": -60,
+              "y": 0
+            },
+            "sizeDelta": {
+              "x": 100,
+              "y": 50
+            }
+          },
+          "properties": {
+            "interactable": true,
+            "navigation": {
+              "mode": "None"
+            }
+          }
+        },
+        {
+          "op": "configure",
+          "target": {
+            "ref": "left",
+            "component": "Image"
+          },
+          "properties": {
+            "color": {
+              "r": 0.2,
+              "g": 0.5,
+              "b": 0.8,
+              "a": 1
+            },
+            "raycastTarget": true
+          }
+        },
+        {
+          "op": "create",
+          "id": "right",
+          "kind": "Button",
+          "name": "Right",
+          "parent": {
+            "ref": "panel"
+          },
+          "rect": {
+            "anchorMin": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchorMax": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "pivot": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchoredPosition": {
+              "x": 60,
+              "y": 0
+            },
+            "sizeDelta": {
+              "x": 100,
+              "y": 50
+            }
+          },
+          "properties": {
+            "interactable": true,
+            "navigation": {
+              "mode": "None"
+            }
+          }
+        },
+        {
+          "op": "configure",
+          "target": {
+            "ref": "right",
+            "component": "Image"
+          },
+          "properties": {
+            "color": {
+              "r": 0.2,
+              "g": 0.5,
+              "b": 0.8,
+              "a": 1
+            },
+            "raycastTarget": true
+          }
+        },
+        {
+          "op": "create",
+          "id": "weapon",
+          "kind": "Button",
+          "name": "Weapon",
+          "parent": {
+            "ref": "panel"
+          },
+          "rect": {
+            "anchorMin": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchorMax": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "pivot": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchoredPosition": {
+              "x": 180,
+              "y": 0
+            },
+            "sizeDelta": {
+              "x": 100,
+              "y": 50
+            }
+          },
+          "properties": {
+            "interactable": true,
+            "navigation": {
+              "mode": "None"
+            }
+          }
+        },
+        {
+          "op": "configure",
+          "target": {
+            "ref": "weapon",
+            "component": "Image"
+          },
+          "properties": {
+            "color": {
+              "r": 0.2,
+              "g": 0.5,
+              "b": 0.8,
+              "a": 1
+            },
+            "raycastTarget": true
+          }
+        },
+        {
+          "op": "create",
+          "id": "status",
+          "kind": "TextMeshProUGUI",
+          "name": "Status",
+          "parent": {
+            "ref": "panel"
+          },
+          "rect": {
+            "anchorMin": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchorMax": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "pivot": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "anchoredPosition": {
+              "x": 0,
+              "y": 75
+            },
+            "sizeDelta": {
+              "x": 450,
+              "y": 40
+            }
+          },
+          "properties": {
+            "text": "Ready",
+            "font": {
+              "path": "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset"
+            },
+            "fontSize": 24,
+            "raycastTarget": false,
+            "color": {
+              "r": 1,
+              "g": 1,
+              "b": 1,
+              "a": 1
+            }
+          }
+        },
+        {
+          "op": "set_fields",
+          "target": {
+            "instanceId": 12345
+          },
+          "fields": {
+            "movementButtons": [
+              {
+                "ref": "forward",
+                "component": "Button"
+              },
+              {
+                "ref": "left",
+                "component": "Button"
+              },
+              {
+                "ref": "right",
+                "component": "Button"
+              }
+            ],
+            "weaponButton": {
+              "ref": "weapon",
+              "component": "Button"
+            },
+            "statusLabel": {
+              "ref": "status",
+              "component": "TMPro.TextMeshProUGUI"
+            }
+          }
+        },
+        {
+          "op": "button_on_click",
+          "target": {
+            "ref": "weapon",
+            "component": "Button"
+          },
+          "mode": "append",
+          "listeners": [
+            {
+              "target": {
+                "instanceId": 12345
+              },
+              "method": "SelectWeapon",
+              "mode": "int",
+              "argument": 2
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "inspect": {
+    "tool": "inspect_ui",
+    "arguments": {
+      "instance_id": 23456,
+      "include_references": true
+    }
+  },
+  "raycast": {
+    "tool": "raycast_ui",
+    "arguments": {
+      "x": 820,
+      "y": 180
+    }
+  },
+  "undo": {
+    "tool": "undo_ui_batch",
+    "arguments": {
+      "undo_token": "REPLACE_WITH_RETURNED_TOKEN"
+    }
+  },
+  "save": {
+    "tool": "save_ui_context",
+    "arguments": {
+      "instance_id": 23456,
+      "path": "Assets/MovementHUD.unity"
+    }
+  }
+}
