@@ -18,6 +18,8 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - Dedicated tools for agent to see human actions and changes
 - Dedicated tools for working with Scriptable objects (error prone if agent uses bash to work SOs directly)
 - Dedicated tools for uGUI. Makes uGUI accessible for agents to create a hierarchy, set layout properties, assign references, and inspect the result
+- Bounded batch inspection and property edits with dry runs, expected-value checks, stale-reference protection, and grouped Undo
+- Read-only prefab comparisons with component filtering and structured numeric values that preserve imported precision
 - In Editor MCP log so you can see what tools are called
 - Dedicated Lighting tools for URP projects
 
@@ -83,6 +85,12 @@ personal absolute package paths. An API key is only needed for
 - `get_component_code` — Locates and returns the full C# source for a named component (`MonoScript` via `AssetDatabase`).
 - `get_physics_layers` — Physics layer collision matrix (`Physics.GetIgnoreLayerCollision`).
 
+**Batch Inspection & Property Edits**
+
+- `acquire_editor_references` — Converts 1–64 live GameObject/component instance IDs into opaque references for `semantic_batch`. Verify the returned identities before editing; reacquire references after reloads, scene/Prefab Stage changes, deletion, or cache eviction. Asset IDs are rejected.
+- `semantic_batch` — Runs 1–64 ordered operations with unique IDs: either all `inspect` or all `set_fields`. Inspections return structured properties or component identities and continue after individual errors. Edits support `dry_run`, exact expected-value preconditions, whole-request preflight, execution-time revalidation, and one named Undo group within one editable scene/Prefab Stage (Auto Save off). Execution stops on the first failure and reports skipped operations; partial application is possible and Undo grouping is not atomic. Optional `limits` bound work and response size with explicit truncation. No implicit saves or automatic mutation retries.
+- [Usage, limits, failure semantics, and measured request savings](docs/semantic-batches.md).
+
 **Scene & GameObject Authoring (Hierarchy & Rigging)**
 - `create_gameobject` — Creates a new `GameObject` (`new GameObject(name)`) with `Undo.RegisterCreatedObjectUndo`, optional `parentInstanceId` via `SetParent(parent,false)`, and optional `localPosition`/`localRotation` (`{x,y,z,w}` or `{euler}`) / `localScale`. Returns `{instanceId,path}`.
 - `duplicate_gameobject` — Duplicates a hierarchy via `Instantiate` + `Undo.RegisterCreatedObjectUndo` (use for cloning whole rig layers, e.g. `Rig Layer (Rifle Idle)`). Returns `{instanceId,path}`.
@@ -101,6 +109,8 @@ personal absolute package paths. An API key is only needed for
 
 **Assets & ScriptableObjects**
 - `find_unity_files` — Finds assets in Unity via `AssetDatabase.FindAssets` (`t:Prefab`, `l:Label`, etc.), default `folders:['Assets']`.
+- `inspect_prefab_assets` — Reads selected serialized property paths from matching components throughout 1–32 imported prefab assets under `Assets/` or `Packages/`. Resolves variants, nested prefabs, and inactive objects; returns sibling-indexed hierarchy paths, component identities/indices, and typed numeric values without display rounding. Optional `limits` bound traversal, expansion, response size, and cooperative execution time, with explicit truncation. Reads imported asset values rather than unsaved Editor overrides, without instantiating, selecting, modifying, reimporting, or saving assets/scenes.
+- `inspect_model_asset` — Inspects an imported FBX/OBJ or other `ModelImporter` asset by path. Reports mesh IDs, bounds, geometry counts, imported hierarchy/transforms, importer scale/axis settings, material slots, and outgoing dependencies. `include_details=True` adds submesh and importer details. Read-only; see [coordinate definitions and examples](docs/model-inspection.md).
 - `find_asset_references` — Finds assets/scenes referencing a specific asset path (`AssetDatabase.GetDependencies`).
 - `get_project_tree` — Project folder structure from a path (`AssetDatabase.GetSubFolders` + direct-file filter).
 - `write_unity_script` — Creates/overwrites a C# script (`Assets/...cs`) and triggers recompilation (`AssetDatabase.ImportAsset`/`Refresh`, `CONFIRM_REQUIRED` pattern).
