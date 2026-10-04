@@ -1,5 +1,7 @@
 from unity_bridge import call_unity
+from batch_requests import BatchLimits, BatchOperation, PropertyPaths
 from typing import Annotated, Literal
+from pydantic import Field
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from fastmcp.utilities.types import Image
 import base64
@@ -12,6 +14,60 @@ _lighting_agent = None
 
 def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
+
+    @mcp.tool()
+    async def acquire_editor_references(
+        instance_ids: Annotated[list[int], Field(min_length=1, max_length=64), "1–64 live GameObject/component IDs from existing hierarchy tools."],
+        limits: BatchLimits | None = None,
+    ) -> str:
+        """Acquire opaque references for bounded semantic batches. Reacquire after reload,
+        scene/stage changes, deletion or cache eviction. Asset IDs are rejected.
+        Acquisition uses current IDs: verify returned identities before mutation.
+        """
+        return await call_unity("acquire_editor_references", {
+            "instanceIds": instance_ids,
+            **({"limits": limits.model_dump()} if limits is not None else {}),
+        })
+
+    @mcp.tool()
+    async def inspect_prefab_assets(
+        paths: Annotated[list[str], Field(min_length=1, max_length=32), "1–32 imported Assets/ or Packages/ .prefab paths."],
+        component: Annotated[str, "Component type filter, preferably fully qualified, e.g. UnityEngine.CharacterJoint."],
+        properties: PropertyPaths,
+        limits: BatchLimits | None = None,
+    ) -> str:
+        """Read selected serialized properties throughout resolved imported prefab hierarchies,
+        including variants, nested prefabs and inactive objects. Returns structured numeric
+        values, sibling-indexed paths and component identities, with explicit truncation.
+        Does not instantiate, select, save, reimport or modify scenes/assets. Asset identities
+        are descriptive, not batch mutation references. Does not include unsaved stage edits.
+        """
+        return await call_unity("inspect_prefab_assets", {
+            "paths": paths, "component": component, "properties": properties,
+            **({"limits": limits.model_dump()} if limits is not None else {}),
+        })
+
+    @mcp.tool()
+    async def semantic_batch(
+        operations: Annotated[list[BatchOperation], Field(min_length=1, max_length=64), "1–64 ordered operations with unique IDs. Use either all inspect or all set_fields."],
+        dry_run: bool = False,
+        name: Annotated[str, "Undo group name for a compatible mutation batch."] = "USB semantic batch",
+        limits: BatchLimits | None = None,
+    ) -> str:
+        """Bounded inspection or serialized property edits using opaque Editor references.
+        Reads continue after errors. Mutations preflight the entire request, then revalidate
+        each operation and stop on first failure; partial application is possible. One named
+        Undo group is not atomic. dry_run stages and discards values without applying them.
+        Optional expected maps use exact typed value comparisons. No saves or mutation retries.
+        Object values use null, {reference: token}, or explicit asset path/GUID references.
+        Targets must stay in one editable scene/Prefab Stage (Auto Save off). Reports submitted
+        property writes; project validation callbacks may cause additional effects.
+        """
+        return await call_unity("semantic_batch", {
+            "operations": [op.model_dump(exclude_none=True) for op in operations],
+            "dryRun": dry_run, "name": name,
+            **({"limits": limits.model_dump()} if limits is not None else {}),
+        }, retry_connect=not any(op.op == "set_fields" for op in operations))
 
     @mcp.tool()
     async def get_project_settings(

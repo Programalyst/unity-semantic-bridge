@@ -29,8 +29,12 @@ POLL_INTERVAL = 1.0
 JSONRPC_VERSION = "2.0"
 
 
-async def call_unity(method: str, params: Optional[Dict[str, Any]] = None, *, timeout: float = 30.0) -> str:
-    """JSON-RPC request to Unity.  Returns the result string or an Error string."""
+async def call_unity(method: str, params: Optional[Dict[str, Any]] = None, *, timeout: float = 30.0, retry_connect: bool = True) -> str:
+    """JSON-RPC request to Unity. Returns a result/error string.
+
+    retry_connect=False disables reload-grace connection retries for mutation batches.
+    Requests are never retried after a response or a timeout.
+    """
     req_id = str(uuid.uuid4())
     payload: Dict[str, Any] = {
         "jsonrpc": JSONRPC_VERSION,
@@ -38,16 +42,17 @@ async def call_unity(method: str, params: Optional[Dict[str, Any]] = None, *, ti
         "method": method,
         "params": params if params is not None else {},
     }
-    return await _send_jsonrpc(payload, timeout=timeout)
+    return await _send_jsonrpc(payload, timeout=timeout, retry_connect=retry_connect)
 
 
-async def _send_jsonrpc(payload: Dict[str, Any], *, timeout: float = 30.0) -> str:
+async def _send_jsonrpc(payload: Dict[str, Any], *, timeout: float = 30.0, retry_connect: bool = True) -> str:
     """POST a JSON-RPC request to Unity and return the result string."""
     url = app_state.unity_rpc_url
 
     async with app_state.unity_request_lock:
         recently_triggered = (
-            getattr(app_state, "last_reload_trigger_at", 0)
+            retry_connect
+            and getattr(app_state, "last_reload_trigger_at", 0)
             and time.time() - app_state.last_reload_trigger_at < RECONNECT_GRACE_SECONDS
         )
         deadline = time.time() + (RECONNECT_GRACE_SECONDS if recently_triggered else 0)

@@ -167,7 +167,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return sb.ToString();
         }
 
-        private static void ApplyPropertyValue(SerializedProperty prop, JToken value)
+        internal static void ApplyPropertyValue(SerializedProperty prop, JToken value)
         {
             // Handle arrays / Generic structs recursively — needed for RigBuilder.m_RigLayers and Constraint.m_Data
             if (prop.isArray && prop.propertyType != SerializedPropertyType.String)

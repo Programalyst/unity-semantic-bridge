@@ -35,6 +35,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 switch (action)
                 {
+                    case "semantic_batch":
+                        resultText = SemanticBatch.Batch(mcpMessage);
+                        break;
+                    case "acquire_editor_references":
+                        resultText = SemanticBatch.AcquireReferences(mcpMessage);
+                        break;
+                    case "inspect_prefab_assets":
+                        resultText = SemanticBatch.InspectPrefabs(mcpMessage);
+                        break;
+
                     case "get_screenshot":
                         resultText = SceneFunctions.GetScreenshot(mcpMessage);
                         break;

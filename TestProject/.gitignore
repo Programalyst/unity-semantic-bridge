@@ -1,0 +1,24 @@
+/Library/
+/Temp/
+/Obj/
+/Logs/
+/UserSettings/
+/TestResults/
+/MemoryCaptures/
+/Recordings/
+/Assets/TextMesh Pro/
+/Assets/TextMesh Pro.meta
+/Assets/__BridgeTests__/
+/Assets/__BridgeTests__.meta
+/Assets/UsbBatchTests_*/
+/Assets/UsbBatchTests_*.meta
+/Assets/__Usb*/
+/Assets/__Usb*.meta
+/ProjectSettings/*
+!/ProjectSettings/ProjectVersion.txt
+/Packages/packages-lock.json
+/*.csproj
+/*.sln
+/*.slnx
+/.vs/
+/.idea/

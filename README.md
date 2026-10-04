@@ -125,6 +125,25 @@ personal absolute package paths. An API key is only needed for
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
 
+## Reusable test project
+
+[`TestProject`](TestProject/README.md) consumes the local package and enables its
+EditMode tests. Run `bash scripts/test-unity.sh` from the repository root to prepare
+TMP/mesh fixtures and run the suite with Unity 2022.3.62f3. Generated resources,
+Editor caches and results are ignored. The test-host README documents known
+opt-in refresh checks and how to select focused suites.
+
+## Batch operations and prefab inspection
+
+Use `inspect_prefab_assets(paths, component, properties, limits?)` to compare
+selected serialized fields across resolved prefab hierarchies in one read-only
+request, with structured numeric values and explicit truncation.
+
+Use `acquire_editor_references(instance_ids)` followed by `semantic_batch` for
+bounded Editor inspections or property edits. Edits support dry runs, expected
+values, stale-reference checks and one named Undo group; partial application is
+possible. See [usage, limits, failure semantics and validation](docs/semantic-batches.md).
+
 ## Imported model inspection
 
 Use `inspect_model_asset(path, include_details=False)` to read mesh IDs, bounds,
