@@ -100,6 +100,24 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = SceneFunctions.SetPlayMode(enabled);
                         break;
 
+                    case "open_scene":
+                        resultText = PlayModeOrchestrator.OpenScene(mcpMessage);
+                        break;
+
+                    case "poll_play_state":
+                        resultText = PlayModeOrchestrator.PollPlayState(mcpMessage);
+                        break;
+
+                    case "enter_play":
+                        // Deferred: ownership of completion passes to the
+                        // orchestrator, which resolves it from update ticks.
+                        PlayModeOrchestrator.EnterPlay(mcpMessage, completion);
+                        return;
+
+                    case "exit_play":
+                        PlayModeOrchestrator.ExitPlay(mcpMessage, completion);
+                        return;
+
                     case "clear_console_logs":
                         resultText = SceneFunctions.ClearConsole();
                         break;

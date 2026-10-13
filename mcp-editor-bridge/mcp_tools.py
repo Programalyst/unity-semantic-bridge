@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from fastmcp.utilities.types import Image
+import asyncio
 import base64
 import json
 import time
@@ -372,6 +373,79 @@ def register_unity_tools(mcp):
     async def set_play_mode(enabled: bool) -> str:
         """Enters or exits Play Mode in the Unity Editor."""
         return await call_unity("set_play_mode", {"enabled": enabled})
+
+    def _play_transport_failed(result: str) -> bool:
+        low = result.lower()
+        return ("not connected" in low or "timed out processing" in low
+                or "timed out responding" in low)
+
+    async def _settle_via_poll(kind: str, timeout_s: float, first_result: str) -> str:
+        """Fallback when the enter/exit request's own connection dropped
+        across domain reload: poll poll_play_state until the pending op
+        clears or the overall deadline passes. Always terminal."""
+        deadline = time.time() + timeout_s
+        last = first_result
+        want_playing = kind == "enter"
+        while time.time() < deadline:
+            await asyncio.sleep(1.0)
+            state = await call_unity("poll_play_state", {}, timeout=10.0)
+            if _play_transport_failed(state):
+                last = state
+                continue
+            last = state
+            try:
+                snapshot = json.loads(state)
+            except (json.JSONDecodeError, TypeError):
+                return state
+            if snapshot.get("pendingOp") is not None:
+                continue
+            playing = bool(snapshot.get("isPlaying"))
+            settled = playing == want_playing and not snapshot.get("transitioning", False)
+            verb = "entered" if want_playing else "exited"
+            if settled:
+                return f"Play Mode {verb} (settled via poll after reload): {state}"
+            return f"Play Mode op settled without reaching {'Play' if want_playing else 'Edit'} Mode: {state}"
+        return (f"TIMEOUT after {timeout_s:g}s waiting for {'Play' if want_playing else 'Edit'} Mode. "
+                f"If the Editor window is unfocused, set_editor_throttling no_throttling and retry. Last state: {last}")
+
+    @mcp.tool()
+    async def open_scene(
+        path: Annotated[str, "Project-relative scene path, e.g. 'Assets/Scenes/GridBattle.unity'."],
+        dirty_policy: Annotated[str, "'fail' (default): refuse when the active scene has unsaved changes. 'save': save open scenes first. Unsaved work is never silently discarded."] = "fail",
+    ) -> str:
+        """Open a scene by project-relative path. Returns scene path + dirty state."""
+        return await call_unity("open_scene", {"path": path, "dirty_policy": dirty_policy})
+
+    @mcp.tool()
+    async def poll_play_state() -> str:
+        """Return {isPlaying, transitioning, isCompiling, isUpdating, pendingOp} with no side effects."""
+        return await call_unity("poll_play_state", {})
+
+    @mcp.tool()
+    async def enter_play(
+        timeout_s: Annotated[float, "Seconds to wait for Play Mode (1–55; capped for the 60s transport)."] = 30,
+    ) -> str:
+        """Request Play Mode, then wait until isPlaying with no transition and no compile/update busy, or timeout. Survives domain reload via poll fallback. Always terminal.
+        If the Editor window is unfocused/backgrounded, the transition can stall: call set_editor_throttling("no_throttling") first and restore afterwards."""
+        timeout_s = min(max(float(timeout_s), 1.0), 55.0)
+        result = await call_unity("enter_play", {"timeout_s": timeout_s},
+                                  timeout=min(timeout_s + 15.0, 60.0), retry_connect=False)
+        if _play_transport_failed(result):
+            return await _settle_via_poll("enter", timeout_s, result)
+        return result
+
+    @mcp.tool()
+    async def exit_play(
+        timeout_s: Annotated[float, "Seconds to wait for Edit Mode (1–55; capped for the 60s transport)."] = 30,
+    ) -> str:
+        """Request Edit Mode, then wait until restored with no transition and no compile/update busy, or timeout. Survives domain reload via poll fallback. Always terminal.
+        If the Editor window is unfocused/backgrounded, the transition can stall: call set_editor_throttling("no_throttling") first and restore afterwards."""
+        timeout_s = min(max(float(timeout_s), 1.0), 55.0)
+        result = await call_unity("exit_play", {"timeout_s": timeout_s},
+                                  timeout=min(timeout_s + 15.0, 60.0), retry_connect=False)
+        if _play_transport_failed(result):
+            return await _settle_via_poll("exit", timeout_s, result)
+        return result
     
     @mcp.tool()
     async def clear_console_logs() -> str:

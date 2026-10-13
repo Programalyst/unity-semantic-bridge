@@ -14,3 +14,11 @@ Muse Code reads this file as project rules when it runs in this directory.
 ## Project Layout
 
 - `docs/`: Project docs.
+
+## Driving Play Mode (agents)
+
+- Before `enter_play`/`exit_play` (or any long Editor session), check
+  `poll_play_state` → `interactionMode`. When it is not `no_throttling` and
+  the Editor window is unfocused/backgrounded, main-thread work can stall for
+  minutes: call `set_editor_throttling("no_throttling")` first, and `restore`
+  (or `default`) afterwards. Timeouts already carry this hint.

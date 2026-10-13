@@ -75,7 +75,6 @@ personal absolute package paths. An API key is only needed for
 
 **Project & Settings**
 - `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`. The `editor_prefs` section reports the current Interaction Mode, stored idle time, and restore availability; these are user-level Editor preferences.
-- `set_editor_throttling` — Allows agent to set no_throttling for long running tasks. Speeds up agentic flows by keeping Editor tick rate un-throttled when unfocused. 
 
 **Scene & GameObject Inspection**
 - `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), optional filtering to only main-camera-visible objects, and `root_instance_id` subtree queries.
@@ -121,7 +120,11 @@ personal absolute package paths. An API key is only needed for
 
 **Editor & Runtime**
 - `get_screenshot` — Captures `game` (`Camera.main`) or `scene` (Scene view) as JPEG; `scene` can `Frame` a `focus_instance_id` bounds before capture.
-- `set_play_mode` — Enters/exits Play Mode (`EditorApplication.isPlaying` via `delayCall`).
+- `open_scene` — Opens a scene by project-relative path. Default `dirty_policy=fail` refuses unsaved changes; `save` saves first. Returns scene path + dirty state.
+- `enter_play` / `exit_play` — Request Play/Edit Mode and wait for the idle terminal state (or a timeout carrying state); survives domain reload via `poll_play_state`. Prefer over legacy `set_play_mode`.
+- `poll_play_state` — `{isPlaying, transitioning, isCompiling, isUpdating, pendingOp, interactionMode}` snapshot with no side effects.
+- `set_play_mode` — Legacy fire-and-forget Play Mode toggle (returns before the mode change completes); prefer `enter_play`/`exit_play`.
+- `set_editor_throttling` — `no_throttling` keeps the Editor tick rate un-throttled while unfocused for long sessions; `restore`/`default` afterwards.
 - `get_console_logs` / `clear_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
 
 **Lighting Diagnostics**
@@ -134,6 +137,7 @@ personal absolute package paths. An API key is only needed for
 
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
+- **An unfocused/backgrounded Editor can stall main-thread work** (reloads, Play Mode transitions, refreshes) for minutes while cheap polls keep answering. `poll_play_state` reports `interactionMode` for this reason: when it is not `no_throttling`, call `set_editor_throttling("no_throttling")` before a long session and restore it afterwards.
 
 ## Reusable test project
 
