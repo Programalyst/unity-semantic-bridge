@@ -101,6 +101,12 @@ class PlayModeToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("no_throttling", result)
         self.assertGreaterEqual(notifications["sleeps"], 2)
 
+    async def test_server_instructions_mandate_no_throttling(self):
+        from main import mcp as server
+        instructions = getattr(server, "instructions", "") or ""
+        self.assertIn("no_throttling", instructions)
+        self.assertIn("Unless the user prefers otherwise", instructions)
+
     async def test_busy_result_is_terminal_not_polled(self):
         with patch.object(mcp_tools, "call_unity", new_callable=AsyncMock) as call:
             call.return_value = "BUSY: play-mode op 'enter' (token=abc) already in progress."

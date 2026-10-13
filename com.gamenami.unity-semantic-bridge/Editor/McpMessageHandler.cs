@@ -118,6 +118,14 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         PlayModeOrchestrator.ExitPlay(mcpMessage, completion);
                         return;
 
+                    case "invoke_menu_item":
+                        resultText = InvocationFunctions.InvokeMenuItem(mcpMessage);
+                        break;
+
+                    case "invoke_static":
+                        resultText = InvocationFunctions.InvokeStatic(mcpMessage);
+                        break;
+
                     case "clear_console_logs":
                         resultText = SceneFunctions.ClearConsole();
                         break;

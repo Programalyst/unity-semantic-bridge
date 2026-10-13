@@ -17,8 +17,10 @@ Muse Code reads this file as project rules when it runs in this directory.
 
 ## Driving Play Mode (agents)
 
-- Before `enter_play`/`exit_play` (or any long Editor session), check
-  `poll_play_state` → `interactionMode`. When it is not `no_throttling` and
-  the Editor window is unfocused/backgrounded, main-thread work can stall for
-  minutes: call `set_editor_throttling("no_throttling")` first, and `restore`
-  (or `default`) afterwards. Timeouts already carry this hint.
+- Always run Editor-driving sessions under `no_throttling` unless the user
+  prefers otherwise: check `poll_play_state` → `interactionMode`, and call
+  `set_editor_throttling("no_throttling")` first when it is anything else.
+  An unfocused/backgrounded Editor on default throttling can stall
+  main-thread work (transitions, reloads, refreshes) for minutes. Restore the
+  previous mode with `set_editor_throttling("restore")` when done. Timeouts
+  already carry this hint.

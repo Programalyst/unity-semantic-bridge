@@ -123,6 +123,8 @@ personal absolute package paths. An API key is only needed for
 - `open_scene` — Opens a scene by project-relative path. Default `dirty_policy=fail` refuses unsaved changes; `save` saves first. Returns scene path + dirty state.
 - `enter_play` / `exit_play` — Request Play/Edit Mode and wait for the idle terminal state (or a timeout carrying state); survives domain reload via `poll_play_state`. Prefer over legacy `set_play_mode`.
 - `poll_play_state` — `{isPlaying, transitioning, isCompiling, isUpdating, pendingOp, interactionMode}` snapshot with no side effects.
+- `invoke_menu_item` — Execute one Editor menu item by exact path; unknown paths are not-found errors.
+- `invoke_static` — Invoke one public static zero-arg method by exact type/method names; returns the value as string (`ok` for void).
 - `set_play_mode` — Legacy fire-and-forget Play Mode toggle (returns before the mode change completes); prefer `enter_play`/`exit_play`.
 - `set_editor_throttling` — `no_throttling` keeps the Editor tick rate un-throttled while unfocused for long sessions; `restore`/`default` afterwards.
 - `get_console_logs` / `clear_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
@@ -137,7 +139,7 @@ personal absolute package paths. An API key is only needed for
 
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
-- **An unfocused/backgrounded Editor can stall main-thread work** (reloads, Play Mode transitions, refreshes) for minutes while cheap polls keep answering. `poll_play_state` reports `interactionMode` for this reason: when it is not `no_throttling`, call `set_editor_throttling("no_throttling")` before a long session and restore it afterwards.
+- **An unfocused/backgrounded Editor can stall main-thread work** (reloads, Play Mode transitions, refreshes) for minutes while cheap polls keep answering. `poll_play_state` reports `interactionMode` for this reason: unless the user prefers otherwise, always run Editor-driving sessions under `set_editor_throttling("no_throttling")` and restore it afterwards.
 
 ## Reusable test project
 

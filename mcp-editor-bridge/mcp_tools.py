@@ -426,7 +426,7 @@ def register_unity_tools(mcp):
         timeout_s: Annotated[float, "Seconds to wait for Play Mode (1–55; capped for the 60s transport)."] = 30,
     ) -> str:
         """Request Play Mode, then wait until isPlaying with no transition and no compile/update busy, or timeout. Survives domain reload via poll fallback. Always terminal.
-        If the Editor window is unfocused/backgrounded, the transition can stall: call set_editor_throttling("no_throttling") first and restore afterwards."""
+        Unless the user prefers otherwise, always run this under set_editor_throttling("no_throttling") and restore afterwards: an unfocused Editor on default throttling can stall the transition for minutes."""
         timeout_s = min(max(float(timeout_s), 1.0), 55.0)
         result = await call_unity("enter_play", {"timeout_s": timeout_s},
                                   timeout=min(timeout_s + 15.0, 60.0), retry_connect=False)
@@ -439,13 +439,34 @@ def register_unity_tools(mcp):
         timeout_s: Annotated[float, "Seconds to wait for Edit Mode (1–55; capped for the 60s transport)."] = 30,
     ) -> str:
         """Request Edit Mode, then wait until restored with no transition and no compile/update busy, or timeout. Survives domain reload via poll fallback. Always terminal.
-        If the Editor window is unfocused/backgrounded, the transition can stall: call set_editor_throttling("no_throttling") first and restore afterwards."""
+        Unless the user prefers otherwise, always run this under set_editor_throttling("no_throttling") and restore afterwards: an unfocused Editor on default throttling can stall the transition for minutes."""
         timeout_s = min(max(float(timeout_s), 1.0), 55.0)
         result = await call_unity("exit_play", {"timeout_s": timeout_s},
                                   timeout=min(timeout_s + 15.0, 60.0), retry_connect=False)
         if _play_transport_failed(result):
             return await _settle_via_poll("exit", timeout_s, result)
         return result
+
+    @mcp.tool()
+    async def invoke_menu_item(
+        menu_path: Annotated[str, "Exact menu path, e.g. 'Tools/Grid Combat/Validate Action Points'. No fuzzy matching."],
+    ) -> str:
+        """Execute one Editor menu item by exact path via EditorApplication.ExecuteMenuItem.
+        Unknown paths return a not-found error with no partial execution.
+        Refused while playing, compiling, or updating. Each invocation is logged to the Console."""
+        return await call_unity("invoke_menu_item", {"menuPath": menu_path}, retry_connect=False)
+
+    @mcp.tool()
+    async def invoke_static(
+        type_name: Annotated[str, "Exact full type name, e.g. 'MyNamespace.MyValidator'."],
+        method_name: Annotated[str, "Zero-arg public static method name. No overload guessing, no instance construction, no generics."],
+    ) -> str:
+        """Invoke exactly one public static zero-arg non-generic method by exact type and method names.
+        Returns the method's return value as a string ("ok" for void, "null" for null).
+        Unknown types/methods return not-found errors; thrown exceptions return "Error: <type>: <message>".
+        Refused while playing, compiling, or updating. Each invocation is logged to the Console."""
+        return await call_unity("invoke_static", {"typeName": type_name, "methodName": method_name},
+                                retry_connect=False)
     
     @mcp.tool()
     async def clear_console_logs() -> str:

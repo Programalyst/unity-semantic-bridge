@@ -14,7 +14,17 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False
 # --- CONFIG & STATE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-mcp = FastMCP("UnitySemanticBridge")
+mcp = FastMCP(
+    "UnitySemanticBridge",
+    instructions=(
+        "Unity throttles its Editor main thread whenever its window is unfocused, "
+        "which stalls Play Mode transitions, domain reloads, and asset refreshes for minutes. "
+        "Unless the user prefers otherwise, always start any session that drives the Editor "
+        "(enter_play/exit_play, refresh_assets, write_unity_script, invoke_menu_item, invoke_static) "
+        "with set_editor_throttling(\"no_throttling\"), and restore the previous mode with "
+        "set_editor_throttling(\"restore\") when done."
+    ),
+)
 register_unity_tools(mcp)
 register_event_handlers() # must run/register before event_server.start_event_server()
 
