@@ -30,19 +30,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static readonly string[] DefaultScanRoots = { "Assets/Synty" };
 
-        [MenuItem("Tools/Bridge/Generate Asset Catalog")]
-        public static void GenerateFromMenu()
-        {
-            AssetCatalogRunner.Start(null, true, result =>
-            {
-                if (result != null)
-                    Debug.Log($"[Bridge] Asset catalog: {result["itemCount"]} items, {result["thumbnailCount"]} thumbs -> {result["jsonPath"]}");
-                else
-                    Debug.LogWarning("[Bridge] Asset catalog run cancelled or superseded.");
-            });
-        }
-
         // MCP entry point (method "generate_asset_catalog"): starts a run, returns immediately.
+        // There is intentionally no Tools-menu launcher: catalog generation is
+        // driven from the Unity Semantic Bridge window or the MCP tool.
         public static string GenerateAssetCatalog(JObject mcpMessage)
         {
             var rootsToken = mcpMessage["scan_roots"] ?? mcpMessage["scanRoots"];
