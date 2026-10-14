@@ -6,9 +6,20 @@
 
 A Unity MCP Bridge built for agents working alongside you in a live Editor session — not just querying a static project. Token-efficient tools give your agent visibility into what changed in the scene while you were both working in it.
 
-<img src="images/usb-editor-mode.png" alt="Alt text" width="600">
+**Note: Unity Semantic Bridge is optimized for projects that use uGUI and URP (Universal Render Pipeline). If your project uses UI Toolkit, HDRP or BiRP use the official Unity CLI instead**
 
-**Note: Unity Semantic Bridge is optimized for projects that use uGUI and URP (Universal Render Pipeline).<br>If your project uses UI Toolkit, HDRP or BiRP use the official Unity CLI instead**
+## Showcase
+
+Made with USB:
+
+[Battle Stations Next](https://youtu.be/Uv087lF27nM) - 3D Modernization of a classic Facebook Flash game from 2008. Playable demo on Unity Play [here](https://play.unity.com/en/games/5d00abe6-9643-4dcc-ae22-3142da1ab4fa/battle-stations-next-prototype-01)
+
+<img src="images/bsn-screenshot.jpg" alt="Alt text" width="600">
+
+[Nuclear Knights](https://youtu.be/6_YeEH3oKGs) - Turn based tactics in a Wasteland like setting
+
+<img src="images/Nuclear-Knights-interrupt.png" alt="Alt text" width="600">
+
 
 ## Features
 
