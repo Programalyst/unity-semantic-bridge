@@ -8,6 +8,13 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 
 **Note: Unity Semantic Bridge is optimized for projects that use uGUI and URP (Universal Render Pipeline). If your project uses UI Toolkit, HDRP or BiRP use the official Unity CLI instead**
 
+## What's New
+
+**October 15, 2026: Multi-Editor support**
+- **Several Unity Editors at once.** Each project now has its own bridge ports (defaults 1073/1074), set in **Tools > Unity Semantic Bridge** and stored per user in `UserSettings/`. Start each project's MCP server with matching `--unity-port`/`--event-port`, for example a game project on 1073/1074 and an asset-library project on 1075/1076. See [several Unity projects at once](docs/installation.md#several-unity-projects-at-once).
+- **Several agent sessions on one Editor.** Every MCP server attached to an Editor now receives its events, so `get_recent_unity_events` works in each agent session, not only the first. See [several agent sessions on one Editor](docs/installation.md#several-agent-sessions-on-one-editor).
+- The listener's auto-start after domain reloads is now per Editor, `GET /health` reports which project answers, and connection errors name the URL and ports to check.
+
 ## Showcase
 
 Made with USB:
