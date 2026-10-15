@@ -121,13 +121,17 @@ Other facts the design depends on (each tagged with its Phase 0 status):
   - Sandbags and wall chunks must come from AP.
 
 **Phase 1: Edit-time occupancy baker plus the game rule changes.**
-- [ ] `NK:Scripts/GridSystem/Layout/Editor/OccupancyBaker.cs`: an OverlapBox per cell with the tile trigger's box, the `GridObstacle` filter and the last-wins rule.
-- [ ] `LayoutValidation.cs` harness (`Tools/Grid Combat/Validate Layout Baker`): baked == Phase 0 runtime dump for GridBattle, plus synthetic fixtures (sliver overlap blocks the neighbour, boundary-straddling 2-cell wall, rotated building).
-- [ ] **Corner-cutting fix:** `PathNode.HasObstacle` set by `GridTile.SetOccupied(GridObstacle)`; `GridMap` skips a diagonal when either orthogonal neighbour has an obstacle (in `FindPath` and `GetReachableNodeSteps`). Update `GridPathValidation`'s independent BFS to the same rule, and add wall-corner cases. Re-run the AP, firing-position and bug-range harnesses, since paths near walls get longer.
-- [ ] **Board size from `LevelInfo.gridSize`:** `GridManager` reads the level before `InitGridTiles`; `CharacterLoader` takes the level from it. Fog mask and bounds follow. Desert 1 already says 50×50, so GridBattle is unchanged.
-- [ ] **Deploy cells in `LevelInfo`:** a `deployCells` list (Desert 1 gets (3,2),(2,3),(0,3)); `CharacterLoader` reads it. Rename the CreateAssetMenu label to "Level Info".
-- [ ] Update `docs/combat-flows.md` (deployment, movement) and `level-rules.md` in the same change.
-- Exit: all harnesses pass via `invoke_menu_item`, and GridBattle plays as before apart from the corner rule.
+- [x] `NK:Scripts/GridSystem/Layout/Editor/OccupancyBaker.cs`: an OverlapBox per cell with the tile trigger's box, the `GridObstacle` filter and the last-wins rule.
+- [x] `LayoutValidation.cs` harness (`Tools/Grid Combat/Validate Layout Baker`): baked == Phase 0 runtime dump for GridBattle, plus synthetic fixtures (sliver overlap blocks the neighbour, boundary-straddling 2-cell wall, rotated building).
+- [x] **Corner-cutting fix:** `PathNode.HasObstacle` set by `GridTile.SetOccupied(GridObstacle)`; `GridMap` skips a diagonal when either orthogonal neighbour has an obstacle (in `FindPath` and `GetReachableNodeSteps`). Update `GridPathValidation`'s independent BFS to the same rule, and add wall-corner cases. Re-run the AP, firing-position and bug-range harnesses, since paths near walls get longer.
+- [x] **Board size from `LevelInfo.gridSize`:** `GridManager` reads the level before `InitGridTiles`; `CharacterLoader` takes the level from it. Fog mask and bounds follow. Desert 1 already says 50×50, so GridBattle is unchanged.
+- [x] **Deploy cells in `LevelInfo`:** a `deployCells` list (Desert 1 gets (3,2),(2,3),(0,3)); `CharacterLoader` reads it. Rename the CreateAssetMenu label to "Level Info".
+- [x] Update `docs/combat-flows.md` (deployment, movement) and `level-rules.md` in the same change.
+- Exit: all harnesses pass via `invoke_menu_item`, and GridBattle plays as before apart from the corner rule. **Done 2026-10-15** (NK ababe3fb). Validate Layout Baker (21 checks; GridBattle bake equals the fixture on all 2,500 cells), Paths (1,464), Action Points (66), Enemy Firing Positions (21) and Bug Attack Range (20) passed via `invoke_menu_item`. In GridBattle Play Mode the 11 units spawned on their Phase 0 cells, the path map had the same 24 obstacle nodes, and Reno's move from (3,2) to (5,1) went (3,2) → (3,1) → (4,1) around the low wall's end instead of cutting past (4,2).
+- Notes for later phases:
+  - The `LevelInfo` reference moved from `CharacterLoader` to `GridManager` in GridBattle (one serialized reference; no authored content changed).
+  - The baker sorts overlapping obstacles by hierarchy path for a deterministic "last wins", reports each such cell (`MULTI`), and reports obstacles without a Rigidbody (`NO_RIGIDBODY`). It also skips colliders on layers that ignore Grid Tiles.
+  - The AP, firing-position and bug-range harnesses build maps with `IsObstructed` only, so they don't exercise the corner rule. `GridPathValidation` covers it.
 
 **Phase 2: Layout model, compile, bake and the test scene.**
 - [ ] USB `Runtime/Layout/`: schema, parser, pure grid model, and `IGridRulesAdapter`.
