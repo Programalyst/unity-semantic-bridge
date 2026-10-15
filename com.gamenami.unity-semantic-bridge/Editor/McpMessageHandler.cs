@@ -13,6 +13,13 @@ namespace Gamenami.UnitySemanticBridge.Editor
         public static void HandleMcpMessage(JObject mcpMessage, TaskCompletionSource<string> completion)
         {
             var action = mcpMessage["method"]?.ToString();
+            // Periodic listener renewal from MCP servers: not an agent action, so it neither
+            // tags event sources nor fills the activity log.
+            if (action == "register_event_listener")
+            {
+                completion.TrySetResult(EditorBridge.RegisterEventListener(mcpMessage));
+                return;
+            }
             _currentActionSource = $"agent:{action}";
 
             var parameters = new List<string>();

@@ -33,6 +33,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         // SessionState lasts for this Editor process (across domain reloads) and is not
         // shared with other Editors, unlike machine-wide EditorPrefs.
         private const string AutoConnectKey = "UnitySemanticBridge_AutoConnect";
+        private const string EventListenersKey = "UnitySemanticBridge_EventListeners";
 
         // Copied from BridgeSettings on the main thread; events are sent from any thread.
         private static volatile int _listenerPort = BridgeSettings.DefaultListenerPort;
@@ -77,6 +78,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
         {
             ApplySettings();
             _projectPath = Path.GetDirectoryName(Application.dataPath);
+            EventListenerRegistry.Load(SessionState.GetString(EventListenersKey, ""), DateTime.UtcNow);
             _messageQueue.Start(OnMessageReceived);
 
             BridgeRelay.IsServerConnected = () => IsConnected;
@@ -166,6 +168,25 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 StartListener();
             }
             return null;
+        }
+
+        /// <summary>
+        /// JSON-RPC <c>register_event_listener {url, ttlSeconds}</c>: an MCP server that could not
+        /// bind this project's event port asks for its own copy of every event. Renew before expiry.
+        /// </summary>
+        public static string RegisterEventListener(JObject message)
+        {
+            var url = message["url"]?.ToString();
+            var ttl = message["ttlSeconds"]?.Value<double?>() ?? 120;
+            var error = EventListenerRegistry.Register(url, ttl, DateTime.UtcNow);
+            if (error != null) return $"Error: {error}";
+            SessionState.SetString(EventListenersKey, EventListenerRegistry.Serialize());
+            return new JObject
+            {
+                ["registered"] = EventListenerRegistry.Normalize(url, out _),
+                ["primary"] = PythonRpcUrl,
+                ["listeners"] = EventListenerRegistry.Live(DateTime.UtcNow).Count
+            }.ToString(Formatting.None);
         }
 
         private static bool _eventHooksInstalled;
@@ -409,14 +430,25 @@ namespace Gamenami.UnitySemanticBridge.Editor
         // ---------------------------------------------------------------------
 
         /// <summary>
-        /// Send a JSON-RPC 2.0 request to the Python event server and ignore the ack.
-        /// Fire-and-forget; safe to call from any thread.
+        /// Send a JSON-RPC 2.0 request to the Python event server and every registered
+        /// listener, ignoring the acks. Fire-and-forget; safe to call from any thread.
         /// Uses <see cref="SendRequestAsync"/> (with ``id``) so the Python side
         /// acknowledges via ``{"result":"ok"}``.
         /// </summary>
         private static void SendNotification(string method, JObject parms = null)
         {
-            _ = SendRequestAsync(method, parms).ContinueWith(t =>
+            var primary = PythonRpcUrl;
+            foreach (var url in EventListenerRegistry.Live(DateTime.UtcNow))
+            {
+                if (url == primary) continue;
+                // A registered server that stopped answering has exited; drop it quietly.
+                _ = PostRequestAsync(url, method, parms).ContinueWith(t =>
+                {
+                    if (t.IsFaulted) EventListenerRegistry.Remove(url);
+                }, TaskScheduler.Default);
+            }
+
+            _ = PostRequestAsync(primary, method, parms).ContinueWith(t =>
             {
                 if (t.IsFaulted)
                 {
@@ -434,7 +466,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
         /// Send a JSON-RPC 2.0 request (with id) and await the result.
         /// Returns the "result" token or throws on error.
         /// </summary>
-        public static async Task<JToken> SendRequestAsync(string method, JObject parms = null, TimeSpan? timeout = null)
+        public static Task<JToken> SendRequestAsync(string method, JObject parms = null, TimeSpan? timeout = null)
+        {
+            return PostRequestAsync(PythonRpcUrl, method, parms, timeout);
+        }
+
+        private static async Task<JToken> PostRequestAsync(string url, string method, JObject parms, TimeSpan? timeout = null)
         {
             var id = Guid.NewGuid().ToString();
             var payload = new JObject
@@ -448,7 +485,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             using (var cts = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(10)))
             {
-                var resp = await EventClient.PostAsync(PythonRpcUrl, content, cts.Token);
+                var resp = await EventClient.PostAsync(url, content, cts.Token);
                 var body = await resp.Content.ReadAsStringAsync();
                 var obj = JObject.Parse(body);
                 if (obj["error"] != null)

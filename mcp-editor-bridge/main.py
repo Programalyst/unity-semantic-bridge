@@ -5,7 +5,7 @@ import sys
 from fastmcp import FastMCP
 
 from mcp_tools import register_unity_tools
-from events import event_server
+from events import event_server, registration
 from events.event_handlers import register_event_handlers
 from state_manager import app_state, resolve_ports
 
@@ -40,8 +40,11 @@ async def run_servers():
     # Python also hosts a JSON-RPC event server at 127.0.0.1:<event port>/rpc so Unity
     # can push notifications (hierarchy/selection/play-mode changes etc.).
     event_server.start_event_server()
-    logging.info(f"🚀 UnitySemanticBridge MCP server starting (Unity RPC at {app_state.unity_rpc_url}, Python events at {app_state.python_event_url})...")
+    logging.info(f"🚀 UnitySemanticBridge MCP server starting (Unity RPC at {app_state.unity_rpc_url}, Python events at {event_server.bound_url()})...")
+    # Registration lets several servers (agent sessions) share one Editor's events.
+    renewals = asyncio.create_task(registration.registration_loop())
     await mcp.run_stdio_async()
+    renewals.cancel()
     logging.info("🔌 MCP Server stopped.")
     event_server.stop_event_server()
 

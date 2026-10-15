@@ -37,6 +37,12 @@ _server_thread: Optional[threading.Thread] = None
 
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
 
+# Port actually bound, and whether it is the configured event port (the one Unity
+# sends to directly). A fallback port only receives events after registering it
+# with Unity (events/registration.py).
+_bound_port: Optional[int] = None
+_bound_primary: bool = False
+
 # JSON-RPC error codes
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -214,9 +220,14 @@ class _RpcHandler(BaseHTTPRequestHandler):
         logger.debug(f"[event_server] {self.client_address[0]} - {format % args}")
 
 
-def start_event_server(host: str | None = None, port: int | None = None) -> Optional[ThreadingHTTPServer]:
-    """Start the event server in a daemon thread.  Idempotent."""
-    global _server, _server_thread
+def start_event_server(host: str | None = None, port: int | None = None,
+                       fallback_to_free_port: bool = True) -> Optional[ThreadingHTTPServer]:
+    """Start the event server in a daemon thread.  Idempotent.
+
+    If the event port is taken (usually by another MCP server attached to the same
+    Editor), bind a free port instead; registration then asks Unity to copy events there.
+    """
+    global _server, _server_thread, _bound_port, _bound_primary
 
     if _server is not None:
         logger.info("[event_server] already running")
@@ -229,16 +240,27 @@ def start_event_server(host: str | None = None, port: int | None = None) -> Opti
 
     try:
         _server = ThreadingHTTPServer((h, p), _RpcHandler)
-        _server.daemon_threads = True
-        # Allow immediate reuse
-        _server.allow_reuse_address = True
+        _bound_primary = True
     except OSError as e:
-        logger.error(f"[event_server] failed to bind {h}:{p}: {e}")
-        _server = None
-        return None
+        if not fallback_to_free_port:
+            logger.error(f"[event_server] failed to bind {h}:{p}: {e}")
+            _server = None
+            return None
+        try:
+            _server = ThreadingHTTPServer((h, 0), _RpcHandler)
+        except OSError as e2:
+            logger.error(f"[event_server] failed to bind {h}:{p} ({e}) or a free port ({e2})")
+            _server = None
+            return None
+        _bound_primary = False
+        logger.warning(f"[event_server] event port {p} is in use (probably another MCP server for this "
+                       f"Editor); receiving events on port {_server.server_address[1]} once registered with Unity")
+    _server.daemon_threads = True
+    _bound_port = _server.server_address[1]
+    bound = _bound_port
 
     def _serve():
-        logger.info(f"[event_server] listening on http://{h}:{p}/rpc (POST JSON-RPC 2.0)")
+        logger.info(f"[event_server] listening on http://{h}:{bound}/rpc (POST JSON-RPC 2.0)")
         try:
             _server.serve_forever()
         except Exception as e:
@@ -260,3 +282,20 @@ def stop_event_server() -> None:
         _server = None
         _server_thread = None
         logger.info("[event_server] stopped")
+    _set_unbound()
+
+
+def _set_unbound() -> None:
+    global _bound_port, _bound_primary
+    _bound_port = None
+    _bound_primary = False
+
+
+def bound_url() -> Optional[str]:
+    """URL Unity can POST events to, or None when the server is not running."""
+    return None if _bound_port is None else f"http://127.0.0.1:{_bound_port}/rpc"
+
+
+def is_primary() -> bool:
+    """True when bound to the configured event port, which Unity sends to without registration."""
+    return _server is not None and _bound_primary

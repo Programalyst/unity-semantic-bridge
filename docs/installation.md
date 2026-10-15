@@ -158,6 +158,16 @@ using it. `GET http://127.0.0.1:<listener port>/health` reports which project
 answers, which helps when the ports of two projects are swapped. The listener's
 auto-start after domain reloads is per Editor session and is not shared between
 projects.
+
+#### Several agent sessions on one Editor
+
+Every agent session starts its own MCP server, but only one of them can bind the
+project's event port. The others bind a free port and register it with Unity
+(`register_event_listener`, renewed every 30 seconds, expiring after 120), and Unity
+sends each event to the event port plus every registered server. So
+`get_recent_unity_events` works in every session. If a server cannot receive events,
+for example because the Unity package predates registration, an empty result says
+why. RPC calls from several sessions are processed one at a time, as before.
 Core tools do not require an LLM API key; optional lighting diagnostics use the
 provider settings documented in [`mcp-editor-bridge/LightingAgent/README.md`](../mcp-editor-bridge/LightingAgent/README.md).
 

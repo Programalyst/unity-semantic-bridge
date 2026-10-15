@@ -8,7 +8,7 @@ import asyncio
 import base64
 import json
 import time
-from events import events_buffer
+from events import events_buffer, registration
 
 # Global reference to lighting agent (initialized after tools are registered)
 _lighting_agent = None
@@ -734,6 +734,9 @@ def register_unity_tools(mcp):
         set_field_values and human Inspector edits) via ObjectChangeEvents.changesPublished."""
         events = events_buffer.get_recent_events(since=time.time() - since_seconds_ago, limit=limit)
         if not events:
+            problem = registration.receiving_problem()
+            if problem:
+                return f"No Unity events recorded in that window. Events may be missing: {problem}"
             return "No Unity events recorded in that window."
         return json.dumps(events, indent=2)
     
