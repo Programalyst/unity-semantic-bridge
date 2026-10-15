@@ -1,0 +1,188 @@
+# Asset Intelligence for USB: Refined Plan
+
+Refined October 15, 2026 from the draft outline, after a static read of
+nuclear-knights (NK), Asset Preview (AP) and this repository. Nothing was run in
+an Editor yet; items marked *runtime check* still need a Play Mode confirmation.
+
+Paths: NK code is under `nuclear-knights/Nuclear Knights/Assets/`, abbreviated
+`NK:`. USB package code is under `com.gamenami.unity-semantic-bridge/`, abbreviated
+`USB:`.
+
+## 1. What the code says (assumptions confirmed or refuted)
+
+| # | Draft assumption | Verdict | Evidence |
+|---|---|---|---|
+| A1 | Obstacle grid positions live in code and feed pathfinding | **Refuted.** Obstacles are discovered from scene physics at runtime | Each `GridTile` carries a 2×4×2 m trigger box (`NK:Prefabs/GridSystem/Grid Tile v2.prefab`, root scale 2,4,2). `GridTile.OnTriggerEnter` marks the tile occupied whenever any collider with a `GridObstacle` (plus kinematic Rigidbody) overlaps it (`NK:Scripts/GridSystem/GridTile.cs:78`). It then calls `GridManager.SetNodeOccupied`, which sets `PathNode.IsObstructed` |
+| A1b | Anything is literal C# coordinates | **Partly.** Player deployment cells are hard-coded | `CharacterLoader._deployableGridPositions = (3,2),(2,3),(0,3)` (`NK:Scripts/GridSystem/CharacterLoader.cs:27`) |
+| A2 | The scene holds the visuals; a map SO holds enemies, day/night, etc. | **Confirmed**, with caveats | `Data.LevelInfo` (`NK:Scripts/Data/LevelInfo.cs`) holds `timeOfDay` and `enemiesInLevel` (cell plus facing). Only one exists, `Settings/Levels/Desert 1.asset`. Its `gridSize` field is **unused**, because `GridManager` hard-codes 50×50 (`GridManager.cs:16`). Its CreateAssetMenu label is already "Level Layout", which will collide with the new type's name |
+| A3 | Coordinates: literal source or serialized? | **Neither.** They are geometry | Occupancy is wherever the obstacle colliders happen to overlap tiles, so it is never stored anywhere |
+| A4 | USB constraints | **Confirmed**, plus one more | Requests are single-flight (Python `unity_request_lock`). Instance IDs are unstable. The listener uses a **fixed port, 1073** (`USB:Editor/EditorBridge.cs:32`), so only one Editor (AP *or* NK) can serve the bridge at a time |
+
+Other facts the design depends on:
+
+- **Grid geometry.** The origin is world (0,0). Cells are 2 m, so cell (x,y) has its center at (2x+1, 0, 2y+1), with grid +x along world +X and grid +y along world +Z. `GridTile.FloorPosition` forces y=0, so the board is **flat**. Nothing in the code models height, stairs, doors, interiors or multiple levels.
+- **Movement.** Movement is 8-way, and diagonal steps cost the same AP as straight ones (`GridMap.cs:17`). **Corner-cutting is allowed:** a diagonal step between two blocked orthogonal neighbours is legal, because `GetNeighborList` has no corner check. A wall drawn only diagonally therefore does not seal anything. Units occupy nodes too, and reachability is a BFS over the same neighbours (`GridMap.GetReachableNodeSteps`).
+- **Cover.**
+  - `CoverType {None, Half, Full}` is set on each `GridObstacle`.
+  - A tile's cover comes from the obstacle sitting on each **orthogonal** neighbour (`GridTile.GetTileCoverInfo`). Each tile stores only one obstacle, and the last trigger to fire wins.
+  - Cover against a shot (`NK:Scripts/GridSystem/Weapons/RangedAccuracy.cs:101`) takes the neighbour side facing the shooter, using the dominant axis. **It then also** casts a waist-height ray and credits any `GridObstacle` hit within 2.5 m of the target. So the game already honours cover placed *between* cells, which matters for the "illegal states" principle.
+  - Units auto-crouch next to Half cover (`GridMovement.HasAdjacentHalfCover`).
+- **Line of sight.** LOS uses `Physics.RaycastAll` on the **Default and Stencil layers** (`GridVisibility.HasClearSegment`). Units and Half-cover obstacles are ignored. **Every other collider on those layers blocks sight, whether or not it has a `GridObstacle`.** Fog reveal checks the segment from each tile's `VisionCheckPosition` to the target's, within a circular range.
+- **The only hand-made map is a prototype.** GridBattle has five `GridObstacle` instances under an "Obstacles" parent: Wall SF (Full), Wall SF (half), the Refinery Pump, the Windmill variant and the Crystal Patch. They sit alongside undecorated scenery: Tower_09/10, sandy rock sets and APCs. Both walls sit on a cell boundary and span two cells (for example, Wall SF at (9, 10) rotated 90° covers cells (4,4) and (4,5)). The Windmill sits at z=17.5, rotated 225°, so it is off-grid. The towers overlapping it probably block LOS without blocking movement. That gives a very thin calibration set.
+- **The test style is menu-item harnesses, not NUnit.** NK has no asmdefs; everything compiles into Assembly-CSharp. `NK:Scripts/GridSystem/Editor/*Validation.cs` are `[MenuItem("Tools/Grid Combat/Validate …")]` statics that throw `*_CHECK_FAILED` or log `*_CHECKS_PASSED`. `GridPathValidation` already exercises `GridMap` without a scene. They already run through `invoke_menu_item`/`invoke_static`.
+- **Pathing is already nearly pure C#.** `GridMap`/`PathNode` depend only on `Mathf`/`Debug`. The scene-coupled parts are occupancy (triggers), cover (`GridTile`) and LOS (physics).
+- **An asset catalog already exists, but it is character-oriented.**
+  - `USB:Editor/AssetCatalogGenerator.cs` (v4) produced `Asset Preview/AssetCatalog/asset-catalog.json`: 11,337 items, including 5,249 prefabs from PolygonApocalypse, ApocalypseWasteland, Generic and SciFiWorlds, plus 11.3k thumbnails.
+  - The records have **no bounds, footprint or pivot data**.
+  - `InferCategory` only knows hair, facegear, outfit and weapon, so 4,370 prefabs are just "prop".
+  - An `overrides` overlay already exists (`LoadOverrides`).
+- **Packs.**
+  - The Wasteland pack is mostly whole buildings (Shack, Building, Tower, Garage). It also has wall chunks, fences, barriers, tyre barriers and sandbags.
+  - The **modular road, sidewalk and crossing kit is in PolygonApocalypse**, which exists only in AP, not in NK.
+  - NK's `3rd Party/PolygonApocalypseWasteland` is a 22 MB subset, compared with 694 MB in AP.
+  - Synty modular pieces usually snap at 2.5 m or 5 m, which does not match the 2 m cells (*runtime check* with `inspect_model_asset`). NK's own walls are scaled prefab variants (Wall SF has scale 1.65, 2.5, 2).
+
+## 2. What changes in the approach
+
+1. **Occupancy, not pathfinding, is the core refactor.** Pathfinding is already isolated and tested. What isn't deterministic or computable at edit time is *which cells are blocked and what cover they give*. The first engineering step is an **edit-time occupancy baker** that reproduces the trigger rule with `Physics.OverlapBox` using the same 2×4×2 box. A *runtime check* proves it equals the Play Mode trigger result on GridBattle. That gives validators the game's real rules without touching gameplay code.
+2. **The scene stays the authoring source; JSON is the agent's draft format; runtime reads a bake.** (Decision D3.)
+   - You keep laying levels out in the scene. The agent drafts in compact JSON and `compile_layout` turns the draft into scene objects. `bake_layout` reads any scene (hand-made or compiled) back into the same JSON, so both directions work and the scene always wins.
+   - **Now:** keep the runtime trigger system. Compile fits each blocking piece's collider *inside* its footprint cells (inset ~0.1 m), so the triggers reproduce the layout exactly. A dev-only start-of-battle assertion checks that runtime occupancy matches the bake.
+   - **Later, for larger maps:** `GridManager` loads a baked occupancy asset per level (a "grid bake", like a NavMesh bake) instead of waiting for trigger callbacks. The triggers stay as the cross-check, then retire. A freshness check (a hash of the obstacle transforms) flags a stale bake.
+3. **Flat board; 2–3 storey buildings as solid blockers; no interiors for now.** (Decision D5.) There are no stairs and no doors as passages, and the upper floors can't be reached. Doors are only a *facing* hint for plausibility. The layout records a building's `storeys` so that sight blocking and the later elevation work have the data. The game has no height advantage yet, so neither do the metrics.
+4. **Fix corner-cutting in the game; validators use the fixed rule.** (Decision D2.) A diagonal step is legal only when neither orthogonal neighbour holds an obstacle. Units do not restrict diagonals, which needs a separate `PathNode.HasObstacle` flag because today `IsObstructed` covers both units and obstacles. Walls then seal with orthogonal or diagonal continuity, which simplifies the "sealed pocket" checks.
+5. **Two LOS tiers.**
+   - A *grid tier* (supercover line over blocking cells, ignoring Half) is fast and pure, and is used for metrics during generation.
+   - A *physics tier* runs after compile with `GridVisibility.HasClearSegment` itself, so it is the game's real rule. It catches decoration that blocks sight but isn't an obstacle.
+   - A consistency validator reports any disagreement between the two.
+6. **Make deployment data, not code.** Move `_deployableGridPositions` into `LevelInfo` (default = current values) so reachability, spawn distance and fairness can see both sides.
+7. **The catalog is built in AP; levels are built in NK.** The workflow is: generate or extend the catalog in AP (PolygonApocalypse plus PolygonApocalypseWasteland, decision D1), then move the chosen pieces to NK with a GUID-preserving `.unitypackage` export, then build in NK. The catalog records GUIDs, so layouts written against AP's catalog resolve in NK after import. Per-project bridge ports (USB prerequisite, §4) let both Editors stay connected.
+8. **`LevelInfo.gridSize` drives the board.** (Decision D4.) `GridManager` currently hard-codes 50×50 and gets no `LevelInfo`. It needs the level's size before `InitGridTiles` runs in `Awake`, so the `LevelInfo` reference moves to where both `GridManager` and `CharacterLoader` can read it (e.g. `GridManager` owns it and `CharacterLoader` reads it from there). Fog bounds (`FogGridBounds`) and `GridFogOfWarMask` follow the same size.
+
+## 3. Design decisions
+
+- **Layout shape.** Integer cells covering the whole board (`LevelInfo.gridSize`). There are four rotations (0–3 quarter turns). Pieces are anchored at their min corner, with the footprint taken from the catalog card after rotation. Per cell, the derived state is `{blocked, cover: None|Half|Full, occupant pieceId}`, with at most one blocking occupant per cell, which matches the game's one-obstacle-per-tile rule. Non-blocking decoration and ground pieces (roads, sidewalks) go in a separate layer that never blocks. There are no edge-based concepts: the game has none, and cell-based cover makes "between tiles" unrepresentable.
+- **Storage.** The scene is the source of truth. The JSON layout is the agent's draft and interchange format (written by the agent or produced by `bake_layout`), e.g. `NK:Settings/Levels/<name>.layout.json`. The agent writes the file directly and calls `compile_layout`, which avoids field-by-field SO edits. It is diffable and token-cheap. A compact form:
+  ```json
+  {"v":1,"size":[12,12],
+   "pieces":[["wallF","5fe5…",3,4,1],["sandbag","…",6,2,0]],
+   "deploy":[[1,1],[2,1],[1,2]],
+   "decor":[["road_straight","…",0,5,0]]}
+  ```
+  Each piece is `[localId, prefabGuid, x, y, rot]`. Reports address cells as `x,y`.
+- **Genericity.** USB owns the catalog, the layout schema, compile, render, and a validator runner. The validator runner covers bounds, overlap, footprint, the reachability engine, the metrics framework and report formatting. The game supplies an adapter, an `IGridRulesAdapter` interface defined in **`UnitySemanticBridge.Runtime`**. That assembly is `autoReferenced`, so Assembly-CSharp can implement it without NK adding asmdefs. USB Editor finds implementations through `TypeCache`. The adapter exposes:
+  - cell size, board size and world↔cell conversion
+  - the neighbour rule (8-way, no corner-cutting past obstacles)
+  - the cover rule (orthogonal neighbours)
+  - LOS layers and ignore rules
+  - how to bake occupancy from a scene
+  - a piece-to-component hook, e.g. adding `GridObstacle` with `coverType` and meshes
+- **Where code lives.**
+  - Pure rules (grid, neighbours, BFS, grid LOS, metrics) go in plain C# with no `UnityEngine` (own `Cell` struct) in USB `Runtime/Layout/`.
+  - NK's adapter and baker go in `NK:Scripts/GridSystem/Layout/`, with Editor parts in `…/Layout/Editor/`.
+- **Catalog cards.** Extend `BuildPrefabRecord` with fields measured on `PrefabUtility.LoadPrefabContents` (isolated, never in the open scene). Every renderer's `Mesh.bounds` corners and every collider's bounds are transformed into root space (`root.worldToLocalMatrix * child.localToWorldMatrix`), with the root at scale 1. Child scales count; the root's scale and placement don't. Each card holds:
+  - `visualBounds` and `colliderBounds` (meters at scale 1; `colliderBounds` is null when the prefab has none), `pivotOffset`, `height`, `storeys` (buildings)
+  - a `skewed` flag when a child has a non-90° rotation, because the box then overstates the size
+  - `levelRole`: `blocker|cover_half|cover_full|ground|decor|building|unknown`
+
+  Footprint cells and fit error are **computed on request** from the card, the cell size and a placement scale, not stored. One card then serves any cell size or per-piece scale.
+
+  Detection order is overrides file, then name/folder heuristics (`Wall`, `Barrier`, `Sandbag`, `Fence`, `Road`, `Sidewalk`, `Bld_`), then geometry (height < 1.2 m → half cover, ≥ 2 m → full), then vision on the thumbnail only for leftover `unknown` entries. Cards go into a separate `level-catalog.json` keyed by GUID so the 12 MB character catalog doesn't grow, and are filtered to level roles.
+- **Sockets.** Reduced to a building `front` direction (door side) and wall-run `ends`. Name heuristics find door children; otherwise the override file supplies them. They matter only for the plausibility checks.
+- **Token efficiency.** Validator reports are capped lists of `code x,y message` lines, with ASCII map dumps (`#` full, `h` half, `.` open, `A/E` spawns, `?` unreachable) on request only.
+
+## 4. Phases (reordered) and tasks
+
+**Prerequisite (USB): per-project bridge ports.** Done 2026-10-15 (commit 3110f44); NK on 1073/1074 and AP on 1075/1076 were verified side by side.
+- [x] Store the Unity listener port (default 1073) and the Python event port (default 1074) per project in `UserSettings/`. Show them in the bridge window, and give a clear error when a port is already in use. Make the auto-connect flag per project too (it is in machine-wide `EditorPrefs` today).
+- [x] The Python server takes `--unity-port`/`--event-port` (or environment variables), with today's defaults. Update `docs/installation.md` and the tests that assume 1073.
+- [ ] Register `unity-nk` and `unity-ap` as separate MCP servers.
+
+**Phase 0: Recon close-out (read-only, small).**
+- [ ] Write `nuclear-knights/docs/level-rules.md` from §1 (grid, movement, cover, LOS, scene conventions, LevelInfo), and link it from `docs/README.md` reading order.
+- [ ] *Runtime checks* in GridBattle: dump runtime occupancy and cover per cell via a temporary `invoke_static`; LOS-block test against the Tower_09/10 colliders; layers of the decoration colliders; real bounds of 5–10 candidate pieces from both packs via `inspect_model_asset`.
+- Exit: every §1 row is marked runtime-verified, and the occupancy dump is saved as a fixture.
+
+**Phase 1: Edit-time occupancy baker plus the game rule changes.**
+- [ ] `NK:Scripts/GridSystem/Layout/Editor/OccupancyBaker.cs`: an OverlapBox per cell with the tile trigger's box, the `GridObstacle` filter and the last-wins rule.
+- [ ] `LayoutValidation.cs` harness (`Tools/Grid Combat/Validate Layout Baker`): baked == Phase 0 runtime dump for GridBattle, plus synthetic fixtures (sliver overlap blocks the neighbour, boundary-straddling 2-cell wall, rotated building).
+- [ ] **Corner-cutting fix:** `PathNode.HasObstacle` set by `GridTile.SetOccupied(GridObstacle)`; `GridMap` skips a diagonal when either orthogonal neighbour has an obstacle (in `FindPath` and `GetReachableNodeSteps`). Update `GridPathValidation`'s independent BFS to the same rule, and add wall-corner cases. Re-run the AP, firing-position and bug-range harnesses, since paths near walls get longer.
+- [ ] **Board size from `LevelInfo.gridSize`:** `GridManager` reads the level before `InitGridTiles`; `CharacterLoader` takes the level from it. Fog mask and bounds follow. Desert 1 already says 50×50, so GridBattle is unchanged.
+- [ ] **Deploy cells in `LevelInfo`:** a `deployCells` list (Desert 1 gets (3,2),(2,3),(0,3)); `CharacterLoader` reads it. Rename the CreateAssetMenu label to "Level Info".
+- [ ] Update `docs/combat-flows.md` (deployment, movement) and `level-rules.md` in the same change.
+- Exit: all harnesses pass via `invoke_menu_item`, and GridBattle plays as before apart from the corner rule.
+
+**Phase 2: Layout model, compile, bake and the test scene.**
+- [ ] USB `Runtime/Layout/`: schema, parser, pure grid model, and `IGridRulesAdapter`.
+- [ ] NK adapter `NkGridRules.cs`.
+- [ ] USB Editor `LayoutCompiler`: instantiates by GUID under a `[Generated Layout]` root, applies rotation and pivot offset, fits colliders inside footprints, calls the adapter's piece hook, and makes it all one Undo group. Recompiling clears the root only.
+- [ ] `bake_layout`: reads a scene's obstacles (hand-made or compiled) back into layout JSON. Off-grid items are reported, not silently snapped.
+- [ ] **New test scene `LayoutTest.unity`** (decision D6), with its own `LevelInfo`: a copy of GridBattle's managers, cameras and UI, and an empty board. GridBattle itself is left alone.
+- Exit: compile → bake round-trips, and a Play Mode assertion in `LayoutTest` confirms runtime occupancy equals the layout.
+
+**Phase 3: Validators.**
+- [ ] Structural: bounds, overlap, footprint fit error, one blocker per cell, every piece on integer cells.
+- [ ] Consistency: every blocking cell has a collider, and every Default/Stencil collider inside the board is either a layout blocker or flagged as a "sight blocker without obstacle".
+- [ ] Reachability: BFS with the game's (fixed) neighbour rule from deploy cells, covering all enemy spawns, sealed pockets and unreachable open cells.
+- [ ] Encounter: spawns not on blocked cells, spawns inside bounds, facing sanity.
+- [ ] Plausibility: road continuity in the ground layer, building fronts facing open or road cells.
+- [ ] Fixtures: a bake of GridBattle (should pass; the Windmill is on the playable grid by design) plus deliberately broken JSON fixtures.
+- [ ] Tests: the pure validators in USB `Runtime/Layout/` get NUnit tests in `USB:Tests/Editor/`, run through `TestProject`. NK-side checks stay menu-item harnesses (decision D8).
+- Exit: cell-addressed reports, and all fixtures behave as expected.
+
+**Phase 4: Level catalog (runs in AP; can start alongside Phase 1).**
+- [ ] Extend `AssetCatalogGenerator`/`AssetCatalogRunner` with the card fields and the `level-catalog.json` output, reusing the batching and thumbnail pumping. Tests go in `USB:Tests/Editor/`.
+- [ ] Scan both PolygonApocalypse and PolygonApocalypseWasteland. Heuristics plus an overrides file. Hand-review the top ~60 candidate pieces for the slice, including the road/sidewalk kit and 2–3 storey buildings.
+- [ ] Export the chosen pieces as a `.unitypackage` into NK `Assets/3rd Party/…`, keeping GUIDs.
+
+**Phase 5: MCP tools.**
+- [ ] `query_level_catalog` (filter by role and footprint, compact rows).
+- [ ] `get_layout`/`set_layout` (file-based, schema-validated) and `bake_layout`.
+- [ ] `validate_layout` (grid tier) and `compile_layout` (and physics tier after compile).
+- [ ] `render_layout_topdown` (orthographic capture of the board region, building on `get_screenshot`).
+- [ ] All tools address objects by GUID or path, never by instance ID.
+
+**Phase 6: Generation loop and metrics.**
+- [ ] Metrics: cover density near enemy spawns, sightline length histogram (grid LOS), count of distinct flanking routes (edge-disjoint paths), open-ground crossings, deploy-to-enemy distance, and side symmetry.
+- [ ] Calibrate on GridBattle and one or two maps you author.
+- [ ] Later (larger maps): `GridManager` loads the per-level grid bake instead of relying on triggers (§2 item 2).
+- [ ] `SKILL.md` playbook: plan ASCII, then JSON, then validate, then revise, then compile, then render, then report.
+
+**Phase 7 (optional): bot playtests.** Run the existing `EnemyManager` AI against a scripted ally policy and record turns-to-contact and stalemates.
+
+## 5. Risks found in the code
+
+- **Trigger occupancy is lossy and order-dependent.** Any sliver overlap blocks a cell, the last obstacle wins a cell's cover, and obstacles never clear. Compile must inset colliders, and validators must report fit error.
+- **Decoration silently blocks sight.** Any Default/Stencil collider blocks LOS, so grid-only reasoning will disagree with the game. The physics tier and the consistency validator exist for this reason.
+- **The game already grants off-cell cover.** The 2.5 m waist raycast means misaligned props still matter. The baker and grid model ignore that bonus, so it is flagged as a known difference, not modelled.
+- **The corner-cutting fix changes live gameplay.** Paths near walls get longer, which can shift AP spending and AI firing positions. The existing AP, firing-position and bug-range harnesses must be re-run, and enemy behaviour near walls spot-checked in Play Mode.
+- **Board size from `LevelInfo` reorders startup.** `GridManager.Awake` must have the level before `CharacterLoader.Start`. Today the level reference lives only on `CharacterLoader`.
+- **Thin ground truth.** There is one prototype map, so "fun" calibration needs maps you author first.
+- **Scale mismatch.** Synty grid metrics may not divide into 2 m cells. Expect per-piece scale overrides (as Wall SF already has), and record them in cards.
+- **Shared event port per Editor.** Only one MCP server process can bind an Editor's event port, so a second agent session on the same Editor sees no events (separate follow-up task).
+- **Domain reloads** after C# edits invalidate instance IDs and drop the connection. Batch the C# edits per session and refresh once.
+- **NK has no asmdefs.** Putting the adapter interface in USB Runtime avoids touching NK's assembly layout.
+
+## 6. Decisions (2026-10-15)
+
+- **D1 Packs:** PolygonApocalypse and PolygonApocalypseWasteland. Pieces move from AP to NK by GUID-preserving `.unitypackage` export.
+- **D2 Corner-cutting:** fix it in the game (no diagonal step past an obstacle).
+- **D3 Occupancy and authoring:** keep triggers for now. The scene stays the authoring source, and JSON is the agent's draft/interchange format with compile and bake in both directions. A runtime grid bake comes later for larger maps.
+- **D4 Board size:** `LevelInfo.gridSize` drives the board.
+- **D5 Interiors and elevation:** no interiors for now; elevation later. 2–3 storey buildings are allowed, with upper floors inaccessible. *(Interpretation; to be confirmed.)*
+- **D6 GridBattle:** keep it as is (the Windmill is on the playable grid). Build and test in a new scene.
+- **D7 Deploy cells:** move them into `LevelInfo`.
+- **D8 Tests:** keep the existing NK harnesses. New pure validators in USB use NUnit (USB already has NUnit tests); new NK-side checks follow the harness style unless agreed otherwise.
+
+## 7. First milestone
+
+A 12×12 board in the new `LayoutTest` scene (`gridSize` 12×12):
+1. The agent queries the level catalog.
+2. It writes a layout JSON with deploy and enemy cells.
+3. Grid-tier validators pass.
+4. `compile_layout` builds it under `[Generated Layout]`.
+5. Baked occupancy equals the layout, and the physics tier passes.
+6. `LayoutTest` runs, with units pathing around the new pieces (runtime occupancy assertion green).
+7. A top-down render and a metrics report are produced.
+
+Suggested session sizing: the USB port prerequisite is one short session, Phase 0 + 1 is one session in NK, Phase 4 is one in AP, Phase 2 is one to two in NK + USB, and Phase 3 + 5 is one to two.
