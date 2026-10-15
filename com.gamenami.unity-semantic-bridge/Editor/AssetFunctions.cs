@@ -127,9 +127,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 return "BUSY: Unity is compiling, importing, transitioning Play Mode, or a refresh is pending. Poll get_compilation_status and retry when idle.";
 
             var token = CompileWatcher.BeginWrite();
-            // Acknowledge before asking Unity to import/recompile. The dispatcher and
-            // delayCall both run on the main thread; this gives transport a chance to send the hint.
-            EditorApplication.delayCall += () =>
+            // Acknowledge before asking Unity to import/recompile. The dispatcher and the
+            // next update tick both run on the main thread; this gives transport a chance to
+            // send the hint. Not delayCall: it can wait for focus, stalling hidden Editors.
+            EditorTick.Next(() =>
             {
                 try
                 {
@@ -140,14 +141,19 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         CompileWatcher.FailRefresh(new InvalidOperationException("Editor became busy before refresh; retry when idle."));
                         return;
                     }
+                    ScriptImportTracker.ScriptsChanged = false;
                     AssetDatabase.Refresh();
+                    // A background Editor can import changed scripts yet wait for focus
+                    // before compiling them; start that compilation explicitly.
+                    if (ScriptImportTracker.ScriptsChanged && !EditorApplication.isCompiling)
+                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
                     CompileWatcher.CompleteRefresh();
                 }
                 catch (Exception e)
                 {
                     CompileWatcher.FailRefresh(e);
                 }
-            };
+            });
             return $"Refresh queued (token={token}). RELOAD_IMMINENT: Unity may compile/reload if needed. Call get_compilation_status to get the result.";
         }
 

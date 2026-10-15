@@ -103,13 +103,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (!shouldAutoConnect || IsConnected) return;
 
             Debug.Log("<color=lime>[Bridge]</color> Bridge ReInitializing (HTTP JSON-RPC)...");
-            // delayCall only fires on next editor tick (throttled when unfocused). Use afterAssemblyReload (focus-independent) + one-shot update poll as fallback.
+            // Start now; afterAssemblyReload and a one-shot update tick retry if that fails.
+            // Not delayCall: it can wait for focus, leaving a background Editor offline.
             TryStartListener();
-            EditorApplication.delayCall += () =>
-            {
-                if (!IsConnected)
-                    StartListener();
-            };
             EditorApplication.update -= TryReconnectOnce;
             EditorApplication.update += TryReconnectOnce;
         }

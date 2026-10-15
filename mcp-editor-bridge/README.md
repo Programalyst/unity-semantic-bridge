@@ -78,11 +78,15 @@ refresh merely because a poll lost its connection. Re-fetch scene hierarchy
 before reusing Unity instance IDs after reload. A timeout is ambiguous: queued
 requests are not cancelled by the current transport.
 
-Requests still depend on `EditorApplication.update`, and deferred refresh uses
-`EditorApplication.delayCall`. An unfocused/busy Editor can delay processing or
-cause timeouts; focus Unity and retry polling if necessary. This tool does not
-fix background Editor throttling. No live focus behavior was measured for this
-change, and no transport or reconnect policy was changed.
+Requests and the deferred refresh run on `EditorApplication.update`, which keeps
+ticking while the Editor is in the background. (`EditorApplication.delayCall`, used
+before 2026-10-15, could wait for focus on macOS, so a hidden Editor never refreshed.)
+When the refresh imports compilation inputs (`.cs`, `.asmdef`, `.asmref`, `.dll`,
+`.rsp`), it also requests script compilation, because a background Editor can
+otherwise wait for focus before compiling. Measured on macOS with a hidden
+nuclear-knights Editor: refresh, compile and domain reload finished in 11 seconds,
+where it previously waited until the Editor was focused. A busy Editor can still
+delay processing or cause timeouts.
 
 Restart the **Python MCP server process** after updating to register the new tool,
 and reconnect/reload the MCP client tool list if it caches discovery. Unity

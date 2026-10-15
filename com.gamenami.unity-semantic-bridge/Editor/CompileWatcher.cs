@@ -71,7 +71,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             // Let Unity process compilation scheduled by Refresh before settling a no-op.
             // No waiting on the Editor thread, no timer that guesses compilation duration.
             var token = SessionState.GetString(TokenKey, "");
-            EditorApplication.delayCall += () => SettleRefresh(token);
+            EditorTick.Next(() => SettleRefresh(token));
         }
 
         static void SettleRefresh(string token)
@@ -80,7 +80,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 SessionState.GetString(StatusKey, "unknown") != "pending") return;
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
-                EditorApplication.delayCall += () => SettleRefresh(token);
+                EditorTick.Next(() => SettleRefresh(token));
                 return;
             }
             // No new compiler result: don't certify scripts using an older SUCCESS,
@@ -94,6 +94,37 @@ namespace Gamenami.UnitySemanticBridge.Editor
             var status = SessionState.GetString(StatusKey, "unknown");
             if (EditorApplication.isCompiling || EditorApplication.isUpdating) status = "compiling";
             return (status, SessionState.GetString(ErrorsKey, ""));
+        }
+    }
+}
+
+namespace Gamenami.UnitySemanticBridge.Editor
+{
+    /// <summary>Records whether an import touched compilation inputs, so refresh_assets can start compiling.</summary>
+    public class ScriptImportTracker : AssetPostprocessor
+    {
+        internal static bool ScriptsChanged;
+
+        static readonly string[] InputExtensions = { ".cs", ".asmdef", ".asmref", ".dll", ".rsp" };
+
+        public static bool IsCompilationInput(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            foreach (var extension in InputExtensions)
+                if (path.EndsWith(extension, System.StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
+        {
+            if (ScriptsChanged) return;
+            foreach (var paths in new[] { imported, deleted, moved, movedFrom })
+                foreach (var path in paths)
+                    if (IsCompilationInput(path))
+                    {
+                        ScriptsChanged = true;
+                        return;
+                    }
         }
     }
 }

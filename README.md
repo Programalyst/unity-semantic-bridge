@@ -14,6 +14,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - **Several Unity Editors at once.** Each project now has its own bridge ports (defaults 1073/1074), set in **Tools > Unity Semantic Bridge** and stored per user in `UserSettings/`. Start each project's MCP server with matching `--unity-port`/`--event-port`, for example a game project on 1073/1074 and an asset-library project on 1075/1076. See [several Unity projects at once](docs/installation.md#several-unity-projects-at-once).
 - **Several agent sessions on one Editor.** Every MCP server attached to an Editor now receives its events, so `get_recent_unity_events` works in each agent session, not only the first. See [several agent sessions on one Editor](docs/installation.md#several-agent-sessions-on-one-editor).
 - The listener's auto-start after domain reloads is now per Editor, `GET /health` reports which project answers, and connection errors name the URL and ports to check.
+- **Background refreshes.** `refresh_assets` now completes in an Editor that is hidden or behind other windows: refresh, compile and domain reload finished in 11 seconds in a hidden Editor, which previously waited until you clicked back into Unity.
 
 ## Showcase
 
@@ -159,7 +160,7 @@ personal absolute package paths. An API key is only needed for
 
 - **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
-- **An unfocused/backgrounded Editor can stall main-thread work** (reloads, Play Mode transitions, refreshes) for minutes while cheap polls keep answering. `poll_play_state` reports `interactionMode` for this reason: unless the user prefers otherwise, always run Editor-driving sessions under `set_editor_throttling("no_throttling")` and restore it afterwards.
+- **A background Editor may still be slower than a focused one.** `refresh_assets` now refreshes, compiles and reloads in a hidden Editor without refocusing it. Other work can still be throttled by Unity's Interaction Mode: `poll_play_state` reports `interactionMode`, and unless the user prefers otherwise, run Editor-driving sessions under `set_editor_throttling("no_throttling")` and restore it afterwards.
 
 ## Reusable test project
 

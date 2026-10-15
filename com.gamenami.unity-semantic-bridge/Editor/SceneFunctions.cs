@@ -217,10 +217,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         
         public static string SetPlayMode(bool enabled) 
         {
-            // Must run on main thread
-            EditorApplication.delayCall += () => {
-                EditorApplication.isPlaying = enabled;
-            };
+            // Next update tick, after the response; delayCall can wait for Editor focus.
+            EditorTick.Next(() => EditorApplication.isPlaying = enabled);
             return enabled? 
                 "Entering Play Mode. RELOAD_IMMINENT: connection will momentarily drop" : 
                 "Exiting Play Mode. RELOAD_IMMINENT: connection will momentarily drop";

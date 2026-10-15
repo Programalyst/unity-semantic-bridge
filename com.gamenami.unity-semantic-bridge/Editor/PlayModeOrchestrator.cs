@@ -15,7 +15,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
     /// pattern as <see cref="CompileWatcher"/>: the in-flight HTTP response may
     /// be lost across reload, but the op resumes and Python polls
     /// <c>poll_play_state</c> until it settles.
-    /// Polling uses EditorApplication.update/delayCall — never blocks the main thread.
+    /// Polling uses EditorApplication.update, which also ticks in the background, and never blocks the main thread.
     /// </summary>
     [InitializeOnLoad]
     public static class PlayModeOrchestrator
