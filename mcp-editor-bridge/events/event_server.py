@@ -1,6 +1,6 @@
 """JSON-RPC 2.0 event server: Unity -> Python.
 
-Listens on 127.0.0.1:1074/rpc (configurable via state_manager.app_state).
+Listens on 127.0.0.1:<event port>/rpc (default 1074; set by --event-port via state_manager.app_state).
 Handles JSON-RPC 2.0 single and batch requests.  All requests are
 acknowledged (notifications without ``id`` receive a response with
 ``id`` = null for unified ``call_unity`` handling).

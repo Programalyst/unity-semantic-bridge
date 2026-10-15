@@ -24,18 +24,22 @@ namespace Gamenami.UnitySemanticBridge.Editor
     /// Batch arrays are supported; every request is acknowledged (notifications
     /// without ``id`` receive ``{"result":"ok","id":null}`` for unified handling).
     /// Outbound (Unity -> Python):
-    /// <c>SendNotification("unity/hierarchyChanged", new JObject{...})</c> -> POST http://127.0.0.1:1074/rpc (via <see cref="SendRequestAsync"/>, acked)
+    /// <c>SendNotification("unity/hierarchyChanged", new JObject{...})</c> -> POST http://127.0.0.1:&lt;event port&gt;/rpc (via <see cref="SendRequestAsync"/>, acked)
     /// <c>SendRequestAsync("unity/ping", ...)</c> -> awaitable JSON-RPC request.
+    /// Ports are per project (<see cref="BridgeSettings"/>), defaulting to 1073 (listener) and 1074 (events).
     /// </summary>
     public static class EditorBridge
     {
-        private const int Port = 1073;
-        private static readonly string Prefix = $"http://127.0.0.1:{Port}/";
-        private const string AutoConnectPref = "UnitySemanticBridge_AutoConnect";
+        // SessionState lasts for this Editor process (across domain reloads) and is not
+        // shared with other Editors, unlike machine-wide EditorPrefs.
+        private const string AutoConnectKey = "UnitySemanticBridge_AutoConnect";
 
-        // Python event server (Unity -> Python)
-        private const int PythonEventPort = 1074;
-        private static readonly string PythonRpcUrl = $"http://127.0.0.1:{PythonEventPort}/rpc";
+        // Copied from BridgeSettings on the main thread; events are sent from any thread.
+        private static volatile int _listenerPort = BridgeSettings.DefaultListenerPort;
+        private static volatile int _eventPort = BridgeSettings.DefaultEventPort;
+        private static int _boundPort;
+        private static string PythonRpcUrl => $"http://127.0.0.1:{_eventPort}/rpc";
+        private static string _projectPath;
         private static HttpClient _eventClient;
         private static HttpClient EventClient
         {
@@ -53,7 +57,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
         private static Task _acceptLoop;
 
         public static bool IsConnected => _listener != null && _listener.IsListening;
-        public static int ListeningPort => Port;
+        // The bound port while listening, otherwise the configured one.
+        public static int ListeningPort => IsConnected ? _boundPort : _listenerPort;
+        public static int EventPort => _eventPort;
+        // Why the last start attempt failed (cleared on success), for the bridge window.
+        public static string LastStartError { get; private set; }
 
         private static readonly MainThreadMessageQueue _messageQueue = new();
 
@@ -67,6 +75,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         [InitializeOnLoadMethod]
         private static void OnEditorLoaded()
         {
+            ApplySettings();
+            _projectPath = Path.GetDirectoryName(Application.dataPath);
             _messageQueue.Start(OnMessageReceived);
 
             BridgeRelay.IsServerConnected = () => IsConnected;
@@ -79,7 +89,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
             EditorApplication.quitting -= OnEditorQuitting;
             EditorApplication.quitting += OnEditorQuitting;
 
-            var shouldAutoConnect = EditorPrefs.GetBool(AutoConnectPref, false);
+            // One-time upgrade from the machine-wide pref, so the reload that installs this
+            // version keeps a running listener. The first Editor to reload consumes it.
+            if (EditorPrefs.GetBool(AutoConnectKey, false))
+            {
+                EditorPrefs.DeleteKey(AutoConnectKey);
+                SessionState.SetBool(AutoConnectKey, true);
+            }
+
+            var shouldAutoConnect = SessionState.GetBool(AutoConnectKey, false);
             if (!shouldAutoConnect || IsConnected) return;
 
             Debug.Log("<color=lime>[Bridge]</color> Bridge ReInitializing (HTTP JSON-RPC)...");
@@ -96,33 +114,58 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void HandleAfterReload()
         {
-            if (EditorPrefs.GetBool(AutoConnectPref, false) && !IsConnected)
+            if (SessionState.GetBool(AutoConnectKey, false) && !IsConnected)
                 StartListener();
         }
 
         private static void TryReconnectOnce()
         {
             EditorApplication.update -= TryReconnectOnce;
-            if (EditorPrefs.GetBool(AutoConnectPref, false) && !IsConnected)
+            if (SessionState.GetBool(AutoConnectKey, false) && !IsConnected)
                 StartListener();
         }
 
         private static void TryStartListener()
         {
-            if (EditorPrefs.GetBool(AutoConnectPref, false) && !IsConnected)
+            if (SessionState.GetBool(AutoConnectKey, false) && !IsConnected)
                 StartListener();
         }
 
         public static void ManualConnect()
         {
-            EditorPrefs.SetBool(AutoConnectPref, true);
+            SessionState.SetBool(AutoConnectKey, true);
             StartListener();
         }
 
         public static void ManualDisconnect()
         {
-            EditorPrefs.SetBool(AutoConnectPref, false);
+            SessionState.SetBool(AutoConnectKey, false);
             StopListener();
+        }
+
+        private static void ApplySettings()
+        {
+            var settings = BridgeSettings.instance;
+            _listenerPort = settings.ListenerPort;
+            _eventPort = settings.EventPort;
+        }
+
+        /// <summary>
+        /// Saves this project's ports and restarts a running listener on the new port.
+        /// Returns null on success, otherwise an error message.
+        /// </summary>
+        public static string SetPorts(int listenerPort, int eventPort)
+        {
+            var error = BridgeSettings.instance.SetPorts(listenerPort, eventPort);
+            if (error != null) return error;
+            var restart = IsConnected && _boundPort != listenerPort;
+            ApplySettings();
+            if (restart)
+            {
+                StopListener();
+                StartListener();
+            }
+            return null;
         }
 
         private static bool _eventHooksInstalled;
@@ -423,21 +466,28 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (IsConnected) return;
             StopListener(); // clean any half-open state
 
+            var port = _listenerPort;
+            var prefix = $"http://127.0.0.1:{port}/";
             _cts = new CancellationTokenSource();
             _listener = new HttpListener();
-            _listener.Prefixes.Add(Prefix);
+            _listener.Prefixes.Add(prefix);
             try
             {
                 _listener.Start();
             }
             catch (Exception e)
             {
-                Debug.LogError($"<color=red>[Bridge]</color> HTTP listener failed to start on {Prefix}: {e.Message}");
+                LastStartError = $"Could not listen on port {port}: {e.Message}. If another Unity Editor is running the bridge, " +
+                                 "choose other ports in Tools > Unity Semantic Bridge and start this project's MCP server " +
+                                 "with the same --unity-port and --event-port.";
+                Debug.LogError($"<color=red>[Bridge]</color> {LastStartError}");
                 StopListener();
                 return;
             }
 
-            Debug.Log($"<color=lime>[Bridge]</color> HTTP JSON-RPC listener started on {Prefix} (POST /rpc, GET /health)");
+            _boundPort = port;
+            LastStartError = null;
+            Debug.Log($"<color=lime>[Bridge]</color> HTTP JSON-RPC listener started on {prefix} (POST /rpc, GET /health); events go to {PythonRpcUrl}");
             _acceptLoop = Task.Run(() => AcceptLoopAsync(_cts.Token));
             InstallEventHooks();
         }
@@ -470,7 +520,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
         private static void OnEditorQuitting()
         {
-            EditorPrefs.SetBool(AutoConnectPref, false);
             StopListener();
             try { _eventClient?.Dispose(); } catch { }
         }
@@ -507,7 +556,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 // Health check — no main-thread dispatch needed
                 if (req.HttpMethod == "GET" && req.Url.AbsolutePath == "/health")
                 {
-                    var body = Encoding.UTF8.GetBytes("{\"status\":\"ok\",\"protocol\":\"json-rpc-2.0\"}");
+                    // Identifies which Editor answers, so a port mix-up between projects is visible.
+                    var health = new JObject
+                    {
+                        ["status"] = "ok",
+                        ["protocol"] = "json-rpc-2.0",
+                        ["project"] = _projectPath,
+                        ["listenerPort"] = _boundPort,
+                        ["eventPort"] = _eventPort
+                    };
+                    var body = Encoding.UTF8.GetBytes(health.ToString(Formatting.None));
                     resp.StatusCode = 200;
                     resp.ContentType = "application/json";
                     resp.ContentLength64 = body.Length;

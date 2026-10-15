@@ -68,7 +68,9 @@ Install both the Unity package and the Python MCP server:
 
 4. In Unity, open **Tools > Unity Semantic Bridge > Start HTTP Listener**, then
    start or reconnect your MCP client. The client launches Python over stdio;
-   Python connects to Unity on port 1073.
+   Python connects to Unity on port 1073 by default. To run the bridge in several
+   Editors at once, give each project its own ports; see
+   [several Unity projects at once](docs/installation.md#several-unity-projects-at-once).
 
 Commit both `Packages/manifest.json` and `Packages/packages-lock.json` to share
 the installation. Keep your MCP client's local clone path out of shared settings.

@@ -131,9 +131,33 @@ at Unity's generated `Library/PackageCache` directory.
 
 The agent launches Python over **stdio**; Python POSTs JSON-RPC to Unity at
 `http://127.0.0.1:1073/rpc`. Unity sends events to Python at
-`http://127.0.0.1:1074/rpc`. The Unity `/rpc` URL is a downstream connection, **not
+`http://127.0.0.1:1074/rpc`. These are the default ports; see
+[Several Unity projects at once](#several-unity-projects-at-once). The Unity `/rpc` URL is a downstream connection, **not
 an MCP server URL**. In Unity, open **Tools > Unity Semantic Bridge** and click
 **Start HTTP Listener**. Health check: `GET http://127.0.0.1:1073/health`.
+
+#### Several Unity projects at once
+
+Each Unity project stores its own pair of ports in
+`UserSettings/UnitySemanticBridgeSettings.asset` (per user, not committed), so two
+Editors can run the bridge at the same time. Give every concurrently open project
+a different pair and register one MCP server per project with the same ports:
+
+1. In the second project, open **Tools > Unity Semantic Bridge**, set **Listener
+   port** and **Event port** (for example 1075 and 1076), and click **Apply**. A
+   running listener restarts on the new port.
+2. Register a server for that project with matching arguments:
+
+   ```sh
+   codex mcp add unity-ap -- uv --directory "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge" run main.py --unity-port 1075 --event-port 1076
+   ```
+
+The server also reads `USB_UNITY_PORT` and `USB_EVENT_PORT` when no arguments are
+given; prefer arguments, since an `.env` in the clone is shared by every project
+using it. `GET http://127.0.0.1:<listener port>/health` reports which project
+answers, which helps when the ports of two projects are swapped. The listener's
+auto-start after domain reloads is per Editor session and is not shared between
+projects.
 Core tools do not require an LLM API key; optional lighting diagnostics use the
 provider settings documented in [`mcp-editor-bridge/LightingAgent/README.md`](../mcp-editor-bridge/LightingAgent/README.md).
 

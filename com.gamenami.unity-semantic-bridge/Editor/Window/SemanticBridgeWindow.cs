@@ -58,6 +58,37 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 if (GUILayout.Button("Stop Listener")) EditorBridge.ManualDisconnect();
             }
             EditorGUILayout.EndHorizontal();
+            DrawPortSettings();
+        }
+
+        private int? _listenerPortEdit, _eventPortEdit;
+        private string _portError;
+
+        private void DrawPortSettings()
+        {
+            var settings = BridgeSettings.instance;
+            EditorGUILayout.BeginHorizontal();
+            _listenerPortEdit = EditorGUILayout.IntField("Listener port", _listenerPortEdit ?? settings.ListenerPort);
+            _eventPortEdit = EditorGUILayout.IntField("Event port", _eventPortEdit ?? settings.EventPort);
+            var changed = _listenerPortEdit != settings.ListenerPort || _eventPortEdit != settings.EventPort;
+            using (new EditorGUI.DisabledScope(!changed))
+            {
+                if (GUILayout.Button("Apply", GUILayout.Width(60)))
+                {
+                    _portError = EditorBridge.SetPorts(_listenerPortEdit.Value, _eventPortEdit.Value);
+                    if (_portError == null) _listenerPortEdit = _eventPortEdit = null;
+                    GUI.FocusControl(null);
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (_portError != null)
+                EditorGUILayout.HelpBox(_portError, MessageType.Error);
+            if (EditorBridge.LastStartError != null && !EditorBridge.IsConnected)
+                EditorGUILayout.HelpBox(EditorBridge.LastStartError, MessageType.Error);
+            if (settings.ListenerPort != BridgeSettings.DefaultListenerPort || settings.EventPort != BridgeSettings.DefaultEventPort)
+                EditorGUILayout.HelpBox("Start this project's MCP server with: " +
+                    $"--unity-port {settings.ListenerPort} --event-port {settings.EventPort}", MessageType.None);
         }
         
         private void DrawEditorContent()

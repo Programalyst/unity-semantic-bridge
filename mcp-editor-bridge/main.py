@@ -1,11 +1,13 @@
 import asyncio
 import logging
+import os
+import sys
 from fastmcp import FastMCP
 
 from mcp_tools import register_unity_tools
 from events import event_server
 from events.event_handlers import register_event_handlers
-from state_manager import app_state
+from state_manager import app_state, resolve_ports
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -34,8 +36,8 @@ async def run_servers():
     # makes it possible for events recieved to be put on a shared queue/state
     event_server.set_main_loop(asyncio.get_running_loop())
 
-    # Unity hosts the HTTP server at 127.0.0.1:1073/rpc (JSON-RPC 2.0).
-    # Python also hosts a JSON-RPC event server at 127.0.0.1:1074/rpc so Unity
+    # Unity hosts the HTTP server at 127.0.0.1:<unity port>/rpc (JSON-RPC 2.0).
+    # Python also hosts a JSON-RPC event server at 127.0.0.1:<event port>/rpc so Unity
     # can push notifications (hierarchy/selection/play-mode changes etc.).
     event_server.start_event_server()
     logging.info(f"🚀 UnitySemanticBridge MCP server starting (Unity RPC at {app_state.unity_rpc_url}, Python events at {app_state.python_event_url})...")
@@ -44,4 +46,8 @@ async def run_servers():
     event_server.stop_event_server()
 
 if __name__ == "__main__":
+    try:
+        app_state.configure_ports(*resolve_ports(sys.argv[1:], os.environ))
+    except ValueError as e:
+        sys.exit(f"mcp-editor-bridge: {e}")
     asyncio.run(run_servers())

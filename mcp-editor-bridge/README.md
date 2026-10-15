@@ -12,6 +12,7 @@ Bridge uses JSON-RPC 2.0 over HTTP.
 
 - Python -> Unity: `POST http://127.0.0.1:1073/rpc` with `{"jsonrpc":"2.0","id":"...","method":"...","params":{...}}` -> `{"jsonrpc":"2.0","id":"...","result":"..."}`.
 - Unity -> Python events: `POST http://127.0.0.1:1074/rpc` with JSON-RPC notifications/requests (e.g. `{"jsonrpc":"2.0","method":"unity/hierarchyChanged","params":{...}}`). Handled by `event_server.py` (health: `GET /health` on both ends).
+- Ports default to 1073 (Unity) and 1074 (events). Override them per project with `main.py --unity-port N --event-port M` (or `USB_UNITY_PORT`/`USB_EVENT_PORT`), matching the project's ports in **Tools > Unity Semantic Bridge**. See [several Unity projects at once](../docs/installation.md#several-unity-projects-at-once).
 
 ## Refreshing external file edits
 

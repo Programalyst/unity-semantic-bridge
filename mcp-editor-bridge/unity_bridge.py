@@ -9,7 +9,7 @@ Unity -> Python (response):
 
 All calls use ``call_unity`` and are acknowledged — notifications are not
 used. Unity events (Unity -> Python) also use ``call_unity``-style requests
-and ``event_server.py`` (127.0.0.1:1074/rpc) acknowledges them.
+and ``event_server.py`` (127.0.0.1:<event port>/rpc, default 1074) acknowledges them.
 """
 import logging
 import json
@@ -23,7 +23,10 @@ from state_manager import app_state
 
 logger = logging.getLogger(__name__)
 
-_UNITY_NOT_CONNECTED_MSG = "Error: Unity Editor is not connected to the bridge. Start the HTTP listener via Tools > Unity Semantic Bridge > Connect."
+def _not_connected_msg() -> str:
+    return (f"Error: Unity Editor is not connected to the bridge at {app_state.unity_rpc_url}. "
+            "Start the HTTP listener via Tools > Unity Semantic Bridge > Start HTTP Listener, and check that the "
+            "project's ports there match this MCP server's --unity-port/--event-port.")
 RECONNECT_GRACE_SECONDS = 25.0
 POLL_INTERVAL = 1.0
 JSONRPC_VERSION = "2.0"
@@ -65,14 +68,14 @@ async def _send_jsonrpc(payload: Dict[str, Any], *, timeout: float = 30.0, retry
                 break
             except httpx.ConnectError:
                 if time.time() >= deadline:
-                    return _UNITY_NOT_CONNECTED_MSG
+                    return _not_connected_msg()
                 await asyncio.sleep(POLL_INTERVAL)
                 continue
             except httpx.TimeoutException:
                 return "Error: Unity timed out responding to the request."
 
         if resp is None:
-            return _UNITY_NOT_CONNECTED_MSG
+            return _not_connected_msg()
 
         if resp.status_code >= 400:
             try:
