@@ -109,7 +109,7 @@ Other facts the design depends on (each tagged with its Phase 0 status):
 **Prerequisite (USB): per-project bridge ports.** Done 2026-10-15 (commit 3110f44); NK on 1073/1074 and AP on 1075/1076 were verified side by side.
 - [x] Store the Unity listener port (default 1073) and the Python event port (default 1074) per project in `UserSettings/`. Show them in the bridge window, and give a clear error when a port is already in use. Make the auto-connect flag per project too (it is in machine-wide `EditorPrefs` today).
 - [x] The Python server takes `--unity-port`/`--event-port` (or environment variables), with today's defaults. Update `docs/installation.md` and the tests that assume 1073.
-- [ ] Register `unity-nk` and `unity-ap` as separate MCP servers.
+- [x] Register a second MCP server for AP. Done 2026-10-15 in the local agent configs (Claude desktop and Codex), which are not in any repo. NK keeps the existing `unity-semantic-bridge` entry on the default ports 1073/1074. `unity-ap` passes `--unity-port 1075 --event-port 1076` and has the same Codex tool approvals.
 
 **Phase 0: Recon close-out (read-only, small).**
 - [x] Write `nuclear-knights/docs/level-rules.md` from §1 (grid, movement, cover, LOS, scene conventions, LevelInfo), and link it from `docs/README.md` reading order.

@@ -146,11 +146,89 @@ a different pair and register one MCP server per project with the same ports:
 1. In the second project, open **Tools > Unity Semantic Bridge**, set **Listener
    port** and **Event port** (for example 1075 and 1076), and click **Apply**. A
    running listener restarts on the new port.
-2. Register a server for that project with matching arguments:
+2. Register the same `main.py` a second time under a new name, with matching
+   arguments (see [Registering one server per project](#registering-one-server-per-project)).
 
-   ```sh
-   codex mcp add unity-ap -- uv --directory "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge" run main.py --unity-port 1075 --event-port 1076
-   ```
+##### Registering one server per project
+
+The server name is only a label in **your agent's MCP configuration**. Unity never
+sees it; the Unity project stores only its ports. Each entry runs the same
+`mcp-editor-bridge/main.py` from the same clone, and its `--unity-port`/`--event-port`
+arguments pick which Editor it talks to. A typical setup:
+
+| Server name | Arguments | Unity project ports |
+|---|---|---|
+| `unity-semantic-bridge` | none (defaults 1073/1074) | defaults, no change needed |
+| `unity-ap` | `--unity-port 1075 --event-port 1076` | set to 1075/1076 in **Tools > Unity Semantic Bridge** |
+
+Keeping the first project on the defaults under the usual name means existing
+sessions, tool names and approvals stay as they are. Name each added server after
+its project. The agent prefixes tool names with the server name (for example
+`mcp__unity-ap__enter_play` in Claude), so the agent and you can tell which Editor
+a call goes to.
+
+**Codex CLI:**
+
+```sh
+codex mcp add unity-ap -- uv --directory "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge" run main.py --unity-port 1075 --event-port 1076
+```
+
+or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.unity-ap]
+command = "uv"
+args = [
+    "--directory",
+    "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge",
+    "run",
+    "main.py",
+    "--unity-port", "1075",
+    "--event-port", "1076",
+]
+```
+
+Per-tool settings such as `[mcp_servers.unity-semantic-bridge.tools.<tool>]`
+`approval_mode` belong to one server name. Copy them under
+`[mcp_servers.unity-ap.tools.<tool>]` if the second server should behave the same.
+
+**Claude Code:**
+
+```sh
+claude mcp add unity-ap -- uv --directory "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge" run main.py --unity-port 1075 --event-port 1076
+```
+
+`claude mcp add` defaults to the local scope, which applies only when Claude Code
+runs in the current directory. Run it in the second project's folder to give that
+project its own server without adding its tools to every other project. Use
+`--scope user` to make it available everywhere.
+
+**JSON clients** (for example the Claude desktop app's
+`claude_desktop_config.json`): add a second entry next to the first:
+
+```json
+{
+    "mcpServers": {
+        "unity-semantic-bridge": {
+            "command": "uv",
+            "args": ["--directory", "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge", "run", "main.py"]
+        },
+        "unity-ap": {
+            "command": "uv",
+            "args": ["--directory", "/absolute/path/to/unity-semantic-bridge/mcp-editor-bridge", "run", "main.py",
+                     "--unity-port", "1075", "--event-port", "1076"]
+        }
+    }
+}
+```
+
+After editing, restart or reload the client so it launches the new server.
+Sessions that see every registered server load both tool sets, which costs context.
+Disable the one a session does not need if your client allows it.
+
+To check the mapping, open `GET http://127.0.0.1:<listener port>/health`: it reports
+the answering project and its ports. Each server also logs its Unity RPC and event
+URLs at startup.
 
 The server also reads `USB_UNITY_PORT` and `USB_EVENT_PORT` when no arguments are
 given; prefer arguments, since an `.env` in the clone is shared by every project
