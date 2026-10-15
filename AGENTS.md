@@ -17,10 +17,18 @@ Muse Code reads this file as project rules when it runs in this directory.
 
 ## Driving Play Mode (agents)
 
+- After editing project files outside Unity, call `refresh_assets`, then poll
+  `get_compilation_status` until it is no longer `PENDING`. Unity does not
+  pick up external edits until its window is focused; `refresh_assets` works
+  while the Editor is in the background. `write_unity_script` imports its own
+  file, so only the polling step applies after it.
 - Always run Editor-driving sessions under `no_throttling` unless the user
   prefers otherwise: check `poll_play_state` → `interactionMode`, and call
   `set_editor_throttling("no_throttling")` first when it is anything else.
-  An unfocused/backgrounded Editor on default throttling can stall
-  main-thread work (transitions, reloads, refreshes) for minutes. Restore the
-  previous mode with `set_editor_throttling("restore")` when done. Timeouts
-  already carry this hint.
+  An unfocused/backgrounded Editor on default throttling can slow
+  main-thread work such as Play Mode transitions. Restore the previous mode
+  with `set_editor_throttling("restore")` when done. Timeouts already carry
+  this hint.
+- Deferred Editor work that an agent waits on must use `EditorTick.Next`
+  (`EditorApplication.update`), not `EditorApplication.delayCall`, which can
+  wait for focus on macOS.

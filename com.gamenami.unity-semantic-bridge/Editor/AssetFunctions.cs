@@ -110,6 +110,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 token = CompileWatcher.BeginWrite();
                 AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
                 AssetDatabase.Refresh();
+                // A background Editor can import the script yet wait for focus before compiling it.
+                if (!EditorApplication.isCompiling)
+                    UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
                 CompileWatcher.CompleteRefresh();
 
                 return $"Wrote {path}. RELOAD_IMMINENT: Compilation triggered (token={token}). Call get_compilation_status to get the result.";

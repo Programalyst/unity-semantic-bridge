@@ -341,8 +341,11 @@ def register_unity_tools(mcp):
 
     @mcp.tool()
     async def refresh_assets() -> str:
-        """Queue AssetDatabase.Refresh on Unity's main thread after external file edits.
+        """Make Unity import files you edited outside it, then compile and reload if scripts changed.
 
+        Call after editing project files with your own tools: Unity does not notice external
+        edits until its window is focused, and this works while the Editor is in the background.
+        Not needed after write_unity_script, which imports its own file.
         No arguments. Returns a token and RELOAD_IMMINENT hint (reload is conditional),
         or BUSY without starting work. Poll get_compilation_status until terminal.
         NO_COMPILATION means no new compiler result, not proof that scripts compile.

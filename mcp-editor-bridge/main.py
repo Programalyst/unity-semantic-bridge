@@ -19,12 +19,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 mcp = FastMCP(
     "UnitySemanticBridge",
     instructions=(
-        "Unity throttles its Editor main thread whenever its window is unfocused, "
-        "which stalls Play Mode transitions, domain reloads, and asset refreshes for minutes. "
-        "Unless the user prefers otherwise, always start any session that drives the Editor "
-        "(enter_play/exit_play, refresh_assets, write_unity_script, invoke_menu_item, invoke_static) "
-        "with set_editor_throttling(\"no_throttling\"), and restore the previous mode with "
-        "set_editor_throttling(\"restore\") when done."
+        "After editing project files outside Unity (scripts, assets, packages), call refresh_assets, "
+        "then poll get_compilation_status until it is no longer PENDING before relying on the new code. "
+        "Unity does not pick up external edits on its own until its window is focused; refresh_assets "
+        "works while the Editor is in the background. write_unity_script imports its own file, so only "
+        "the polling step applies after it. "
+        "Unity also throttles an unfocused Editor's main thread, which can slow Play Mode transitions "
+        "and other Editor-driving work. Unless the user prefers otherwise, start any session that drives "
+        "the Editor (enter_play/exit_play, refresh_assets, write_unity_script, invoke_menu_item, "
+        "invoke_static) with set_editor_throttling(\"no_throttling\"), and restore the previous mode "
+        "with set_editor_throttling(\"restore\") when done."
     ),
 )
 register_unity_tools(mcp)
