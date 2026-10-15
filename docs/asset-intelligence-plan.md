@@ -132,7 +132,7 @@ Other facts the design depends on (each tagged with its Phase 0 status):
   - The `LevelInfo` reference moved from `CharacterLoader` to `GridManager` in GridBattle (one serialized reference; no authored content changed).
   - The baker sorts overlapping obstacles by hierarchy path for a deterministic "last wins", reports each such cell (`MULTI`), and reports obstacles without a Rigidbody (`NO_RIGIDBODY`). It also skips colliders on layers that ignore Grid Tiles.
   - `PathNode.IsObstructed` was renamed `IsOccupied` after Phase 1 (NK d14e1ff0); this plan uses the new name throughout.
-  - The AP, firing-position and bug-range harnesses build maps with `IsOccupied` only, so they don't exercise the corner rule. `GridPathValidation` covers it.
+  - The AP, firing-position and bug-range harnesses first built their walls with `IsOccupied` only, so they didn't exercise the corner rule. A follow-up marks those walls as obstacles too (NK 34a6ee81); the AP wall detour now costs six tiles instead of four.
 
 **Phase 2: Layout model, compile, bake and the test scene.**
 - [ ] USB `Runtime/Layout/`: schema, parser, pure grid model, and `IGridRulesAdapter`.
