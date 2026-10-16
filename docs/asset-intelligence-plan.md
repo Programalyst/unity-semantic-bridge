@@ -167,11 +167,11 @@ Other facts the design depends on (each tagged with its Phase 0 status):
 - [x] Consistency: every blocking cell has a collider, and every Default/Stencil collider inside the board is either a layout blocker or flagged as a "sight blocker without obstacle".
 - [x] Reachability: BFS with the game's (fixed) neighbour rule from deploy cells, covering all enemy spawns, sealed pockets and unreachable open cells.
 - [x] Encounter: spawns not on blocked cells, spawns inside bounds, facing sanity.
-- [ ] Plausibility: road continuity in the ground layer, building fronts facing open or road cells. *Moved after Phase 4* (needs catalog roles).
-- [ ] Scale: every placed piece uses its card's `placementScale` (or a declared per-piece exception), and its height falls in its role's range from `level-rules.md` (§3 *Piece scale*); report the measured height and a suggested scale. *Moved after Phase 4* (needs cards).
+- [ ] Plausibility: road continuity in the ground layer, building fronts facing open or road cells. *Moved to Phase 4d* (needs catalog roles).
+- [ ] Scale: every placed piece uses its card's `placementScale` (or a declared per-piece exception), and its height falls in its role's range from `level-rules.md` (§3 *Piece scale*); report the measured height and a suggested scale. *Moved to Phase 4d* (needs cards).
 - [x] Fixtures: a bake of GridBattle (should pass; the Windmill is on the playable grid by design) plus deliberately broken JSON fixtures.
 - [x] Tests: the pure validators in USB `Runtime/Layout/` get NUnit tests in `USB:Tests/Editor/`, run through `TestProject`. NK-side checks stay menu-item harnesses (decision D8).
-- Exit: cell-addressed reports, and all fixtures behave as expected. **Done 2026-10-16** (plausibility and scale excepted, as scoped). How the validators work: [grid-layouts.md](grid-layouts.md#validators). USB: `LayoutValidator`/`LayoutReport` (pure) and `LayoutSceneValidator` (Editor, physics tier); 49 NUnit tests (`LayoutModelTests`, `LayoutValidatorTests` with 17 broken-layout fixtures) pass. NK: **Validate Layout Reports** (37 checks: applied LayoutTest gives a clean report; four broken JSON fixtures in `docs/fixtures/layouts/` report exactly their expected lines; GridBattle's report equals `docs/fixtures/gridbattle-layout-report.txt`), **Validate Layout Round Trip** (2,049, now with enemy spawns and a refused-spawn revert) and Validate Layout Baker (21) passed via `invoke_menu_item`. A live `bake_layout` of LayoutTest equals its JSON with no issues. In LayoutTest Play Mode a temporary probe (since removed) found 26 obstacle cells and cover equal to the layout on all 144 cells, and both raiders on their cells with their facings.
+- Exit: cell-addressed reports, and all fixtures behave as expected. **Done 2026-10-16** (plausibility and scale moved to Phase 4d, as scoped). How the validators work: [grid-layouts.md](grid-layouts.md#validators). USB: `LayoutValidator`/`LayoutReport` (pure) and `LayoutSceneValidator` (Editor, physics tier); 49 NUnit tests (`LayoutModelTests`, `LayoutValidatorTests` with 17 broken-layout fixtures) pass. NK: **Validate Layout Reports** (37 checks: applied LayoutTest gives a clean report; four broken JSON fixtures in `docs/fixtures/layouts/` report exactly their expected lines; GridBattle's report equals `docs/fixtures/gridbattle-layout-report.txt`), **Validate Layout Round Trip** (2,049, now with enemy spawns and a refused-spawn revert) and Validate Layout Baker (21) passed via `invoke_menu_item`. A live `bake_layout` of LayoutTest equals its JSON with no issues. In LayoutTest Play Mode a temporary probe (since removed) found 26 obstacle cells and cover equal to the layout on all 144 cells, and both raiders on their cells with their facings.
 - Notes for later phases:
   - Reports are `CODE x,y message` lines with Error/Warning severity, errors first, capped at 40 lines by default, with an optional ASCII map (`A` deploy, `E` enemy, `-` unreachable). Warnings: `POCKET`, `FACING_OFF_AXIS`, `SIGHT_NO_OBSTACLE`, `DECOR_OUT_OF_BOUNDS`.
   - Levels store no spawn ids, so a bake names spawns `enemy1`, `enemy2`, … and `LayoutDocument.Diff` compares spawns by order, ignoring ids. Facing is a number in the JSON (no snapping); the encounter check wants 0–359 and warns off the eight grid directions.
@@ -181,13 +181,27 @@ Other facts the design depends on (each tagged with its Phase 0 status):
   - A apply that throws after touching the scene (e.g. the adapter refusing a spawn GUID of the wrong type) now destroys its new root and reverts its Undo group.
   - The temporary-scene setup for NK harnesses is shared (`LayoutHarnessScene`).
 
-**Phase 4: Level catalog (runs in AP; can start alongside Phase 1).**
-- [ ] Extend `AssetCatalogGenerator`/`AssetCatalogRunner` with the card fields and the `level-catalog.json` output, reusing the batching and thumbnail pumping. Tests go in `USB:Tests/Editor/`.
-- [ ] Scan both PolygonApocalypse and PolygonApocalypseWasteland. Heuristics plus an overrides file. Hand-review the top ~60 candidate pieces for the slice, including the road/sidewalk kit and 2–3 storey buildings.
-- [ ] Scale gallery for that review (§3 *Piece scale*): a disposable generated scene in NK (no new Editor UI) with each candidate on the grid beside a soldier, captured top-down and from the side. The owner's approved scales go into the overrides file as `placementScale`. Seed suggestions from instance scales in the owner's hand-made scenes and from the role height ranges.
+**Phase 4: Level catalog (runs in AP; can start alongside Phase 1).** Split on 2026-10-16 into three sessions plus a follow-up, because it spans a third project and two steps wait on the owner. Each part has its own exit.
+
+*4a: Catalog code (USB, run in AP; no owner review needed).*
+- [ ] Extend `AssetCatalogGenerator`/`AssetCatalogRunner` with the card fields (§3 *Catalog cards*: renderer and collider bounds in root space, root rotation, role, cover, `placementScale`) and the `level-catalog.json` output, reusing the batching and thumbnail pumping. Tests go in `USB:Tests/Editor/`.
+- [ ] Role detection in the order of §3: overrides file, then name/folder heuristics, then geometry. Define the overrides file format (role, cover, `placementScale`, per-piece exceptions).
+- Exit: the generator writes cards for a sample of AP prefabs, footprints computed on request match hand measurements (Wall SF, a Wasteland barrier), and the tests pass.
+
+*4b: Scan and review (AP + NK; mostly the owner's time).*
+- [ ] Scan both PolygonApocalypse and PolygonApocalypseWasteland. Shortlist the top ~60 candidate pieces for the slice, including the road/sidewalk kit and 2–3 storey buildings.
+- [ ] Scale gallery for that review (§3 *Piece scale*): a disposable generated scene in NK (no new Editor UI) with each candidate on the grid beside a soldier, captured top-down and from the side. Seed suggested scales from instance scales in the owner's hand-made scenes and from the role height ranges.
+- [ ] **Owner review:** the owner approves pieces and scales. Approved scales go into the overrides file as `placementScale`.
 - [ ] Add the role height ranges to NK `level-rules.md` once the owner confirms them.
-- [ ] Apply and bake read `placementScale` from the cards instead of using the prefab's own scale (and the measured-footprint stopgap from Phase 2 goes away).
+- Exit: the overrides file holds an approved `placementScale` and role for every shortlisted piece, and `level-rules.md` has the confirmed height ranges.
+
+*4c: Wire-up (USB + NK).*
+- [ ] Apply and bake read `placementScale` and footprints from the cards instead of using the prefab's own scale (and the measured-footprint stopgap from Phase 2 goes away).
 - [ ] Export the chosen pieces as a `.unitypackage` into NK `Assets/3rd Party/…`, keeping GUIDs.
+- Exit: LayoutTest still round-trips, Validate Layout Reports and Round Trip pass, and a layout using a few exported pieces applies and validates cleanly.
+
+*4d: Deferred Phase 3 validators (after 4c).*
+- [ ] The plausibility and scale validators from Phase 3, now that cards supply roles, `placementScale` and height ranges.
 
 **Phase 5: MCP tools.**
 - [ ] `query_level_catalog` (filter by role and footprint, compact rows).
@@ -241,4 +255,4 @@ A 12×12 board in the new `LayoutTest` scene (`gridSize` 12×12):
 6. `LayoutTest` runs, with units pathing around the new pieces (runtime occupancy assertion green).
 7. A top-down render and a metrics report are produced.
 
-Suggested session sizing: the USB port prerequisite is one short session, Phase 0 + 1 is one session in NK, Phase 4 is one in AP, Phase 2 is one to two in NK + USB, and Phase 3 + 5 is one to two.
+Suggested session sizing: the USB port prerequisite is one short session, Phase 0 + 1 is one session in NK, Phase 2 is one to two in NK + USB, and Phase 3 + 5 is one to two. Phase 4 was sized as one session in AP; as of 2026-10-16 it is three (4a catalog code, 4b scan and owner review, 4c wire-up), with 4d as a short follow-up.
