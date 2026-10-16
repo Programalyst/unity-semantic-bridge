@@ -52,7 +52,7 @@ Other facts the design depends on (each tagged with its Phase 0 status):
   - The Wasteland pack is mostly whole buildings (Shack, Building, Tower, Garage). It also has wall chunks, fences, barriers, tyre barriers and sandbags (AP; not rechecked).
   - The **modular road, sidewalk and crossing kit is in PolygonApocalypse**, which exists only in AP, not in NK.
   - **Corrected:** NK's 22 MB `3rd Party/PolygonApocalypseWasteland` subset (694 MB in AP) holds only `SM_Prop_Barrier_01`–`08`, `SM_Bld_Tower_09`/`10`, `SM_Prop_Windmill_01`, a skydome and a few character attachments. It has **no wall chunks, sandbags, fences or tyre barriers**, so those come from AP via the D1 export.
-  - Measured sizes (root scale applied; full numbers in `level-rules.md`): Wasteland barriers are 3.22–3.27 m long (Barrier_04 is 2.10 m), 1.11–1.46 m high and 0.69–0.92 m deep, with MeshColliders and no `GridObstacle`. Tower_09 is 1.6 × 7.2 × 1.6 m and Tower_10 is 5.1 × 6.4 × 4.6 m. None of these divide evenly into 2 m cells: a 3.26 m barrier spans two cells with about 0.7 m of overhang. The 2.5 m/5 m modular snap still needs checking on AP's wall and road kit in Phase 4. **Open question:** whether Wasteland pieces work at their default scale or need per-piece scale adjustments is undecided. Settle it in the Phase 4 hand review by placing candidates on the grid; the cards already allow a placement scale.
+  - Measured sizes (root scale applied; full numbers in `level-rules.md`): Wasteland barriers are 3.22–3.27 m long (Barrier_04 is 2.10 m), 1.11–1.46 m high and 0.69–0.92 m deep, with MeshColliders and no `GridObstacle`. Tower_09 is 1.6 × 7.2 × 1.6 m and Tower_10 is 5.1 × 6.4 × 4.6 m. None of these divide evenly into 2 m cells: a 3.26 m barrier spans two cells with about 0.7 m of overhang. The 2.5 m/5 m modular snap still needs checking on AP's wall and road kit in Phase 4. **Approach decided (2026-10-15, after Phase 2):** each piece's scale is settled once, in the Phase 4 gallery review, and stored on its card as `placementScale`; layouts reuse it (see §3 *Piece scale*).
   - NK's own walls are scaled prefab variants. Wall SF's prefab scale is (1.65, 2.5, 2), giving a 3.91 × 3.79 × 1.79 m visual and a 3.91 × 3.63 × 1.0 m collider. Wall SF (half) is (1.65, 0.75, 1), giving a 3.91 × 1.14 × 0.90 m visual and a 3.80 × 1.05 × 0.70 m collider. GridBattle overrides both scales. The visual is thicker than the collider, so cards need both bounds.
 
 ## 2. What changes in the approach
@@ -97,10 +97,19 @@ Other facts the design depends on (each tagged with its Phase 0 status):
   - `visualBounds` and `colliderBounds` (meters at scale 1; `colliderBounds` is null when the prefab has none), `pivotOffset`, `height`, `storeys` (buildings)
   - a `skewed` flag when a child has a non-90° rotation, because the box then overstates the size
   - `levelRole`: `blocker|cover_half|cover_full|ground|decor|building|unknown`
+  - `placementScale` (the approved root scale for layouts; defaults to the prefab root's own scale until reviewed) and `rootRotation` (layout rotations are quarter turns on top of it)
 
-  Footprint cells and fit error are **computed on request** from the card, the cell size and a placement scale, not stored. One card then serves any cell size or per-piece scale.
+  Footprint cells and fit error are **computed on request** from the card, the cell size and its `placementScale` (or a per-piece exception), not stored. One card then serves any cell size or scale.
 
   Detection order is overrides file, then name/folder heuristics (`Wall`, `Barrier`, `Sandbag`, `Fence`, `Road`, `Sidewalk`, `Bld_`), then geometry (height < 1.2 m → half cover, ≥ 2 m → full), then vision on the thumbnail only for leftover `unknown` entries. Cards go into a separate `level-catalog.json` keyed by GUID so the 12 MB character catalog doesn't grow, and are filtered to level roles.
+- **Piece scale.** Settle each piece's scale once, at catalog time, and make every layout reuse it; adjusting scale per level, by inspecting each generated scene, does not scale. Phase 2 showed why: compile places prefabs at their authored scale, and NK's walls came out taller and lower than the owner's GridBattle walls, whose real scale lived only in scene overrides.
+  - **Gallery review.** "Gallery" means a disposable, generated NK scene (not an Editor window or a separate tool): a small script lays the candidates out in a row on the grid, each beside a soldier for scale, built with the same compile machinery as `LayoutTest`. The agent captures it top-down and from the side (`get_screenshot`, later `render_layout_topdown`), and the owner reviews the captures or opens the scene in the normal Scene view. The owner approves or adjusts it once; the result goes into the overrides file as `placementScale`.
+  - **Compile and bake use the card.** Compile instantiates at `placementScale` and measures footprints at that scale; bake accepts instances whose scale equals their card's and reports anything else (today: the prefab's scale).
+  - **Heights follow the rules.** Height decides cover and sight, so `level-rules.md` gets a target range per role, e.g. half cover about 0.9–1.2 m (shoot over it crouched), full cover 2 m or more (blocks sight). The Phase 3 scale validator flags pieces outside their role's range, and the agent proposes a scale instead of the owner spotting it.
+  - **What may be scaled how.** Props scale uniformly to a sensible cell fit. Wall and other modular runs may scale per axis: length to a whole number of cells, height to the cover class. Buildings keep their pack scale unless they look wrong next to a soldier.
+  - **Hand-made scenes are the reference.** Instance scales the owner chose in hand-made scenes (GridBattle's walls) are recorded preferences; the agent reads them and seeds card overrides from them, as Phase 2 did for Wall SF.
+  - **Per-piece scale in the layout JSON is a rare exception** (an optional sixth field for a one-off feature such as a large rock), not the default, so a piece looks the same in every level and drafts stay small.
+  - **Feedback loop.** A request like "walls too tall" becomes a card override change plus a recompile of the levels that use the piece. Hand edits to generated objects are lost on the next compile; the bake already reports them as off-scale, and a later convenience can offer to copy such a tweak onto the card.
 - **Sockets.** Reduced to a building `front` direction (door side) and wall-run `ends`. Name heuristics find door children; otherwise the override file supplies them. They matter only for the plausibility checks.
 - **Token efficiency.** Validator reports are capped lists of `code x,y message` lines, with ASCII map dumps (`#` full, `h` half, `.` open, `A/E` spawns, `?` unreachable) on request only.
 
@@ -135,12 +144,22 @@ Other facts the design depends on (each tagged with its Phase 0 status):
   - The AP, firing-position and bug-range harnesses first built their walls with `IsOccupied` only, so they didn't exercise the corner rule. A follow-up marks those walls as obstacles too (NK 34a6ee81); the AP wall detour now costs six tiles instead of four.
 
 **Phase 2: Layout model, compile, bake and the test scene.**
-- [ ] USB `Runtime/Layout/`: schema, parser, pure grid model, and `IGridRulesAdapter`.
-- [ ] NK adapter `NkGridRules.cs`.
-- [ ] USB Editor `LayoutCompiler`: instantiates by GUID under a `[Generated Layout]` root, applies rotation and pivot offset, fits colliders inside footprints, calls the adapter's piece hook, and makes it all one Undo group. Recompiling clears the root only.
-- [ ] `bake_layout`: reads a scene's obstacles (hand-made or compiled) back into layout JSON. Off-grid items are reported, not silently snapped.
-- [ ] **New test scene `LayoutTest.unity`** (decision D6), with its own `LevelInfo`: a copy of GridBattle's managers, cameras and UI, and an empty board. GridBattle itself is left alone.
-- Exit: compile → bake round-trips, and a Play Mode assertion in `LayoutTest` confirms runtime occupancy equals the layout.
+- [x] USB `Runtime/Layout/`: schema, parser, pure grid model, and `IGridRulesAdapter`.
+- [x] NK adapter `NkGridRules.cs`.
+- [x] USB Editor `LayoutCompiler`: instantiates by GUID under a `[Generated Layout]` root, applies rotation and pivot offset, fits colliders inside footprints, calls the adapter's piece hook, and makes it all one Undo group. Recompiling clears the root only.
+- [x] `bake_layout`: reads a scene's obstacles (hand-made or compiled) back into layout JSON. Off-grid items are reported, not silently snapped.
+- [x] **New test scene `LayoutTest.unity`** (decision D6), with its own `LevelInfo`: a copy of GridBattle's managers, cameras and UI, and an empty board. GridBattle itself is left alone.
+- Exit: compile → bake round-trips, and a Play Mode assertion in `LayoutTest` confirms runtime occupancy equals the layout. **Done 2026-10-15** (USB e809fcc, NK 9dae1d2d). How it works, with a USB-versus-game flow diagram: [grid-layouts.md](grid-layouts.md). USB: 21 `LayoutModelTests` (NUnit, `TestProject`) and the `bake_layout` MCP tool. NK: **Validate Layout Round Trip** (2,042 checks: USB's neighbour rule equals `GridMap` on 25 seeded maps; `LayoutTest.layout.json` compiles and bakes back identically, with the game's occupancy bake equal to the layout on every cell including cover; recompile/Undo; off-grid walls reported) and Validate Layout Baker (21) passed via `invoke_menu_item`. In `LayoutTest` Play Mode a temporary probe (since removed) found runtime `HasObstacle`, tile obstacle cover and per-side cover equal to the layout on all 144 cells (26 obstacle cells).
+- Notes for later phases:
+  - **Footprints** are measured on the instance (blocking-collider bounds in the piece's quarter-turn frame, all scales applied, rounded up to whole cells after a 5 cm tolerance) until Phase 4 cards exist. The first pieces are NK's Wall SF, Wall SF (half) and the Grid Crystal Patch.
+  - **Rotation is relative to the prefab root's own rotation**: rot 0 places the prefab as authored. Wall SF's root is already turned 90°, so at rot 0 it runs along grid y. Cards should record the root rotation too.
+  - The adapter is pure data plus hooks: `GridRules` (cell size, 8-way, no corner-cutting, orthogonal cover) feeds the pure `LayoutGrid`; `TryGetBoard`, `CellToWorld`/`WorldToCell`, `SightLayers`/`IgnoredBySight`, `IsBlockingCollider`, `Classify`, `DescribeCover`, `ConfigurePiece`, `BakeOccupancy` and deploy read/write cover the rest. `SightLayers`/`IgnoredBySight` are declared but unused until the Phase 3 physics tier.
+  - NK's `OccupancyBaker` moved out of `Editor/` (same GUID) because `NkGridRules` lives in Assembly-CSharp. `GridObstacle.Configure` was added for the compile hook on prefabs without a `GridObstacle` (cover from height: below 1.2 m Half, else Full).
+  - Compile fits only axis-aligned `BoxCollider`s; other blocking colliders that reach past their footprint are reported (`FIT_UNSUPPORTED`). It does not yet check that a collider touches every footprint cell; the round-trip occupancy diff catches that.
+  - `compile_layout` is an Editor API (`LayoutCompiler.Compile`) for now; the MCP tool is Phase 5. `bake_layout` is already an MCP tool (optional `path` writes the JSON).
+  - A GridBattle bake keeps only the Grid Crystal Patch (10,4) and reports the two walls (scene scale ≠ prefab), the windmill (0.5 m off-grid) and the scaled rock sets, with their eight blocked cells as occupancy differences. That is the expected "report, don't snap" behaviour; Phase 3's GridBattle fixture should account for it.
+  - D5 is still unconfirmed; Phase 2 didn't depend on it.
+  - Pieces use the prefab's own scale. After testing LayoutTest, the owner found the compiled walls too tall/low next to GridBattle, so NK's Wall SF prefab became (1.65, 2, 1.5) and Wall SF (half) (1.65, 0.8, 1), GridBattle's instance values (GridBattle overrides them, so it is unchanged). §1's prefab measurements predate this. From Phase 4 on, scale comes from the cards' `placementScale` (§3 *Piece scale*). NK's **Tools → Grid Combat → Compile LayoutTest Layout** recompiles the test scene from its JSON.
 
 **Phase 3: Validators.**
 - [ ] Structural: bounds, overlap, footprint fit error, one blocker per cell, every piece on integer cells.
@@ -148,6 +167,7 @@ Other facts the design depends on (each tagged with its Phase 0 status):
 - [ ] Reachability: BFS with the game's (fixed) neighbour rule from deploy cells, covering all enemy spawns, sealed pockets and unreachable open cells.
 - [ ] Encounter: spawns not on blocked cells, spawns inside bounds, facing sanity.
 - [ ] Plausibility: road continuity in the ground layer, building fronts facing open or road cells.
+- [ ] Scale: every placed piece uses its card's `placementScale` (or a declared per-piece exception), and its height falls in its role's range from `level-rules.md` (§3 *Piece scale*); report the measured height and a suggested scale.
 - [ ] Fixtures: a bake of GridBattle (should pass; the Windmill is on the playable grid by design) plus deliberately broken JSON fixtures.
 - [ ] Tests: the pure validators in USB `Runtime/Layout/` get NUnit tests in `USB:Tests/Editor/`, run through `TestProject`. NK-side checks stay menu-item harnesses (decision D8).
 - Exit: cell-addressed reports, and all fixtures behave as expected.
@@ -155,6 +175,9 @@ Other facts the design depends on (each tagged with its Phase 0 status):
 **Phase 4: Level catalog (runs in AP; can start alongside Phase 1).**
 - [ ] Extend `AssetCatalogGenerator`/`AssetCatalogRunner` with the card fields and the `level-catalog.json` output, reusing the batching and thumbnail pumping. Tests go in `USB:Tests/Editor/`.
 - [ ] Scan both PolygonApocalypse and PolygonApocalypseWasteland. Heuristics plus an overrides file. Hand-review the top ~60 candidate pieces for the slice, including the road/sidewalk kit and 2–3 storey buildings.
+- [ ] Scale gallery for that review (§3 *Piece scale*): a disposable generated scene in NK (no new Editor UI) with each candidate on the grid beside a soldier, captured top-down and from the side. The owner's approved scales go into the overrides file as `placementScale`. Seed suggestions from instance scales in the owner's hand-made scenes and from the role height ranges.
+- [ ] Add the role height ranges to NK `level-rules.md` once the owner confirms them.
+- [ ] Compile and bake read `placementScale` from the cards instead of using the prefab's own scale (and the measured-footprint stopgap from Phase 2 goes away).
 - [ ] Export the chosen pieces as a `.unitypackage` into NK `Assets/3rd Party/…`, keeping GUIDs.
 
 **Phase 5: MCP tools.**
@@ -168,7 +191,7 @@ Other facts the design depends on (each tagged with its Phase 0 status):
 - [ ] Metrics: cover density near enemy spawns, sightline length histogram (grid LOS), count of distinct flanking routes (edge-disjoint paths), open-ground crossings, deploy-to-enemy distance, and side symmetry.
 - [ ] Calibrate on GridBattle and one or two maps you author.
 - [ ] Later (larger maps): `GridManager` loads the per-level grid bake instead of relying on triggers (§2 item 2).
-- [ ] `SKILL.md` playbook: plan ASCII, then JSON, then validate, then revise, then compile, then render, then report.
+- [ ] `SKILL.md` playbook: plan ASCII, then JSON, then validate, then revise, then compile, then render, then report. Scale or size feedback on a piece goes into its card override followed by a recompile, never into the generated objects.
 
 **Phase 7 (optional): bot playtests.** Run the existing `EnemyManager` AI against a scripted ally policy and record turns-to-contact and stalemates.
 
