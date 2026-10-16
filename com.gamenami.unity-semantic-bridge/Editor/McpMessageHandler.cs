@@ -231,6 +231,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = ModelInspectionFunctions.InspectModelAsset(mcpMessage);
                         break;
 
+                    case "bake_layout":
+                        resultText = Layout.LayoutTools.BakeLayout(mcpMessage);
+                        break;
+
                     case "generate_asset_catalog":
                         resultText = AssetCatalogGenerator.GenerateAssetCatalog(mcpMessage);
                         break;

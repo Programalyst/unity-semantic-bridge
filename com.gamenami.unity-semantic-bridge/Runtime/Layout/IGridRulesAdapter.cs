@@ -1,0 +1,78 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace Gamenami.UnitySemanticBridge.Layout
+{
+    /// <summary>The board a scene's level defines.</summary>
+    public sealed class GridBoard
+    {
+        public int Width;
+        public int Height;
+        /// <summary>World Y that pieces stand on.</summary>
+        public float FloorY;
+        /// <summary>The asset or component holding the level's settings (deploy cells); recorded for Undo.</summary>
+        public Object LevelOwner;
+    }
+
+    public enum PieceRole
+    {
+        /// <summary>Not part of the layout (managers, cameras, UI, units, lights).</summary>
+        Ignore,
+        /// <summary>Blocks movement and may give cover.</summary>
+        Blocker,
+        /// <summary>Visual or ground piece that never blocks.</summary>
+        Decor,
+    }
+
+    /// <summary>
+    /// What a game tells USB about its grid. Implement it once in the game project
+    /// (Assembly-CSharp can, since this assembly is auto-referenced); USB Editor finds
+    /// the single implementation through TypeCache. Implementations need a public
+    /// parameterless constructor.
+    /// </summary>
+    public interface IGridRulesAdapter
+    {
+        /// <summary>Cell size, neighbour rule and cover rule for the pure model.</summary>
+        GridRules Rules { get; }
+
+        /// <summary>Board size and floor height of the level in <paramref name="scene"/>; false with a reason when it has none.</summary>
+        bool TryGetBoard(Scene scene, out GridBoard board, out string error);
+
+        /// <summary>World position of a cell's centre on the floor.</summary>
+        Vector3 CellToWorld(Cell cell, GridBoard board);
+
+        /// <summary>The cell containing a world position (X/Z only).</summary>
+        Cell WorldToCell(Vector3 position);
+
+        /// <summary>Layers whose colliders the game's line-of-sight test hits.</summary>
+        LayerMask SightLayers { get; }
+
+        /// <summary>True for a collider on a sight layer that the game's LOS test still ignores (units, low cover).</summary>
+        bool IgnoredBySight(Collider collider);
+
+        /// <summary>Whether this collider makes the game treat the cells it overlaps as blocked.</summary>
+        bool IsBlockingCollider(Collider collider);
+
+        /// <summary>Whether a scene prefab instance (or prefab contents root) is a layout blocker, decor, or not part of the layout.</summary>
+        PieceRole Classify(GameObject root);
+
+        /// <summary>Cover the piece gives when placed as a blocker.</summary>
+        CoverLevel DescribeCover(GameObject root);
+
+        /// <summary>
+        /// Piece hook, called by the layout compiler on a fresh blocker instance before its
+        /// colliders are fitted: add whatever the game needs for occupancy and cover. After
+        /// the hook, at least one collider must satisfy IsBlockingCollider.
+        /// </summary>
+        void ConfigurePiece(GameObject instance, CoverLevel cover);
+
+        /// <summary>Occupancy as the game would see it at runtime, computed in Edit Mode; issues are report lines.</summary>
+        LayoutGrid BakeOccupancy(Scene scene, List<string> issues);
+
+        IReadOnlyList<Cell> ReadDeployCells(Scene scene);
+
+        /// <summary>Replaces the level's deploy cells. The caller records Undo on GridBoard.LevelOwner and marks it dirty.</summary>
+        void WriteDeployCells(Scene scene, IReadOnlyList<Cell> cells);
+    }
+}

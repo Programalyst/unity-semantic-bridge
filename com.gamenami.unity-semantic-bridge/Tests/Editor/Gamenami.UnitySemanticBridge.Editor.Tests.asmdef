@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "UnitySemanticBridge.Editor",
+        "UnitySemanticBridge.Runtime",
         "UnityEngine.UI",
         "Gamenami.UnitySemanticBridge.TestFixtures"
     ],

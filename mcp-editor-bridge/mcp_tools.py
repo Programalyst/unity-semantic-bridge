@@ -303,6 +303,22 @@ def register_unity_tools(mcp):
         return await call_unity("inspect_model_asset", {"path": path, "include_details": include_details})
 
     @mcp.tool()
+    async def bake_layout(
+        path: Annotated[str | None, "Optional project-relative .json path under Assets/ to also write the layout to, e.g. Assets/Settings/Levels/LayoutTest.layout.json."] = None,
+    ) -> str:
+        """Read the active scene (hand-made or compiled) back into compact layout JSON.
+
+        Needs the game's IGridRulesAdapter. Blocking prefab instances become pieces
+        [localId, prefabGuid, x, y, rot]; other on-board prefab instances become decor;
+        deploy cells come from the level. Off-grid rotation/scale/position, off-board and
+        non-prefab blockers are reported as cell-addressed lines, never snapped. Also lists
+        cells where the layout's footprints disagree with the game's own occupancy bake.
+        Edit Mode only. Without path it changes nothing; with path it writes only that file.
+        """
+        params = {} if path is None else {"path": path}
+        return await call_unity("bake_layout", params)
+
+    @mcp.tool()
     async def find_asset_references(
         asset_path: Annotated[str, "The full project-relative path to the asset, including extension (e.g., 'Assets/Prefabs/Player.prefab')"]
     ) -> str:
