@@ -61,10 +61,10 @@ IDE Agent --(stdio MCP)--> FastMCP Server (Server/main.py) --(WS :8765)--> Edito
 - **MCP→Unity**: `{"action": "...", "request_id": "uuid", ...params}` on WS; Unity replies `{"type":"mcp_response","request_id":"...","content": "string|object"}` (for screenshots the inner `content` holds base64). Correlation via `pending_requests[requestId]` Future + `unity_request_lock` (strictly serial; extra concurrent MCP call gets busy error).
 - **Gameplay loop**: `GameplayAgent` (Play Mode) every ~3 s → `BridgeRelay.Send` → `EditorBridge` (hooked via `BridgeRelay.OnRequestSendToServer`) → WS `gameplay_response` with `{agentActions, sceneJson, b64Image}` → `unity_bridge.processing_lock` (drop if locked) + vision gate → `analyze_gameplay_scene(..., config)` (injected LLM) → `function_call`(s) back to Unity → `AgentCommandRelay` executes click and signals `HandleActionComplete`.
 - **Lighting subagent**: triggered as MCP tool → LangGraph loop with screenshot + Unity tool results as context; produces final report string back to caller via `mcp_response`.
-- **Connection**: single WS `127.0.0.1:8765` (Editor is client). Single-flight on both ends (server lock + Unity `_isProcessing`). Instance IDs invalid across domain reload/recompile — caller must re-call `get_scene_hierarchy`.
+- **Connection**: single WS `127.0.0.1:8765` (Editor is client). Single-flight on both ends (server lock + Unity `_isProcessing`). Instance IDs survive domain reload/recompile and Play Mode but not scene reopen — caller must re-call `get_scene_hierarchy` after a scene change.
 
 ## 5. Limitations / gotchas (from README + code)
-- Instance IDs unstable across recompiles/domain reloads.
+- Instance IDs change when a scene is reopened or reloaded (not on recompile, domain reload, Play Mode or asset reimport). Reimporting the open scene's file reloads it.
 - Single-flight — overlapping MCP calls queue / get busy error.
 - `get_screenshot` Edit Mode only (Scene view); Play Mode uses `ScreenshotTool` path.
 - `FindAssetReferences` actually returns dependencies (`GetDependencies`), not referencers despite name.

@@ -158,7 +158,7 @@ personal absolute package paths. An API key is only needed for
 
 ## Known Limitations (for Agents using this tool to read)
 
-- **Unity instance IDs are not stable across script recompiles or domain reloads.** Any C# change invalidates previously-fetched instance IDs — re-run `get_scene_hierarchy` after recompiling before reusing an ID from an earlier call.
+- **Unity instance IDs last as long as the object, within one Editor session.** Script recompiles, domain reloads, entering or exiting Play Mode and asset reimports (even with changed content) keep them. Reopening or reloading a scene gives its objects new IDs (asset IDs survive), as does deleting and recreating an object. Reimporting the open scene's own file, such as a recursive reimport of its folder, reloads the scene a few seconds later. After a scene change, re-run `get_scene_hierarchy` before reusing an ID from an earlier call. `acquire_editor_references` handles are separate and must be reacquired after any reload.
 - **The Editor connection is single-flight.** Only one MCP request is processed at a time; overlapping calls queue rather than run concurrently, since Unity's Editor-side message handling is inherently serial.
 - **A background Editor may still be slower than a focused one.** `refresh_assets` now refreshes, compiles and reloads in a hidden Editor without refocusing it. Other work can still be throttled by Unity's Interaction Mode: `poll_play_state` reports `interactionMode`, and unless the user prefers otherwise, run Editor-driving sessions under `set_editor_throttling("no_throttling")` and restore it afterwards.
 

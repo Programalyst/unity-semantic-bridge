@@ -181,7 +181,7 @@ Other facts the design depends on (each tagged with its Phase 0 status):
 - **Board size from `LevelInfo` reorders startup.** `GridManager.Awake` must have the level before `CharacterLoader.Start`. Today the level reference lives only on `CharacterLoader`.
 - **Thin ground truth.** There is one prototype map, so "fun" calibration needs maps you author first.
 - **Scale mismatch.** Synty grid metrics may not divide into 2 m cells. Expect per-piece scale overrides (as Wall SF already has), and record them in cards.
-- **Domain reloads** after C# edits invalidate instance IDs and drop the connection. Batch the C# edits per session and refresh once.
+- **Domain reloads** after C# edits drop the connection until the listener restarts (instance IDs survive them). Batch the C# edits per session and refresh once.
 - **NK has no asmdefs.** Putting the adapter interface in USB Runtime avoids touching NK's assembly layout.
 
 ## 6. Decisions (2026-10-15)
