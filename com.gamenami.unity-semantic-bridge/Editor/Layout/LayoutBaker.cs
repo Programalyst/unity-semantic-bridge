@@ -11,8 +11,13 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     {
         public LayoutDocument Document;
         public readonly Dictionary<string, PieceSpec> Specs = new Dictionary<string, PieceSpec>();
-        /// <summary>Scene content the layout cannot express (off-grid, scaled, off-board, not a prefab).</summary>
+        /// <summary>
+        /// Every issue: scene content the layout cannot express (off-grid, scaled, off-board, not a
+        /// prefab, spawns without assets), footprint problems, and the adapter's physics bake issues.
+        /// </summary>
         public readonly List<string> Issues = new List<string>();
+        /// <summary>The adapter's physics bake issues alone (also in Issues).</summary>
+        public readonly List<string> PhysicsIssues = new List<string>();
         /// <summary>Occupancy derived from the baked pieces' footprints.</summary>
         public LayoutGrid Derived;
         /// <summary>Occupancy the game itself would compute (adapter physics bake).</summary>
@@ -32,8 +37,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     }
 
     /// <summary>
-    /// Reads a scene (hand-made or compiled) back into a layout document. Prefab instances
-    /// the adapter classifies as blockers become pieces, the rest decor. Anything that is
+    /// Reads a scene (hand-made or applied) back into a layout document. Prefab instances
+    /// the adapter classifies as blockers become pieces, the rest decor; deploy cells and enemy
+    /// spawns come from the level through the adapter. Anything that is
     /// rotated off a quarter turn, scaled away from its prefab, between cells, off the board
     /// or not a prefab instance is reported, never snapped.
     /// </summary>
@@ -59,6 +65,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                     BakeInstance(candidate, board, adapter, result, ids);
                 }
             ReportLooseBlockers(scene, visited, adapter, result);
+            BakeEnemies(scene, adapter, result, ids);
 
             var buildIssues = new List<LayoutIssue>();
             result.Derived = LayoutGrid.Build(result.Document,
@@ -67,6 +74,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var physicsIssues = new List<string>();
             result.Physics = adapter.BakeOccupancy(scene, physicsIssues);
             result.Issues.AddRange(physicsIssues);
+            result.PhysicsIssues.AddRange(physicsIssues);
             result.OccupancyDiff = result.Derived.DiffOccupancy(result.Physics);
             return result;
         }
@@ -135,7 +143,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var center = instance.transform.position + frame * bounds.Value.Center;
             var halfSpan = new Vector3((size.X - 1) * cellSize * 0.5f, 0f, (size.Y - 1) * cellSize * 0.5f);
             var anchor = adapter.WorldToCell(center - halfSpan);
-            var expected = LayoutCompiler.FootprintCenter(adapter, board, anchor, size);
+            var expected = LayoutApplier.FootprintCenter(adapter, board, anchor, size);
             var offset = new Vector2(center.x - expected.x, center.z - expected.z);
             if (offset.magnitude > PositionTolerance)
             {
@@ -164,6 +172,24 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             else
             {
                 result.Document.Decor.Add(piece);
+            }
+        }
+
+        // Spawns keep the level's order. Levels store no ids, so unnamed spawns become enemy1, enemy2, ...
+        // A spawn without a profile or visual asset cannot be written as JSON; it is reported.
+        private static void BakeEnemies(Scene scene, IGridRulesAdapter adapter, LayoutBakeResult result, HashSet<string> ids)
+        {
+            var spawns = adapter.ReadEnemySpawns(scene);
+            for (var i = 0; i < spawns.Count; i++)
+            {
+                var spawn = spawns[i];
+                var id = UniqueId(string.IsNullOrWhiteSpace(spawn.LocalId) ? $"enemy{i + 1}" : spawn.LocalId, ids);
+                if (string.IsNullOrEmpty(spawn.ProfileGuid) || string.IsNullOrEmpty(spawn.VisualGuid))
+                {
+                    result.Issues.Add($"ENEMY_NO_ASSET {spawn.Cell} {id}: spawn #{i + 1} has no {(string.IsNullOrEmpty(spawn.ProfileGuid) ? "unit profile" : "visual")} asset; left out");
+                    continue;
+                }
+                result.Document.Enemies.Add(new LayoutEnemySpawn(id, spawn.ProfileGuid, spawn.VisualGuid, spawn.Cell, spawn.Facing));
             }
         }
 

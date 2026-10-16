@@ -8,7 +8,7 @@ using UnityEngine.SceneManagement;
 
 namespace Gamenami.UnitySemanticBridge.Editor.Layout
 {
-    public sealed class LayoutCompileResult
+    public sealed class LayoutApplyResult
     {
         public GameObject Root;
         /// <summary>Occupancy the layout should produce, from the measured footprints.</summary>
@@ -16,16 +16,24 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public readonly Dictionary<string, PieceSpec> Specs = new Dictionary<string, PieceSpec>();
         /// <summary>Problems: the scene may not match the layout where these point.</summary>
         public readonly List<string> Issues = new List<string>();
+        /// <summary>The placement problems alone (fit, missing colliders or geometry; also in Issues).</summary>
+        public readonly List<string> PlacementIssues = new List<string>();
         /// <summary>Adjustments made on purpose, e.g. colliders shrunk into their footprint.</summary>
         public readonly List<string> Notes = new List<string>();
         public int PieceCount;
         public int DecorCount;
 
+        internal void AddPlacementIssue(string line)
+        {
+            Issues.Add(line);
+            PlacementIssues.Add(line);
+        }
+
         public override string ToString()
         {
             var lines = new List<string>
             {
-                $"Compiled {PieceCount} pieces and {DecorCount} decor under {LayoutCompiler.RootName}; {Expected?.BlockedCount ?? 0} blocked cells.",
+                $"Applied {PieceCount} pieces and {DecorCount} decor under {LayoutApplier.RootName}; {Expected?.BlockedCount ?? 0} blocked cells.",
                 $"Issues ({Issues.Count}):",
             };
             lines.AddRange(Issues);
@@ -40,9 +48,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     /// [Generated Layout] root, quarter-turn rotation, footprint-centred placement
     /// (pivot offset), the game's piece hook, and blocking colliders shrunk inside their
     /// footprint cells so runtime triggers reproduce the layout. One Undo group;
-    /// recompiling replaces only that root.
+    /// reapplying replaces only that root.
     /// </summary>
-    public static class LayoutCompiler
+    public static class LayoutApplier
     {
         public const string RootName = "[Generated Layout]";
         public const string PiecesName = "Pieces";
@@ -50,31 +58,49 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         /// <summary>Gap kept between a fitted collider and its footprint edge, meters.</summary>
         public const float ColliderInset = 0.1f;
 
-        public static LayoutCompileResult Compile(LayoutDocument document, Scene scene, IGridRulesAdapter adapter = null)
+        public static LayoutApplyResult Apply(LayoutDocument document, Scene scene, IGridRulesAdapter adapter = null)
         {
             adapter ??= LayoutAdapters.Find();
-            if (!scene.IsValid() || !scene.isLoaded) throw new BridgeToolException("Open the target scene before compiling a layout.");
-            if (EditorApplication.isPlayingOrWillChangePlaymode) throw new BridgeToolException("Exit Play Mode before compiling a layout.");
+            if (!scene.IsValid() || !scene.isLoaded) throw new BridgeToolException("Open the target scene before applying a layout.");
+            if (EditorApplication.isPlayingOrWillChangePlaymode) throw new BridgeToolException("Exit Play Mode before applying a layout.");
             if (!adapter.TryGetBoard(scene, out var board, out var boardError)) throw new BridgeToolException(boardError);
             if (board.Width != document.Width || board.Height != document.Height)
                 throw new BridgeToolException($"Layout size {document.Width}x{document.Height} differs from the level's board {board.Width}x{board.Height}. Change one of them.");
             var prefabs = ResolvePrefabs(document);
+            CheckEnemyAssets(document);
 
-            var result = new LayoutCompileResult();
             Undo.IncrementCurrentGroup();
             var undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Compile Layout");
+            Undo.SetCurrentGroupName("Apply Layout");
+            var result = new LayoutApplyResult();
+            try
+            {
+                return Build(document, scene, adapter, board, prefabs, undoGroup, result);
+            }
+            catch
+            {
+                // A late failure (e.g. the game rejecting a spawn asset) leaves nothing half-built:
+                // the new root is not registered with Undo yet, so it goes first; the revert then
+                // restores the previous root and the level.
+                if (result.Root != null) Object.DestroyImmediate(result.Root);
+                Undo.RevertAllDownToGroup(undoGroup);
+                throw;
+            }
+        }
 
+        private static LayoutApplyResult Build(LayoutDocument document, Scene scene, IGridRulesAdapter adapter,
+            GridBoard board, Dictionary<string, GameObject> prefabs, int undoGroup, LayoutApplyResult result)
+        {
             foreach (var old in scene.GetRootGameObjects().Where(go => go.name == RootName))
                 Undo.DestroyObjectImmediate(old);
 
             var root = new GameObject(RootName);
+            result.Root = root;
             SceneManager.MoveGameObjectToScene(root, scene);
             var piecesParent = new GameObject(PiecesName).transform;
             piecesParent.SetParent(root.transform, false);
             var decorParent = new GameObject(DecorName).transform;
             decorParent.SetParent(root.transform, false);
-            result.Root = root;
 
             foreach (var piece in document.Pieces)
             {
@@ -93,12 +119,13 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 p => result.Specs.TryGetValue(p.LocalId, out var s) ? s : (PieceSpec?)null, adapter.Rules, buildIssues);
             result.Issues.AddRange(buildIssues.Select(i => i.ToString()));
 
-            if (board.LevelOwner != null) Undo.RecordObject(board.LevelOwner, "Compile Layout");
+            if (board.LevelOwner != null) Undo.RecordObject(board.LevelOwner, "Apply Layout");
+            adapter.WriteEnemySpawns(scene, document.Enemies);
             adapter.WriteDeployCells(scene, document.Deploy);
             if (board.LevelOwner != null) EditorUtility.SetDirty(board.LevelOwner);
 
             // Registered once fully built, so Undo removes the whole root and Redo restores it as built.
-            Undo.RegisterCreatedObjectUndo(root, "Compile Layout");
+            Undo.RegisterCreatedObjectUndo(root, "Apply Layout");
             Undo.CollapseUndoOperations(undoGroup);
             EditorSceneManager.MarkSceneDirty(scene);
             Physics.SyncTransforms();
@@ -120,12 +147,24 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                     prefabs[piece.PrefabGuid] = prefab;
             }
             if (missing.Count > 0)
-                throw new BridgeToolException($"No prefab asset for: {string.Join(", ", missing)}. Import the pieces (GUIDs must be preserved) before compiling.");
+                throw new BridgeToolException($"No prefab asset for: {string.Join(", ", missing)}. Import the pieces (GUIDs must be preserved) before applying.");
             return prefabs;
         }
 
+        // Generic check only: the GUIDs name assets. The adapter checks their types when writing.
+        private static void CheckEnemyAssets(LayoutDocument document)
+        {
+            var missing = new List<string>();
+            foreach (var enemy in document.Enemies)
+                foreach (var guid in new[] { enemy.ProfileGuid, enemy.VisualGuid })
+                    if (string.IsNullOrEmpty(AssetDatabase.GUIDToAssetPath(guid)))
+                        missing.Add($"{enemy.LocalId} ({guid})");
+            if (missing.Count > 0)
+                throw new BridgeToolException($"No asset for enemy spawn GUIDs: {string.Join(", ", missing)}.");
+        }
+
         private static PieceSpec Place(LayoutPiece piece, GameObject prefab, Transform parent, bool blocker, Scene scene,
-            GridBoard board, IGridRulesAdapter adapter, LayoutCompileResult result)
+            GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
         {
             var frame = PieceGeometry.Frame(piece.Rotation);
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
@@ -146,7 +185,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var cellSize = adapter.Rules.CellSize;
             if (!bounds.HasValue)
             {
-                result.Issues.Add(blocker
+                result.AddPlacementIssue(blocker
                     ? $"NO_BLOCKING_COLLIDER {piece.Anchor} {piece.LocalId}: the piece hook left no blocking collider"
                     : $"NO_GEOMETRY {piece.Anchor} {piece.LocalId}: no renderers to measure; placed as one cell");
                 bounds = new PieceBounds(Vector3.zero, new Vector3(cellSize, 0f, cellSize));
@@ -174,7 +213,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         // Shrinks each blocking box collider to its footprint (inset on every side), so the
         // game's per-cell trigger boxes only touch footprint cells.
         private static void FitColliders(GameObject instance, LayoutPiece piece, Vector3 center, Cell size, float cellSize,
-            IGridRulesAdapter adapter, LayoutCompileResult result)
+            IGridRulesAdapter adapter, LayoutApplyResult result)
         {
             var halfX = size.X * cellSize * 0.5f - ColliderInset;
             var halfZ = size.Y * cellSize * 0.5f - ColliderInset;
@@ -190,7 +229,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 var path = RelativePath(instance.transform, collider.transform);
                 if (!(collider is BoxCollider box) || !IsAxisAligned(box.transform))
                 {
-                    result.Issues.Add($"FIT_UNSUPPORTED {piece.Anchor} {piece.LocalId}/{path}: {collider.GetType().Name} reaches past its footprint and only axis-aligned boxes can be fitted; neighbouring cells may block");
+                    result.AddPlacementIssue($"FIT_UNSUPPORTED {piece.Anchor} {piece.LocalId}/{path}: {collider.GetType().Name} reaches past its footprint and only axis-aligned boxes can be fitted; neighbouring cells may block");
                     continue;
                 }
 
@@ -198,7 +237,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 var fittedMax = new Vector3(Mathf.Min(max.x, limitMax.x), max.y, Mathf.Min(max.z, limitMax.y));
                 if (fittedMin.x >= fittedMax.x || fittedMin.z >= fittedMax.z)
                 {
-                    result.Issues.Add($"FIT_EMPTY {piece.Anchor} {piece.LocalId}/{path}: collider lies outside its footprint");
+                    result.AddPlacementIssue($"FIT_EMPTY {piece.Anchor} {piece.LocalId}/{path}: collider lies outside its footprint");
                     continue;
                 }
 

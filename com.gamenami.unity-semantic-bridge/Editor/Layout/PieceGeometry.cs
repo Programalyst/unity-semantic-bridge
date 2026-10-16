@@ -25,7 +25,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     public static class PieceGeometry
     {
         // A piece up to 5 cm longer than whole cells still counts as fitting them; the
-        // compiler then insets its colliders.
+        // applier then insets its colliders.
         public const float FootprintTolerance = 0.05f;
 
         public static Quaternion Frame(int rotation) => Quaternion.Euler(0f, 90f * rotation, 0f);

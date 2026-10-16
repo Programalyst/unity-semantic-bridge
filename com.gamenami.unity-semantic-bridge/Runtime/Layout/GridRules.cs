@@ -39,20 +39,40 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public override string ToString() => $"{Width}x{Depth} {Cover}";
     }
 
+    public enum IssueSeverity
+    {
+        /// <summary>The level is broken or will not match the layout.</summary>
+        Error,
+        /// <summary>Allowed, but worth a look (e.g. a sealed pocket, scenery that blocks sight only).</summary>
+        Warning,
+    }
+
     /// <summary>A cell-addressed report line: "CODE x,y message".</summary>
     public readonly struct LayoutIssue
     {
         public readonly string Code;
         public readonly Cell? Cell;
         public readonly string Message;
+        public readonly IssueSeverity Severity;
 
-        public LayoutIssue(string code, Cell? cell, string message)
+        public LayoutIssue(string code, Cell? cell, string message, IssueSeverity severity = IssueSeverity.Error)
         {
             Code = code;
             Cell = cell;
             Message = message;
+            Severity = severity;
         }
 
-        public override string ToString() => Cell.HasValue ? $"{Code} {Cell.Value} {Message}" : $"{Code} {Message}";
+        /// <summary>Wraps a report line produced elsewhere ("CODE rest"); it prints unchanged.</summary>
+        public static LayoutIssue FromLine(string line, IssueSeverity severity = IssueSeverity.Error)
+        {
+            var space = line.IndexOf(' ');
+            return space < 0
+                ? new LayoutIssue(line, null, "", severity)
+                : new LayoutIssue(line.Substring(0, space), null, line.Substring(space + 1), severity);
+        }
+
+        public override string ToString() =>
+            Cell.HasValue ? $"{Code} {Cell.Value} {Message}" : string.IsNullOrEmpty(Message) ? Code : $"{Code} {Message}";
     }
 }

@@ -11,7 +11,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public int Height;
         /// <summary>World Y that pieces stand on.</summary>
         public float FloorY;
-        /// <summary>The asset or component holding the level's settings (deploy cells); recorded for Undo.</summary>
+        /// <summary>The asset or component holding the level's settings (deploy cells, enemy spawns); recorded for Undo.</summary>
         public Object LevelOwner;
     }
 
@@ -61,7 +61,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
         CoverLevel DescribeCover(GameObject root);
 
         /// <summary>
-        /// Piece hook, called by the layout compiler on a fresh blocker instance before its
+        /// Piece hook, called by the layout applier on a fresh blocker instance before its
         /// colliders are fitted: add whatever the game needs for occupancy and cover. After
         /// the hook, at least one collider must satisfy IsBlockingCollider.
         /// </summary>
@@ -74,5 +74,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         /// <summary>Replaces the level's deploy cells. The caller records Undo on GridBoard.LevelOwner and marks it dirty.</summary>
         void WriteDeployCells(Scene scene, IReadOnlyList<Cell> cells);
+
+        /// <summary>
+        /// The level's enemy spawns in order. LocalId may be null (levels store no ids; the baker
+        /// names them); a GUID is null when the level references no asset there.
+        /// </summary>
+        IReadOnlyList<LayoutEnemySpawn> ReadEnemySpawns(Scene scene);
+
+        /// <summary>
+        /// Replaces the level's enemy spawns. Throws, before changing anything, when a GUID is not
+        /// an asset of the type the game expects. The caller records Undo on GridBoard.LevelOwner.
+        /// </summary>
+        void WriteEnemySpawns(Scene scene, IReadOnlyList<LayoutEnemySpawn> spawns);
     }
 }

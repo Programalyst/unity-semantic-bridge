@@ -122,10 +122,15 @@ namespace Gamenami.UnitySemanticBridge.Layout
             return lines;
         }
 
-        /// <summary>ASCII map, top row = highest y: '#' full, 'h' half, 'o' blocked without cover, '.' open, 'A' deploy.</summary>
-        public string ToAscii(IEnumerable<Cell> deploy = null)
+        /// <summary>
+        /// ASCII map, top row = highest y: '#' full, 'h' half, 'o' blocked without cover, '.' open,
+        /// 'A' deploy, 'E' enemy, '!' a unit on a blocked cell, '-' open but unreachable.
+        /// </summary>
+        public string ToAscii(IEnumerable<Cell> deploy = null, IEnumerable<Cell> enemies = null, IEnumerable<Cell> unreachable = null)
         {
             var deployCells = deploy == null ? new HashSet<Cell>() : new HashSet<Cell>(deploy);
+            var enemyCells = enemies == null ? new HashSet<Cell>() : new HashSet<Cell>(enemies);
+            var unreachableCells = unreachable == null ? new HashSet<Cell>() : new HashSet<Cell>(unreachable);
             var builder = new StringBuilder();
             for (var y = Height - 1; y >= 0; y--)
             {
@@ -133,9 +138,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 {
                     var cell = new Cell(x, y);
                     var state = this[cell];
+                    var unit = deployCells.Contains(cell) || enemyCells.Contains(cell);
                     builder.Append(state.Blocked
-                        ? state.Cover == CoverLevel.Full ? '#' : state.Cover == CoverLevel.Half ? 'h' : 'o'
-                        : deployCells.Contains(cell) ? 'A' : '.');
+                        ? unit ? '!' : state.Cover == CoverLevel.Full ? '#' : state.Cover == CoverLevel.Half ? 'h' : 'o'
+                        : deployCells.Contains(cell) ? 'A' : enemyCells.Contains(cell) ? 'E' : unreachableCells.Contains(cell) ? '-' : '.');
                 }
                 builder.Append('\n');
             }

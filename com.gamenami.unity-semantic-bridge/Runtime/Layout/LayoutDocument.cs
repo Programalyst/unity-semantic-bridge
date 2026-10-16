@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -27,8 +28,37 @@ namespace Gamenami.UnitySemanticBridge.Layout
     }
 
     /// <summary>
+    /// An enemy placed by the level: the game's unit profile and visual assets (by GUID), the
+    /// cell it starts on and its facing in degrees (yaw, 0 = +y, clockwise seen from above).
+    /// The local id labels it in reports only; levels store spawns in order, without ids.
+    /// </summary>
+    public sealed class LayoutEnemySpawn
+    {
+        public string LocalId;
+        public string ProfileGuid;
+        public string VisualGuid;
+        public Cell Cell;
+        public float Facing;
+
+        public LayoutEnemySpawn(string localId, string profileGuid, string visualGuid, Cell cell, float facing)
+        {
+            LocalId = localId;
+            ProfileGuid = profileGuid;
+            VisualGuid = visualGuid;
+            Cell = cell;
+            Facing = facing;
+        }
+
+        public bool SameSpawn(LayoutEnemySpawn other) =>
+            ProfileGuid == other.ProfileGuid && VisualGuid == other.VisualGuid && Cell == other.Cell && Facing.Equals(other.Facing);
+
+        public override string ToString() => $"{LocalId} {ProfileGuid} {VisualGuid} {Cell} facing {LayoutJson.FormatNumber(Facing)}";
+    }
+
+    /// <summary>
     /// The agent's draft/interchange form of a level (see LayoutJson for the compact JSON).
-    /// Pieces block movement; decor never blocks.
+    /// Pieces block movement; decor never blocks. The scene and the level asset are the runtime
+    /// sources of truth: when they and a draft disagree, re-bake the draft (never merge).
     /// </summary>
     public sealed class LayoutDocument
     {
@@ -40,6 +70,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public List<LayoutPiece> Pieces = new List<LayoutPiece>();
         public List<Cell> Deploy = new List<Cell>();
         public List<LayoutPiece> Decor = new List<LayoutPiece>();
+        public List<LayoutEnemySpawn> Enemies = new List<LayoutEnemySpawn>();
 
         public LayoutDocument(int width, int height)
         {
@@ -50,7 +81,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>
         /// Differences between two layouts as report lines; empty when equal. Pieces are
         /// matched by local id and compared ignoring list order; deploy order matters
-        /// because squad members fill it in order.
+        /// because squad members fill it in order. Enemy spawns are compared in order and
+        /// ignore local ids, which the level does not store.
         /// </summary>
         public static List<string> Diff(LayoutDocument expected, LayoutDocument actual)
         {
@@ -61,6 +93,15 @@ namespace Gamenami.UnitySemanticBridge.Layout
             DiffPieces("DECOR", expected.Decor, actual.Decor, lines);
             if (!expected.Deploy.SequenceEqual(actual.Deploy))
                 lines.Add($"DEPLOY expected [{string.Join(" ", expected.Deploy)}], got [{string.Join(" ", actual.Deploy)}]");
+            for (var i = 0; i < Math.Max(expected.Enemies.Count, actual.Enemies.Count); i++)
+            {
+                if (i >= actual.Enemies.Count)
+                    lines.Add($"ENEMY_MISSING {expected.Enemies[i].Cell} #{i + 1} {expected.Enemies[i].LocalId}");
+                else if (i >= expected.Enemies.Count)
+                    lines.Add($"ENEMY_EXTRA {actual.Enemies[i].Cell} #{i + 1} {actual.Enemies[i].LocalId}");
+                else if (!expected.Enemies[i].SameSpawn(actual.Enemies[i]))
+                    lines.Add($"ENEMY_CHANGED {expected.Enemies[i].Cell} #{i + 1}: expected {expected.Enemies[i]}, got {actual.Enemies[i]}");
+            }
             return lines;
         }
 

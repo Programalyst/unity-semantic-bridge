@@ -10,6 +10,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
     {
         private const string WallGuid = "215a18edfee7f4f2eaaa7fe488cea3ab";
         private const string LowWallGuid = "76918e2623518495e8239f5f325e4169";
+        private const string ProfileGuid = "42e57b125c17a4bdab86d7879003f0e8";
+        private const string VisualGuid = "b0388b2498f234e91a73a49eec10add1";
 
         private static readonly GridRules NoCornerCutting = new GridRules { CellSize = 2f, DiagonalMoves = true, NoCornerCutting = true };
 
@@ -17,6 +19,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             "{\"v\":1,\"size\":[12,10],\n" +
             " \"pieces\":[[\"wallF\",\"" + WallGuid + "\",3,4,1],[\"low\",\"" + LowWallGuid + "\",6,2,0]],\n" +
             " \"deploy\":[[1,1],[2,1]],\n" +
+            " \"enemies\":[[\"raider1\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",10,8,180],[\"raider2\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",11,7,22.5]],\n" +
             " \"decor\":[[\"road\",\"" + LowWallGuid + "\",0,5,2]]}";
 
         [Test]
@@ -32,6 +35,23 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.AreEqual(1, doc.Pieces[0].Rotation);
             CollectionAssert.AreEqual(new[] { new Cell(1, 1), new Cell(2, 1) }, doc.Deploy);
             Assert.AreEqual(2, doc.Decor.Single().Rotation);
+            Assert.AreEqual(2, doc.Enemies.Count);
+            var raider = doc.Enemies[0];
+            Assert.AreEqual("raider1", raider.LocalId);
+            Assert.AreEqual(ProfileGuid, raider.ProfileGuid);
+            Assert.AreEqual(VisualGuid, raider.VisualGuid);
+            Assert.AreEqual(new Cell(10, 8), raider.Cell);
+            Assert.AreEqual(180f, raider.Facing);
+            Assert.AreEqual(22.5f, doc.Enemies[1].Facing);
+        }
+
+        [Test]
+        public void SerializesEnemiesCompactly()
+        {
+            var text = LayoutJson.Serialize(LayoutJson.Parse(Sample));
+            StringAssert.Contains(
+                " \"enemies\":[\n  [\"raider1\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",10,8,180],\n" +
+                "  [\"raider2\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",11,7,22.5]],\n", text);
         }
 
         [Test]
@@ -50,6 +70,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.IsEmpty(doc.Pieces);
             Assert.IsEmpty(doc.Deploy);
             Assert.IsEmpty(doc.Decor);
+            Assert.IsEmpty(doc.Enemies);
         }
 
         [TestCase("", "empty")]
@@ -63,6 +84,10 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         [TestCase("{\"v\":1,\"size\":[4,4],\"pieces\":[[\"a\",\"" + WallGuid + "\",1.5,1,0]]}", "pieces[0] x must be an integer")]
         [TestCase("{\"v\":1,\"size\":[4,4],\"pieces\":[[\"a\",\"Wall\",1,1,0]]}", "not a 32-character lowercase hex asset GUID")]
         [TestCase("{\"v\":1,\"size\":[4,4],\"pieces\":[[\"a\",\"" + WallGuid + "\",1,1,0]],\"decor\":[[\"a\",\"" + WallGuid + "\",2,2,0]]}", "decor[0]: duplicate localId 'a'")]
+        [TestCase("{\"v\":1,\"size\":[4,4],\"enemies\":[[\"e\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",1,1]]}", "enemies[0] must be [localId, profileGuid, visualGuid, x, y, facing]")]
+        [TestCase("{\"v\":1,\"size\":[4,4],\"enemies\":[[\"e\",\"Raider\",\"" + VisualGuid + "\",1,1,0]]}", "enemies[0] profileGuid 'Raider' is not a 32-character")]
+        [TestCase("{\"v\":1,\"size\":[4,4],\"enemies\":[[\"e\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",1,1,\"north\"]]}", "enemies[0] facing must be a number of degrees")]
+        [TestCase("{\"v\":1,\"size\":[4,4],\"pieces\":[[\"a\",\"" + WallGuid + "\",1,1,0]],\"enemies\":[[\"a\",\"" + ProfileGuid + "\",\"" + VisualGuid + "\",2,2,0]]}", "enemies[0]: duplicate localId 'a'")]
         public void RejectsMalformedLayouts(string json, string expected)
         {
             var error = Assert.Throws<LayoutFormatException>(() => LayoutJson.Parse(json));
@@ -181,12 +206,17 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             b.Pieces[0].Rotation = 3;
             b.Pieces.RemoveAt(1);
             b.Decor[0].LocalId = "street";
+            b.Enemies[0].LocalId = "enemy1";   // levels store no ids; renaming is not a change
+            b.Enemies[1].Facing = 90f;
+            b.Enemies.Add(new LayoutEnemySpawn("raider3", ProfileGuid, VisualGuid, new Cell(0, 9), 0f));
             CollectionAssert.AreEqual(new[]
             {
                 $"PIECE_CHANGED 3,4 wallF: expected {WallGuid} 3,4 rot 1, got {WallGuid} 3,4 rot 3",
                 "PIECE_MISSING 6,2 low",
                 "DECOR_MISSING 0,5 road",
                 "DECOR_EXTRA 0,5 street",
+                $"ENEMY_CHANGED 11,7 #2: expected raider2 {ProfileGuid} {VisualGuid} 11,7 facing 22.5, got raider2 {ProfileGuid} {VisualGuid} 11,7 facing 90",
+                "ENEMY_EXTRA 0,9 #3 raider3",
             }, LayoutDocument.Diff(a, b));
         }
 
@@ -197,6 +227,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             grid.Block(new Cell(0, 0), "a", CoverLevel.Full);
             grid.Block(new Cell(2, 1), "b", CoverLevel.Half);
             Assert.AreEqual("A.h\n#..\n", grid.ToAscii(new[] { new Cell(0, 1) }));
+            Assert.AreEqual("-Eh\n!..\n", grid.ToAscii(new[] { new Cell(0, 0) }, new[] { new Cell(1, 1) }, new[] { new Cell(0, 1) }));
         }
     }
 }
