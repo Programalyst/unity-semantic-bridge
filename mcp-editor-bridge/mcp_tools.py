@@ -68,7 +68,7 @@ def register_unity_tools(mcp):
 
     @mcp.tool()
     async def get_project_settings(
-        sections: Annotated[list[str] | None, "Which sections to return. Valid: 'core', 'rendering', 'input', 'ui', 'scripting', 'tags_layers', 'editor_prefs'. Omit or pass empty for all."] = None,
+        sections: Annotated[list[str] | None, "Which sections to return. Valid: 'core', 'rendering', 'input', 'ui', 'scripting', 'tags_layers', 'physics', 'editor_prefs'. Omit or pass empty for all."] = None,
     ) -> str:
         """
         Returns Unity Project Settings as JSON. Selectively fetch sections to keep output small.
@@ -80,7 +80,10 @@ def register_unity_tools(mcp):
         - ui: uGUI vs UI Toolkit signals — EventSystem/Canvas in open scenes, UIDocument/VisualTreeAsset/StyleSheet counts
         - scripting: API compatibility level, #define symbols (group), allowUnsafeCode, scripting backend
         - editor_prefs: current Editor Interaction Mode, idle time, setter support and restore availability (user preferences, not project assets)
-        - tags_layers: Tag list and layer names/index map (physics collision matrix stays in get_physics_layers)
+        - tags_layers: Tag list and layer names/index map
+        - physics: 3D layer collision matrix as {layerCollisions: {layer: [layers it collides with]}}.
+          Use it to diagnose collisions or triggers that never fire, or that hit the wrong side
+          ('friend or foe'): check both objects' layers (get_scene_hierarchy include_layers=True).
 
         Example: get_project_settings(sections=["core","rendering"]) for a focused query.
         """
@@ -362,9 +365,15 @@ def register_unity_tools(mcp):
         return await call_unity("get_compilation_status")
     
     @mcp.tool()
-    async def get_console_logs() -> str:
-        """Returns the most recent errors and warnings from the Unity Console."""
-        return await call_unity("get_console_logs")
+    async def get_console_logs(
+        clear: Annotated[bool, "If true, clears the Console after reading, so the next call returns only entries logged since."] = False,
+    ) -> str:
+        """Returns the first line of the last 10 Unity Console entries.
+
+        To see only what one action logs (e.g. a Play Mode run or invoke_static), call with
+        clear=True first, run the action, then call again.
+        """
+        return await call_unity("get_console_logs", {"clear": clear})
     
     def _play_transport_failed(result: str) -> bool:
         low = result.lower()
@@ -461,11 +470,6 @@ def register_unity_tools(mcp):
                                 retry_connect=False)
     
     @mcp.tool()
-    async def clear_console_logs() -> str:
-        """Clears old Unity Editor console logs."""
-        return await call_unity("clear_console_logs")
-    
-    @mcp.tool()
     async def inspect_gameobject(
         instance_id: Annotated[int, "The instance_id of the GameObject. Get it from get_scene_hierarchy."],
         component: Annotated[str | None, "Optional exact component class name (e.g. 'UnitHealth', 'Rigidbody'). Omit to inspect every component on the GameObject."] = None,
@@ -501,15 +505,6 @@ def register_unity_tools(mcp):
             "componentName": component_name
         })
 
-    @mcp.tool()
-    async def get_physics_layers() -> str:
-        """
-        Returns the Unity Physics Collision Matrix.
-        Shows which layers are configured to collide with each other or ignore each other.
-        Essential for diagnosing 'friend or foe' collision or trigger issues.
-        """
-        return await call_unity("get_physics_layers")
-    
     @mcp.tool()
     async def add_component(
         instance_id: Annotated[int, "The unique instance ID of the GameObject to add the component to. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],

@@ -14,7 +14,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
     {
         private static readonly HashSet<string> AllSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "core", "rendering", "input", "ui", "scripting", "editor_prefs", "tags_layers", "tagslayers", "tags"
+            "core", "rendering", "input", "ui", "scripting", "editor_prefs", "tags_layers", "tagslayers", "tags", "physics"
         };
 
         public static string GetProjectSettings(JObject mcpMessage)
@@ -70,6 +70,9 @@ namespace Gamenami.UnitySemanticBridge.Editor
             if (Want("tags_layers"))
                 root["tags_layers"] = GetTagsLayers();
 
+            if (Want("physics"))
+                root["physics"] = GetPhysics();
+
             if (Want("editor_prefs"))
                 root["editor_prefs"] = EditorPreferencesFunctions.GetPreferences();
 
@@ -77,7 +80,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             {
                 var unknown = requested.Where(r => !AllSections.Contains(r)).ToArray();
                 if (unknown.Length > 0)
-                    root["_warning"] = $"Unknown sections: {string.Join(", ", unknown)}. Valid: core, rendering, input, ui, scripting, tags_layers, editor_prefs";
+                    root["_warning"] = $"Unknown sections: {string.Join(", ", unknown)}. Valid: core, rendering, input, ui, scripting, tags_layers, physics, editor_prefs";
             }
 
             return root.ToString(Newtonsoft.Json.Formatting.Indented);
@@ -346,6 +349,24 @@ namespace Gamenami.UnitySemanticBridge.Editor
             try { o["scriptingBackend"] = PlayerSettings.GetScriptingBackend(group).ToString(); } catch { }
             try { o["incrementalGcEnabled"] = PlayerSettings.gcIncremental.ToString(); } catch { }
 
+            return o;
+        }
+
+        // 3D layer collision matrix: each named layer -> the named layers it collides with.
+        private static JObject GetPhysics()
+        {
+            var o = new JObject();
+            try
+            {
+                var named = Enumerable.Range(0, 32).Where(i => !string.IsNullOrEmpty(LayerMask.LayerToName(i))).ToArray();
+                var collisions = new JObject();
+                foreach (var i in named)
+                    collisions[LayerMask.LayerToName(i)] = new JArray(named
+                        .Where(j => !Physics.GetIgnoreLayerCollision(i, j))
+                        .Select(LayerMask.LayerToName));
+                o["layerCollisions"] = collisions;
+            }
+            catch (Exception e) { o["physics_error"] = e.Message; }
             return o;
         }
 

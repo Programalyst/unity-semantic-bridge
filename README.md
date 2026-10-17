@@ -16,6 +16,8 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - **Merged** `get_component_inspector_values` into `inspect_gameobject`. Pass `component` to read one component's Inspector values, or omit it to read every component.
 - **Removed** `get_urp_pipeline_settings`. Its data is in `get_project_settings(sections=["rendering"])`.
 - **Removed** `diagnose_lighting_issue` and its LightingAgent subagent, so no tool needs an LLM API key any more. Agents run the diagnosis themselves: `get_lights_affecting_object` now describes the steps (lights in range, URP rendering path and light limits, renderer settings, screenshot).
+- **Merged** `clear_console_logs` into `get_console_logs(clear=True)`, which clears after reading.
+- **Merged** `get_physics_layers` into `get_project_settings(sections=["physics"])`, which returns the collision matrix as JSON: each layer and the layers it collides with.
 
 **October 15, 2026: Multi-Editor support**
 - **Several Unity Editors at once.** Each project now has its own bridge ports (defaults 1073/1074), set in **Tools > Unity Semantic Bridge** and stored per user in `UserSettings/`. Register the same MCP server once per project under different names (for example `unity-semantic-bridge` and `unity-ap`), each with matching `--unity-port`/`--event-port`, for example a game project on 1073/1074 and an asset-library project on 1075/1076. See [several Unity projects at once](docs/installation.md#several-unity-projects-at-once).
@@ -100,13 +102,12 @@ personal absolute package paths.
 - `get_recent_unity_events` — Returns Unity Editor events (`hierarchy`/`selection`/`play-mode`/`console`/`objectChanged` via `ObjectChangeEvents.changesPublished`) pushed since a time window — use to see human edits, `add_component`/`remove_component`/`set_field_values` etc.
 
 **Project & Settings**
-- `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`. The `editor_prefs` section reports the current Interaction Mode, stored idle time, and restore availability; these are user-level Editor preferences.
+- `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`, `physics` (layer collision matrix). The `editor_prefs` section reports the current Interaction Mode, stored idle time, and restore availability; these are user-level Editor preferences.
 
 **Scene & GameObject Inspection**
 - `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), optional filtering to only main-camera-visible objects, and `root_instance_id` subtree queries. Objects with a `SkinnedMeshRenderer` are skipped by default; pass `root_instance_id` with `prune_skinned=False` and a deep `depth` to walk a character's rig.
 - `inspect_gameobject` — Serialized field values visible in the Inspector for every component on a GameObject, or only the one named by `component` (live Editor values via `ComponentInspector`; expands `RigBuilder`/`Rig`/`*Constraint.m_Data`/`Transform.m_LocalRotation` as structured `quat`+`euler`).
 - `get_component_code` — Locates and returns the full C# source for a named component (`MonoScript` via `AssetDatabase`).
-- `get_physics_layers` — Physics layer collision matrix (`Physics.GetIgnoreLayerCollision`).
 
 **Batch Inspection & Property Edits**
 
@@ -152,7 +153,7 @@ personal absolute package paths.
 - `invoke_menu_item` — Execute one Editor menu item by exact path; unknown paths are not-found errors.
 - `invoke_static` — Invoke one public static zero-arg method by exact type/method names; returns the value as string (`ok` for void).
 - `set_editor_throttling` — `no_throttling` keeps the Editor tick rate un-throttled while unfocused for long sessions; `restore`/`default` afterwards.
-- `get_console_logs` / `clear_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
+- `get_console_logs` — First line of the last 10 Console entries via `LogEntries` reflection; `clear=True` clears the Console after reading.
 
 **Lighting Diagnostics**
 - `get_lights_affecting_object` — Lights within range of a target object using actual bounds distance, per-light `type`/`intensity`/`range`/`cullingMask` (uses `GetLightsAffectingObject`). URP rendering path and light limits are in `get_project_settings(sections=["rendering"])`.

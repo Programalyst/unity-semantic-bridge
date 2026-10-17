@@ -113,7 +113,16 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return sceneJson;
         }
 
-        public static string GetConsoleLogs() 
+        public static string GetConsoleLogs(JObject mcpMessage)
+        {
+            var result = ReadConsoleLogs();
+            // Clear after reading, so the next call shows only entries logged since.
+            if (mcpMessage["clear"]?.Value<bool>() ?? false)
+                result += (result.EndsWith("\n") ? "" : "\n") + ClearConsole();
+            return result;
+        }
+
+        private static string ReadConsoleLogs()
         {
             var sb = new StringBuilder();
         
@@ -149,7 +158,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return sb.Length > 0 ? sb.ToString() : "Console is empty.";
         }
         
-        public static string ClearConsole() {
+        private static string ClearConsole() {
             var type = Type.GetType("UnityEditor.LogEntries, UnityEditor");
             if (type == null) return "Console cleared.";
             var clearMethod = type.GetMethod("Clear");
@@ -180,24 +189,5 @@ namespace Gamenami.UnitySemanticBridge.Editor
             }
             return sb.ToString();
         }
-        
-        public static string GetPhysicsMatrix() 
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("--- Physics Collision Matrix ---");
-            for (int i = 0; i < 32; i++) 
-            {
-                string layerName = LayerMask.LayerToName(i);
-                if (string.IsNullOrEmpty(layerName)) continue;
-        
-                for (int j = i; j < 32; j++) 
-                {
-                    if (Physics.GetIgnoreLayerCollision(i, j)) continue;
-                    sb.AppendLine($"{layerName} <--> {LayerMask.LayerToName(j)}: ENABLED");
-                }
-            }
-            return sb.ToString();
-        }
-        
     }
 }

@@ -89,7 +89,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         break;
 
                     case "get_console_logs":
-                        resultText = SceneFunctions.GetConsoleLogs();
+                        resultText = SceneFunctions.GetConsoleLogs(mcpMessage);
                         break;
 
                     case "open_scene":
@@ -118,20 +118,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = InvocationFunctions.InvokeStatic(mcpMessage);
                         break;
 
-                    case "clear_console_logs":
-                        resultText = SceneFunctions.ClearConsole();
-                        break;
-
                     case "inspect_gameobject":
                         resultText = SceneFunctions.InspectGameObject(mcpMessage);
                         break;
 
                     case "get_component_code":
                         resultText = ComponentFunctions.GetComponentCode(mcpMessage);
-                        break;
-
-                    case "get_physics_layers":
-                        resultText = SceneFunctions.GetPhysicsMatrix();
                         break;
 
                     case "add_component":
