@@ -711,7 +711,8 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def generate_asset_catalog(
         scan_roots: Annotated[list[str] | None, "Project-relative roots to scan, e.g. ['Assets/Synty']. Omit for the default (Assets/Synty, falling back to Assets)."] = None,
-        thumbnails: Annotated[bool, "Capture AssetPreview PNG thumbnails into <Project>/AssetCatalog/thumbs/."] = True,
+        thumbnails: Annotated[bool, "Capture AssetPreview PNG thumbnails into <Project>/AssetCatalog/thumbs/ (level-thumbs/ for the level catalog)."] = True,
+        catalog: Annotated[str, "'assets' (default): the asset catalog. 'level': level cards (role, bounds, placementScale) for prefabs into <Project>/AssetCatalog/level-catalog.json, keyed by GUID; see docs/level-catalog.md."] = "assets",
     ) -> str:
         """
         Starts a frame-pumped Editor-side scan of content-pack assets (large
@@ -721,12 +722,29 @@ def register_unity_tools(mcp):
         albedo) records in <Project>/AssetCatalog/asset-catalog.json. Re-runs
         upsert by id (no dupes) and reuse existing thumbnails. Returns {runId,
         state, total} immediately — poll get_asset_catalog_status for {jsonPath,
-        itemCount, thumbnailCount} on completion.
+        itemCount, thumbnailCount} on completion. With catalog='level' it scans
+        .prefab files only, measures each on isolated prefab contents and writes
+        level cards (characters, weapons and FX are left out) without touching
+        asset-catalog.json; the status then also has per-role counts.
         """
-        params: dict = {"thumbnails": thumbnails}
+        params: dict = {"thumbnails": thumbnails, "catalog": catalog}
         if scan_roots is not None:
             params["scan_roots"] = scan_roots
         return await call_unity("generate_asset_catalog", params)
+
+    @mcp.tool()
+    async def describe_level_cards(
+        paths: Annotated[list[str], "Project-relative .prefab paths, e.g. ['Assets/Synty/PolygonApocalypseWasteland/Prefabs/Props/SM_Prop_Barrier_01.prefab']."],
+        cell_size: Annotated[float, "Grid cell size in meters for the computed footprint (NK: 2)."] = 2.0,
+    ) -> str:
+        """
+        Measures prefabs as level cards without writing anything (a read-only spot
+        check of what generate_asset_catalog(catalog='level') would write), plus the
+        footprint computed for cell_size at the card's placementScale: cells at
+        rotation 0 ([x, y]), meters, fitError (cells minus meters per axis), height.
+        Returns {path: card | reason it is not a level piece}.
+        """
+        return await call_unity("describe_level_cards", {"paths": paths, "cell_size": cell_size})
 
     @mcp.tool()
     async def get_asset_catalog_status(

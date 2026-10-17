@@ -243,6 +243,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = AssetCatalogGenerator.GetAssetCatalogStatus(mcpMessage);
                         break;
 
+                    case "describe_level_cards":
+                        resultText = LevelCatalogGenerator.DescribeLevelCards(mcpMessage);
+                        break;
+
                     default:
                         Debug.LogError($"Unhandled MCP command received: {action}");
                         resultText = $"Error: Unhandled action '{action}'.";

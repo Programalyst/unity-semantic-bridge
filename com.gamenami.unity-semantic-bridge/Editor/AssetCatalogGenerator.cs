@@ -41,7 +41,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 roots = rootsToken.ToObject<string[]>();
             var thumbsToken = mcpMessage["thumbnails"];
             var wantThumbs = thumbsToken == null || thumbsToken.ToObject<bool>();
-            return AssetCatalogRunner.Start(roots, wantThumbs, null).ToString(Newtonsoft.Json.Formatting.None);
+            // "assets" (default): the asset catalog. "level": level cards into level-catalog.json.
+            var catalog = mcpMessage["catalog"]?.ToString() ?? "assets";
+            if (catalog != "assets" && catalog != "level")
+                return new JObject { ["state"] = "error", ["error"] = $"Unknown catalog '{catalog}' (assets, level)." }.ToString(Newtonsoft.Json.Formatting.None);
+            return AssetCatalogRunner.Start(roots, wantThumbs, null, catalog == "level").ToString(Newtonsoft.Json.Formatting.None);
         }
 
         // MCP entry point (method "get_asset_catalog_status"): polls the run.

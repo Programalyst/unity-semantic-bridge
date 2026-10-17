@@ -193,8 +193,9 @@ their expected lines, and a GridBattle report equals a recorded fixture.
 
 ## Current limits
 
-- Footprints are measured on each instance at its prefab scale. Phase 4 catalog cards
-  will supply bounds and an approved `placementScale` instead.
+- Footprints are measured on each instance at its prefab scale. The Phase 4 catalog
+  cards ([level catalog](level-catalog.md)) now exist and compute footprints on request;
+  apply and bake switch to them, with the approved `placementScale`, in Phase 4c.
 - `apply_layout` and `validate_layout` are not MCP tools yet (Phase 5); call `LayoutApplier.Apply`
   from an Editor menu or script (NK: **Tools → Grid Combat → Apply LayoutTest
   Layout**).
