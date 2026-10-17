@@ -12,9 +12,6 @@ covers package identity, migration, development installs and client configuratio
 - **Git** installed and available on `PATH` to Unity Package Manager.
 - **uv** (https://docs.astral.sh/uv/getting-started/installation/) for the separate Python MCP server (Python >=3.13; uv can provision a compatible interpreter).
 
-####  Optional
-- **API key for LLM with strong vision capabiltiies** - lighting subagent can be powered by a separate LLM (ideally with vision-in-the-loop like Astra or Kimi K3); see [`mcp-editor-bridge/core/llm_provider.py`](../mcp-editor-bridge/core/llm_provider.py). Tools are still available to your main/orchestrator agent even without setting up the subagent. Previously used mcp sampling but this was deprecated.
-
 ## Installation
 
 USB has two separately installed parts: the **Unity UPM package** runs inside the
@@ -246,8 +243,7 @@ sends each event to the event port plus every registered server. So
 `get_recent_unity_events` works in every session. If a server cannot receive events,
 for example because the Unity package predates registration, an empty result says
 why. RPC calls from several sessions are processed one at a time, as before.
-Core tools do not require an LLM API key; optional lighting diagnostics use the
-provider settings documented in [`mcp-editor-bridge/LightingAgent/README.md`](../mcp-editor-bridge/LightingAgent/README.md).
+No tool requires an LLM API key.
 
 ### Codex CLI
 

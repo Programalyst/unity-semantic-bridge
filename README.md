@@ -15,6 +15,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - **Merged** `get_gameobject_tree` into `get_scene_hierarchy`. To walk a character's skeleton, pass the character as `root_instance_id` with `prune_skinned=False` and a deep `depth`. Rooted queries also now honour `depth` below the root; before, they returned only the root node.
 - **Merged** `get_component_inspector_values` into `inspect_gameobject`. Pass `component` to read one component's Inspector values, or omit it to read every component.
 - **Removed** `get_urp_pipeline_settings`. Its data is in `get_project_settings(sections=["rendering"])`.
+- **Removed** `diagnose_lighting_issue` and its LightingAgent subagent, so no tool needs an LLM API key any more. Agents run the diagnosis themselves: `get_lights_affecting_object` now describes the steps (lights in range, URP rendering path and light limits, renderer settings, screenshot).
 
 **October 15, 2026: Multi-Editor support**
 - **Several Unity Editors at once.** Each project now has its own bridge ports (defaults 1073/1074), set in **Tools > Unity Semantic Bridge** and stored per user in `UserSettings/`. Register the same MCP server once per project under different names (for example `unity-semantic-bridge` and `unity-ap`), each with matching `--unity-port`/`--event-port`, for example a game project on 1073/1074 and an asset-library project on 1075/1076. See [several Unity projects at once](docs/installation.md#several-unity-projects-at-once).
@@ -91,8 +92,7 @@ the installation. Keep your MCP client's local clone path out of shared settings
 
 For upgrades, local-to-Git migration, or bridge development using **Add package
 from disk**, see the [installation reference](docs/installation.md). Do not commit
-personal absolute package paths. An API key is only needed for
-[optional lighting diagnostics](mcp-editor-bridge/LightingAgent/README.md).
+personal absolute package paths.
 
 ## Available Tools
 
@@ -156,7 +156,6 @@ personal absolute package paths. An API key is only needed for
 
 **Lighting Diagnostics**
 - `get_lights_affecting_object` — Lights within range of a target object using actual bounds distance, per-light `type`/`intensity`/`range`/`cullingMask` (uses `GetLightsAffectingObject`). URP rendering path and light limits are in `get_project_settings(sections=["rendering"])`.
-- `diagnose_lighting_issue` — Autonomous diagnostic subagent (lights → URP → renderer/materials) via `core.llm_provider`; see `LightingAgent/README.md`. Requires `LIGHTING_LLM_PROVIDER`/`MODEL` + API key.
 
 
 ## Known Limitations (for Agents using this tool to read)

@@ -2,16 +2,12 @@ from unity_bridge import call_unity
 from batch_requests import BatchLimits, BatchOperation, PropertyPaths
 from typing import Annotated, Literal
 from pydantic import Field
-from LightingAgent.lighting_agent import LightingDiagnosticAgent
 from fastmcp.utilities.types import Image
 import asyncio
 import base64
 import json
 import time
 from events import events_buffer, registration
-
-# Global reference to lighting agent (initialized after tools are registered)
-_lighting_agent = None
 
 def register_unity_tools(mcp):
     """Registers all Unity-specific tools to the provided MCP instance."""
@@ -749,64 +745,33 @@ def register_unity_tools(mcp):
     
     @mcp.tool()
     async def get_lights_affecting_object(
-        instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
+        instance_id: Annotated[int, "The instance_id of the affected GameObject (e.g. the ground not receiving light), not the light itself. Obtain this from get_scene_hierarchy."],
     ) -> str:
         """
         Finds all scene lights and determines if they overlap or illuminate a specific GameObject.
-        
+        Distance is measured to the object's renderer/collider bounds, not its pivot, so large
+        or flat objects (terrain, ground planes) are judged correctly.
+
         Returns:
         - All Light components in the scene
         - For each light: name, type, intensity, range, position, lightmapping mode, culling mask, rendering layer mask
         - Distance from each light to the target object
         - Whether the target is within range of each light
         - Total count of lights in range (to spot per-object limit issues)
+
+        Diagnosing a lighting issue (read-only; gather evidence before concluding):
+        1. Call this on the affected object. Check in-range count, culling masks vs the object's
+           layer, rendering layer masks, and lightmapping mode (Baked lights need a lightmap bake).
+        2. Call get_project_settings(sections=["rendering"]) for the URP rendering path,
+           per-object light limit, additional-lights mode and shadow distance. In Forward, many in-range lights compete for a few per-object
+           slots, so which lights win shifts with camera and position. Symptoms that are
+           "inconsistent" or "depend on camera angle" point here. Fixes: raise the limit, reduce
+           nearby lights, or switch to Forward+ (no per-object cap).
+        3. Call inspect_gameobject with component="MeshRenderer" (or the renderer in use) for
+           shadow casting/receiving, light probe usage and materials.
+        4. Call get_screenshot(source="scene", focus_instance_id=<id>) to confirm visually.
+        Report root cause, evidence, and recommended fixes; say what needs manual review.
         """
         return await call_unity("get_lights_affecting_object", {
             "instanceId": instance_id
         })
-    
-    async def get_urp_pipeline_settings() -> str:
-        """Returns the URP render pipeline asset's settings, including the rendering path and per-object light limit."""
-        return await call_unity("get_project_settings", {"sections": ["rendering"]})
-
-    @mcp.tool()
-    async def diagnose_lighting_issue(
-        instance_id: Annotated[int, "The instance_id of the GameObject with lighting issues. Get this from 'get_scene_hierarchy'."],
-        issue_description: Annotated[str, "Description of the lighting problem (e.g., 'object appears too dark', 'shadows not rendering', 'lights not affecting object')"],
-        max_iterations: Annotated[int, "Maximum diagnostic tool rounds before stopping (default 10)"] = 10,
-    ) -> str:
-        """
-        Launches an autonomous diagnostic agent that will iteratively investigate and diagnose lighting issues on a GameObject.
-
-        The agent will:
-        1. Check lights affecting the object
-        2. Inspect URP pipeline settings
-        3. Examine renderer components and materials
-        4. Keep iterating until the issue is identified or max iterations reached
-
-        Use this when you need deep, multistep lighting diagnostics rather than manual tool calls.
-        Returns a comprehensive diagnostic report with findings and recommendations.
-
-        Uses a server-owned LLM via core.llm_provider.get_diagnostic_llm() — no MCP
-        sampling required. Configure the provider/model via LIGHTING_LLM_PROVIDER
-        and LIGHTING_LLM_MODEL env vars and set the provider's API key
-        (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY); the tool will return
-        "Error: ..." if credentials are missing or invalid.
-        """
-        global _lighting_agent
-
-        if _lighting_agent is None:
-            unity_tools = {
-                "get_lights_affecting_object": get_lights_affecting_object,
-                "get_urp_pipeline_settings": get_urp_pipeline_settings,
-                "inspect_gameobject": inspect_gameobject,
-                "get_screenshot": get_screenshot,
-            }
-            _lighting_agent = LightingDiagnosticAgent(unity_tools, max_iterations=max_iterations)
-        else:
-            _lighting_agent.max_iterations = max_iterations
-
-        return await _lighting_agent.diagnose_lighting_issue(
-            instance_id,
-            issue_description,
-        )
