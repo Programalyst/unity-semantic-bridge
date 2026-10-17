@@ -9,26 +9,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 {
     public static class ComponentFunctions
     {
-        public static string GetComponentCode(JObject mcpMessage) 
-        {
-            var componentName = mcpMessage["componentName"]?.ToString();
-            
-            // Find the script asset by name
-            var guids = AssetDatabase.FindAssets($"{componentName} t:MonoScript");
-            if (guids.Length == 0) return $"Source code for {componentName} not found.";
-
-            var path = AssetDatabase.GUIDToAssetPath(guids[0]);
-            try 
-            {
-                var fullPath = System.IO.Path.GetFullPath(path);
-                return System.IO.File.ReadAllText(fullPath);
-            } 
-            catch (Exception e) 
-            {
-                return $"Error reading file: {e.Message}";
-            }
-        }
-        
         public static string GetComponentInspectorValues(JObject mcpMessage)
         {
             var id = (int)mcpMessage["instanceId"];

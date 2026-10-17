@@ -32,7 +32,11 @@ mcp = FastMCP(
         "and other Editor-driving work. Unless the user prefers otherwise, start any session that drives "
         "the Editor (enter_play/exit_play, refresh_assets, write_unity_script, invoke_menu_item, "
         "invoke_static) with set_editor_throttling(\"no_throttling\"), and restore the previous mode "
-        "with set_editor_throttling(\"restore\") when done."
+        "with set_editor_throttling(\"restore\") when done. "
+        "Unity package sources: Packages/<name>/... asset paths are virtual. Embedded packages live "
+        "in Packages/<name>/; git and registry packages live in Library/PackageCache/<name>@<hash>/ "
+        "(gitignored, so search with rg --no-ignore); local file: packages live at the path given in "
+        "Packages/manifest.json. To find a type's source, grep for `class <Name>` there as well as in Assets/."
     ),
 )
 register_unity_tools(mcp)

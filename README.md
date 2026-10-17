@@ -18,6 +18,7 @@ A Unity MCP Bridge built for agents working alongside you in a live Editor sessi
 - **Removed** `diagnose_lighting_issue` and its LightingAgent subagent, so no tool needs an LLM API key any more. Agents run the diagnosis themselves: `get_lights_affecting_object` now describes the steps (lights in range, URP rendering path and light limits, renderer settings, screenshot).
 - **Merged** `clear_console_logs` into `get_console_logs(clear=True)`, which clears after reading.
 - **Merged** `get_physics_layers` into `get_project_settings(sections=["physics"])`, which returns the collision matrix as JSON: each layer and the layers it collides with.
+- **Removed** `get_component_code` and `get_project_tree`. Agents grep and list files directly. The server instructions now say where Unity package sources live on disk, including `Library/PackageCache/` for git and registry packages, which needs `rg --no-ignore`.
 
 **October 15, 2026: Multi-Editor support**
 - **Several Unity Editors at once.** Each project now has its own bridge ports (defaults 1073/1074), set in **Tools > Unity Semantic Bridge** and stored per user in `UserSettings/`. Register the same MCP server once per project under different names (for example `unity-semantic-bridge` and `unity-ap`), each with matching `--unity-port`/`--event-port`, for example a game project on 1073/1074 and an asset-library project on 1075/1076. See [several Unity projects at once](docs/installation.md#several-unity-projects-at-once).
@@ -107,7 +108,6 @@ personal absolute package paths.
 **Scene & GameObject Inspection**
 - `get_scene_hierarchy` — Returns the scene as a list of GameObjects with paths and instance IDs. Usually the first tool to call. Supports depth limiting, a node cap with truncation reporting (for large scenes), optional filtering to only main-camera-visible objects, and `root_instance_id` subtree queries. Objects with a `SkinnedMeshRenderer` are skipped by default; pass `root_instance_id` with `prune_skinned=False` and a deep `depth` to walk a character's rig.
 - `inspect_gameobject` — Serialized field values visible in the Inspector for every component on a GameObject, or only the one named by `component` (live Editor values via `ComponentInspector`; expands `RigBuilder`/`Rig`/`*Constraint.m_Data`/`Transform.m_LocalRotation` as structured `quat`+`euler`).
-- `get_component_code` — Locates and returns the full C# source for a named component (`MonoScript` via `AssetDatabase`).
 
 **Batch Inspection & Property Edits**
 
@@ -138,7 +138,6 @@ personal absolute package paths.
 - `bake_layout` — Reads the active scene back into compact grid-layout JSON (`{"v":1,"size":[w,h],"pieces":[[localId, prefabGuid, x, y, rot]],"deploy":[[x,y]],"decor":[]}`) through the game's `IGridRulesAdapter` (`Runtime/Layout/`). Off-grid rotation, scale or position, off-board and non-prefab blockers are reported, never snapped; also lists cells where the layout disagrees with the game's own occupancy bake. Optional `path` writes the JSON under `Assets/`. Edit Mode only. The matching compiler is `LayoutCompiler` (Editor API). See [grid layouts](docs/grid-layouts.md) for the format, the USB/game split and a flow diagram.
 - `generate_asset_catalog(catalog="level")` / `describe_level_cards` — Level catalog cards for prefabs (role, cover, visual and collider bounds at root scale 1, `placementScale`, root rotation) in `AssetCatalog/level-catalog.json`, keyed by GUID; `describe_level_cards` measures given prefab paths and their footprint for a cell size without writing anything. Roles and scales can be overridden in `AssetCatalog/LevelCatalogOverrides.json`. See [level catalog](docs/level-catalog.md).
 - `find_asset_references` — Finds assets/scenes referencing a specific asset path (`AssetDatabase.GetDependencies`).
-- `get_project_tree` — Project folder structure from a path (`AssetDatabase.GetSubFolders` + direct-file filter).
 - `write_unity_script` — Creates/overwrites a C# script (`Assets/...cs`) and triggers recompilation (`AssetDatabase.ImportAsset`/`Refresh`, `CONFIRM_REQUIRED` pattern).
 - `create_scriptable_object` — Creates a `ScriptableObject` asset atomically without `write_unity_script`: `Type.GetType` + assembly fallback, `ScriptableObject.CreateInstance`, field init via `SerializedObject` (primitives, enums as `"cross"`→`UnitId.cross`, `Vector3` `{x,y,z}`, `Object` refs as `instanceId`/`guid`/`{fileID,guid}`), `Undo.RegisterCreatedObjectUndo` + `AssetDatabase.CreateAsset/SaveAssets/Refresh`. Validates `Assets/` + `.asset`, parent folder exists, `ScriptableObject` subclass, `CONFIRM_REQUIRED` on overwrite. Returns `{instanceId,guid,path}`.
 - `delete_asset` — Deletes an asset via `AssetDatabase.DeleteAsset` (supports Undo, validates `Assets/`).

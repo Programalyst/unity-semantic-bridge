@@ -188,15 +188,6 @@ def register_unity_tools(mcp):
         })
 
     @mcp.tool()
-    async def get_project_tree(
-        folder_path: Annotated[str, "The project-relative path (e.g., 'Assets/Scripts') to start the tree from"] = "Assets"
-    ) -> str:
-        """Returns the folder structure starting from the given path."""
-        return await call_unity("get_project_tree", {
-            "path": folder_path
-        })
-
-    @mcp.tool()
     async def author_ui(
         operations: Annotated[list[dict], "Ordered uGUI operations: create, add_component, configure, set_rect, set_fields, button_on_click. References: {instanceId}, {guid,fileID}, {path}, or {ref: earlier_create_id}; add component/componentIndex to select a component. See docs/ugui-authoring.md."],
         name: Annotated[str, "Name for the single Unity Undo group."] = "Author uGUI",
@@ -486,24 +477,13 @@ def register_unity_tools(mcp):
         2. Call this tool with that instance_id and component=<name>. This keeps the output small
            on objects with many components.
 
-        To read the component's source logic instead of its values, use get_component_code.
+        To read the component's source logic instead, grep for `class <Name>` (see the server
+        instructions for where package sources live).
         """
         params: dict = {"instanceId": instance_id}
         if component is not None:
             params["componentName"] = component
         return await call_unity("inspect_gameobject", params)
-
-    @mcp.tool()
-    async def get_component_code(
-        component_name: Annotated[str, "The exact name of the C# class/component (e.g., 'HealthHandler' or 'Projectile')."]
-    ) -> str:
-        """
-        Locates and returns the full C# source code for a specific Unity component.
-        Use this to analyze the logic of scripts identified via inspect_gameobject.
-        """
-        return await call_unity("get_component_code", {
-            "componentName": component_name
-        })
 
     @mcp.tool()
     async def add_component(

@@ -68,10 +68,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = AssetFunctions.FindAssetReferences(mcpMessage);
                         break;
 
-                    case "get_project_tree":
-                        resultText = AssetFunctions.GetFolderStructure(mcpMessage);
-                        break;
-
                     case "write_unity_script":
                         resultText = AssetFunctions.WriteScript(mcpMessage);
                         break;
@@ -120,10 +116,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                     case "inspect_gameobject":
                         resultText = SceneFunctions.InspectGameObject(mcpMessage);
-                        break;
-
-                    case "get_component_code":
-                        resultText = ComponentFunctions.GetComponentCode(mcpMessage);
                         break;
 
                     case "add_component":

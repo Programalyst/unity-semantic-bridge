@@ -37,43 +37,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return responseContent;
         }
         
-        public static string GetFolderStructure(JObject mcpMessage)
-        {
-            // 1. Get the path and ensure it's Unity-friendly (forward slashes)
-            var folderPath = mcpMessage["path"]?.ToString() ?? "Assets";
-            folderPath = folderPath.Replace("\\", "/").TrimEnd('/');
-
-            // 2. Get Sub-folders (using AssetDatabase is much faster)
-            string[] subFolders = AssetDatabase.GetSubFolders(folderPath);
-    
-            // 3. Get Files in this specific folder (depth = false to avoid recursion)
-            // We use a filter to ignore .meta files and system files
-            string[] assets = AssetDatabase.FindAssets("", new[] { folderPath });
-            var filesInFolder = new List<string>();
-
-            foreach (var guid in assets)
-            {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                // Only include files DIRECTLY in this folder (not in subfolders)
-                if (Path.GetDirectoryName(path)?.Replace("\\", "/") == folderPath)
-                {
-                    filesInFolder.Add(Path.GetFileName(path));
-                }
-            }
-
-            // 4. Format for Claude
-            var sb = new StringBuilder();
-            sb.AppendLine($"--- Contents of {folderPath} ---");
-    
-            sb.AppendLine("\n[Directories]:");
-            foreach (var dir in subFolders) sb.AppendLine($"  > {Path.GetFileName(dir)}/");
-    
-            sb.AppendLine("\n[Files]:");
-            foreach (var file in filesInFolder) sb.AppendLine($"  - {file}");
-
-            return sb.ToString();
-        }
-        
         public static string WriteScript(JObject mcpMessage)
         {
             var path = mcpMessage["path"]?.ToString();
