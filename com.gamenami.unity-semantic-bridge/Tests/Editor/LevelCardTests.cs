@@ -255,6 +255,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         [TestCase(@"{""pieces"":{""a"":{""placementScale"":[1,1]}}}", "Expected [x, y, z]")]
         [TestCase(@"{""pieces"":{""a"":{""scale"":2}}}", "unknown key 'scale'")]
         [TestCase(@"{""pieces"":{""a"":{""storeys"":0}}}", "at least 1")]
+        [TestCase(@"{""pieces"":{""a"":{""lift"":""high""}}}", "lift must be a number")]
+        [TestCase(@"{""pieces"":{""a"":{""footprint"":[2,0]}}}", "footprint sides must be positive")]
+        [TestCase(@"{""pieces"":{""a"":{""footprint"":[2,2,2]}}}", "Expected [x, z]")]
         [TestCase(@"{""pieces"":", "LevelCatalogOverrides.json")]
         public void OverridesAreStrict(string json, string message)
         {
@@ -271,6 +274,80 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             LevelCards.Classify(card, Vec3.One, overrides.Resolve("g2", "x"));
             Assert.AreEqual(LevelRole.Building, card.Role);
             Assert.AreEqual(2, card.Storeys);
+        }
+
+        // A Wasteland barricade pivoted at mid-height: mesh -0.92..+0.92 m. Without a lift it sinks half into
+        // the floor and reads as 0.92 m half cover; lifted 0.75 m its top is 1.67 m above the floor.
+        [Test]
+        public void LiftRaisesThePivotAndCountsInHeightAndRole()
+        {
+            LevelCard Barricade() => new LevelCard
+            {
+                Name = "SM_Prop_Barricade_01",
+                Id = "PolygonApocalypseWasteland/Prefabs/Props/SM_Prop_Barricade_01.prefab",
+                VisualBounds = new Box3(new Vec3(0, 0, 0), new Vec3(1.73, 1.84, 0.22)),
+            };
+            var plain = Barricade();
+            LevelCards.Classify(plain, Vec3.One, null);
+            Assert.AreEqual(LevelRole.CoverHalf, plain.Role, "geometry, top 0.92 m above the pivot");
+            Assert.AreEqual(0, plain.Lift);
+
+            var overrides = LevelCatalogOverrides.Parse(@"{""rules"":[{""match"":""**/SM_Prop_Barricade_*"",""lift"":0.5}],
+              ""pieces"":{""g1"":{""lift"":0.75}}}");
+            var lifted = Barricade();
+            LevelCards.Classify(lifted, Vec3.One, overrides.Resolve("g1", lifted.Id));
+            Assert.AreEqual(0.75, lifted.Lift, 1e-9, "piece entry wins over the rule");
+            Assert.AreEqual(0.92 + 0.75, lifted.Height, 1e-6);
+            Assert.AreEqual(LevelRole.Unknown, lifted.Role, "1.67 m: between half and full cover");
+            var footprint = LevelCards.Footprint(lifted, Cell);
+            Assert.AreEqual(0.92 + 0.75, footprint.Height, 1e-6, "footprint height is above the floor");
+            Assert.AreEqual(1.84, footprint.Size.Y, 1e-6, "size is not changed by the lift");
+            Assert.AreEqual(0.0, footprint.Center.Y, 1e-6, "centre stays relative to the pivot");
+
+            var back = LevelCards.FromJson("g1", LevelCards.ToJson(lifted));
+            Assert.AreEqual(0.75, back.Lift, 1e-9);
+            var old = LevelCards.ToJson(plain);
+            old.Remove("lift");
+            Assert.AreEqual(0, LevelCards.FromJson("g0", old).Lift, "catalogs written before lift read as 0");
+        }
+
+        // Wasteland SM_Prop_Tyre_Pile_02 at (0.9, 1, 0.9): 2.21 x 2.31 m, which rounds to 2 x 2 cells. The owner
+        // wants it to claim one cell and overhang visually, so its override claims 2 x 2 m.
+        [Test]
+        public void FootprintOverrideClaimsCellsAndKeepsTheMeasuredSize()
+        {
+            LevelCard Pile() => new LevelCard
+            {
+                Name = "SM_Prop_Tyre_Pile_02",
+                Id = "PolygonApocalypseWasteland/Prefabs/Props/SM_Prop_Tyre_Pile_02.prefab",
+                VisualBounds = new Box3(new Vec3(0.1, 0.55, 0), new Vec3(2.46, 1.15, 2.57)),
+            };
+            var plain = Pile();
+            var overrides = LevelCatalogOverrides.Parse(@"{""pieces"":{""g"":{""placementScale"":[0.9,1,0.9]}}}");
+            LevelCards.Classify(plain, Vec3.One, overrides.Resolve("g", plain.Id));
+            var measured = LevelCards.Footprint(plain, Cell);
+            Assert.AreEqual(2, measured.Width);
+            Assert.AreEqual(2, measured.Depth);
+            Assert.IsFalse(measured.Overridden);
+
+            overrides = LevelCatalogOverrides.Parse(@"{""pieces"":{""g"":{""placementScale"":[0.9,1,0.9],""footprint"":[2,2]}}}");
+            var card = Pile();
+            LevelCards.Classify(card, Vec3.One, overrides.Resolve("g", card.Id));
+            Assert.IsTrue(card.FootprintOverride.Value.Equals(new FootprintSize(2, 2)));
+            var claimed = LevelCards.Footprint(card, Cell);
+            Assert.AreEqual(1, claimed.Width);
+            Assert.AreEqual(1, claimed.Depth);
+            Assert.IsTrue(claimed.Overridden);
+            Assert.AreEqual(2.46 * 0.9, claimed.Size.X, 1e-6, "measured size is kept");
+            Assert.AreEqual(2.0 - 2.46 * 0.9, claimed.FitErrorX, 1e-6, "negative fit error: the overhang");
+            Assert.AreEqual(0.09, claimed.Center.X, 1e-6, "centre stays the bounds centre");
+            Assert.AreEqual(2, LevelCards.Footprint(card, 1.0).Width, "the override is in meters, so 1 m cells give 2");
+            Assert.AreEqual(new Cell(1, 1), claimed.RotatedSize(1));
+
+            var back = LevelCards.FromJson("g", LevelCards.ToJson(card));
+            Assert.IsTrue(back.FootprintOverride.Value.Equals(new FootprintSize(2, 2)));
+            Assert.AreEqual(JTokenType.Null, LevelCards.ToJson(plain)["footprintOverride"].Type);
+            Assert.IsNull(LevelCards.FromJson("g", LevelCards.ToJson(plain)).FootprintOverride);
         }
 
         [Test]

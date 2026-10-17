@@ -166,6 +166,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     ["fitError"] = new JArray(Math.Round(footprint.FitErrorX, 3), Math.Round(footprint.FitErrorZ, 3)),
                     ["height"] = Math.Round(footprint.Height, 3),
                     ["approximate"] = footprint.Approximate,
+                    ["overridden"] = footprint.Overridden,
                 };
                 result[path] = json;
             }

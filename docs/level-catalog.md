@@ -61,7 +61,7 @@ blocker, 85 building, 181 cover_full, 139 cover_half, 359 decor, 152 ground and 
    "levelRole": "blocker", "roleSource": "name", "cover": null,
    "visualBounds":   {"center": [0, 0.732, 0],      "size": [3.263, 1.446, 0.79]},
    "colliderBounds": {"center": [0, 0.747, -0.007], "size": [3.314, 1.476, 0.829]},
-   "pivotOffset": [0, 0.009, -0.007], "height": 1.485, "storeys": null, "skewed": false,
+   "pivotOffset": [0, 0.009, -0.007], "height": 1.485, "lift": 0, "storeys": null, "skewed": false,
    "placementScale": [1, 1, 1], "scaleSource": "prefab", "rootRotation": [0, 0, 0],
    "thumbnail": "level-thumbs/PolygonApocalypseWasteland__Prefabs__Props__SM_Prop_Barrier_01.prefab.png"}}}
 ```
@@ -76,7 +76,9 @@ resolve in the game.
 | `visualBounds` | Box around every enabled mesh renderer on an active object, in **root space at root scale 1**: the root is reset to the origin, unrotated and at scale 1 before measuring, and child transforms count. Meters. |
 | `colliderBounds` | The same for enabled, non-trigger colliders (box, sphere and capsule shapes; a mesh collider's mesh bounds). `null` when the prefab has none. |
 | `pivotOffset` | Bottom centre of the footprint bounds relative to the pivot (root space, scale 1). Footprint bounds are the colliders for blocking roles when present, else the visual bounds. |
-| `height` | Top of the footprint bounds above the pivot, at `placementScale` and `rootRotation`, in meters. It drives cover. |
+| `height` | Top of the footprint bounds above the floor, at `placementScale` and `rootRotation`, in meters: the top above the pivot plus `lift`. It drives cover. |
+| `footprintOverride` | `[x, z]` meters the piece claims on the grid at layout rotation 0, instead of its bounds; `null` unless an override sets it. For pieces allowed to overhang their cells visually (e.g. a tyre heap scaled past one cell). |
+| `lift` | Height of the pivot above the floor when placed, in meters (0 unless an override sets it). For pieces modelled below their pivot, such as the Wasteland barricades pivoted at mid-height, which otherwise sink half into the floor. Layouts place the pivot at floor + `lift`. |
 | `storeys` | Buildings only: `height / 3 m`, rounded, at least 1; an override can set it. |
 | `skewed` | A measured child is rotated off 90° steps (by more than about 0.8°), so the boxes overstate the size. |
 | `levelRole` | `blocker`, `cover_half`, `cover_full`, `ground`, `decor`, `building` or `unknown` (see below). |
@@ -92,6 +94,8 @@ Footprint cells and fit error are not stored, so one card serves any cell size a
 scale. `LevelCards.Footprint(card, cellSize, scale?)` (`Runtime/Layout/LevelCard.cs`):
 
 1. takes the footprint bounds (colliders for blocking roles when present, else visual),
+   unless the card has a `footprintOverride`, whose size gives the cells instead (step 4; `Overridden` is set
+   and the fit error is negative where the piece overhangs),
 2. scales them by `placementScale`, or by the `scale` argument for a per-piece exception,
 3. turns them by `rootRotation` and takes the axis-aligned box,
 4. rounds each horizontal side up to whole cells after a 5 cm tolerance (the same rule
@@ -102,10 +106,10 @@ The result (`CardFootprint`) holds, at layout rotation 0:
   giving the layout's `PieceSpec` and `RotatedSize(rot)` the board size after quarter turns;
 - `Size` in meters (X along grid x, Y up, Z along grid y);
 - `Center`, the bounds centre relative to the pivot, which apply subtracts to centre the
-  piece on its cells;
+  piece on its cells (X/Z; the pivot goes to floor + `lift`);
 - `FitErrorX`/`FitErrorZ`, cells minus meters: the slack left in the footprint. It is
   slightly negative when the piece is longer than its cells but within the tolerance;
-- `Height`;
+- `Height`, above the floor (the card's `lift` included);
 - `Approximate`, set when the root rotation is not a quarter turn about Y or the card is
   skewed, because the box then overstates the size.
 
@@ -173,6 +177,11 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
   - `cover` (`None`, `Half`, `Full`) replaces the cover the role implies.
   - `placementScale` is `[x, y, z]` or one number for a uniform scale (`scaleSource: "override"`).
   - `storeys`
+  - `footprint` (`[x, z]` meters at layout rotation 0, both positive) is the size the piece claims on the
+    grid; its cells come from this instead of the bounds, so a piece can overhang its cells visually. The
+    card stores it as `footprintOverride`. Apply must then fit the blocking collider to the claimed cells (4c).
+  - `lift` (meters, may be negative) raises the pivot above the floor; it is added to `height`, so it changes
+    the detected role and cover too.
   - `exclude: true` leaves the prefab out of the catalog.
   - `note` is free text for review history.
 - Height, cover and storeys are measured at the overridden scale. Edit the file, then
@@ -201,6 +210,6 @@ different thing. The overrides file sets the scale every layout uses, and
 ## Not yet
 
 - Apply and bake still measure each instance at its prefab scale. Reading cards is 4c.
-- The scan of both packs, the shortlist and the scale gallery review are 4b; the scale
-  and plausibility validators are 4d.
+- The scale and plausibility validators are 4d. The 4b scan, review and import are done:
+  NK `docs/level-piece-review.md` and `docs/level-rules.md` (§ *Level pieces and the catalog overrides*).
 - No thumbnail vision for `unknown` cards, and no `query_level_catalog` tool (Phase 5).

@@ -113,8 +113,22 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public Box3? ColliderBounds;
         /// <summary>Bottom centre of the footprint bounds (colliders for blocking roles, else visual) relative to the pivot, root space at scale 1.</summary>
         public Vec3 PivotOffset;
-        /// <summary>Top of the footprint bounds above the pivot at PlacementScale and RootRotation (meters).</summary>
+        /// <summary>
+        /// Top of the footprint bounds above the floor at PlacementScale and RootRotation (meters): the top above
+        /// the pivot plus <see cref="Lift"/>.
+        /// </summary>
         public double Height;
+        /// <summary>
+        /// Height of the pivot above the floor when placed (meters, 0 by default; an override sets it for pieces
+        /// modelled below their pivot, e.g. barricades pivoted at mid-height). Layouts place the pivot at floor + Lift.
+        /// </summary>
+        public double Lift;
+        /// <summary>
+        /// The horizontal size (meters, X along grid x and Z along grid y at layout rotation 0) the piece claims on
+        /// the grid instead of its measured bounds; null to use the bounds. Set by an override for pieces that may
+        /// visually overhang their cells, e.g. a tyre heap scaled past one cell. Its cells come from this size.
+        /// </summary>
+        public FootprintSize? FootprintOverride;
         /// <summary>Buildings only: storeys at PlacementScale (height / 3 m, at least 1).</summary>
         public int? Storeys;
         /// <summary>A measured child is rotated off 90° steps, so the boxes overstate its size.</summary>
@@ -132,6 +146,24 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public Box3 FootprintBounds => LevelCards.IsBlocking(Role) && ColliderBounds.HasValue ? ColliderBounds.Value : VisualBounds;
     }
 
+    /// <summary>A footprint size override in meters at layout rotation 0: X along grid x, Z along grid y.</summary>
+    public readonly struct FootprintSize : IEquatable<FootprintSize>
+    {
+        public readonly double X;
+        public readonly double Z;
+
+        public FootprintSize(double x, double z)
+        {
+            X = x;
+            Z = z;
+        }
+
+        public bool Equals(FootprintSize other) => X == other.X && Z == other.Z;
+        public override bool Equals(object obj) => obj is FootprintSize other && Equals(other);
+        public override int GetHashCode() => (X, Z).GetHashCode();
+        public override string ToString() => string.Format(CultureInfo.InvariantCulture, "[{0}, {1}]", X, Z);
+    }
+
     /// <summary>A card's footprint for one cell size and scale, at layout rotation 0.</summary>
     public readonly struct CardFootprint
     {
@@ -146,13 +178,16 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>Cells minus meters per axis (X, Z): the slack left in the footprint; slightly negative within the 5 cm tolerance.</summary>
         public readonly double FitErrorX;
         public readonly double FitErrorZ;
-        /// <summary>Top of the bounds above the pivot (meters).</summary>
+        /// <summary>Top of the bounds above the floor (meters): above the pivot, plus the card's lift when built from a card.</summary>
         public readonly double Height;
         /// <summary>The root rotation is not a quarter turn about Y (or the card is skewed), so the box overstates the size.</summary>
         public readonly bool Approximate;
+        /// <summary>Width and Depth come from the card's footprint override, not the bounds; FitError is then negative where the piece overhangs.</summary>
+        public readonly bool Overridden;
 
-        public CardFootprint(int width, int depth, Vec3 size, Vec3 center, double fitErrorX, double fitErrorZ, double height, bool approximate)
+        public CardFootprint(int width, int depth, Vec3 size, Vec3 center, double fitErrorX, double fitErrorZ, double height, bool approximate, bool overridden = false)
         {
+            Overridden = overridden;
             Width = width;
             Depth = depth;
             Size = size;
@@ -203,8 +238,21 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// (the card's PlacementScale when null, e.g. a per-piece exception otherwise), turned by the root
         /// rotation, rounded up to whole cells after the 5 cm tolerance.
         /// </summary>
-        public static CardFootprint Footprint(LevelCard card, double cellSize, Vec3? scale = null) =>
-            Footprint(card.FootprintBounds, card.RootRotation, scale ?? card.PlacementScale, cellSize, card.Skewed);
+        public static CardFootprint Footprint(LevelCard card, double cellSize, Vec3? scale = null)
+        {
+            var measured = Lifted(Footprint(card.FootprintBounds, card.RootRotation, scale ?? card.PlacementScale, cellSize, card.Skewed), card.Lift);
+            if (!card.FootprintOverride.HasValue) return measured;
+            // The override claims a size on the grid; the measured size and centre stay, so a negative fit error shows the overhang.
+            var claimed = card.FootprintOverride.Value;
+            var width = CellsFor(claimed.X, cellSize);
+            var depth = CellsFor(claimed.Z, cellSize);
+            return new CardFootprint(width, depth, measured.Size, measured.Center,
+                Round(width * cellSize - measured.Size.X), Round(depth * cellSize - measured.Size.Z), measured.Height, measured.Approximate, true);
+        }
+
+        /// <summary>The same footprint with its height measured from a pivot <paramref name="lift"/> meters above the floor.</summary>
+        public static CardFootprint Lifted(CardFootprint f, double lift) => lift == 0 ? f :
+            new CardFootprint(f.Width, f.Depth, f.Size, f.Center, f.FitErrorX, f.FitErrorZ, f.Height + lift, f.Approximate, f.Overridden);
 
         public static CardFootprint Footprint(Box3 bounds, Vec3 rootRotation, Vec3 scale, double cellSize, bool skewed = false)
         {
@@ -376,9 +424,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
         {
             card.PlacementScale = entry?.PlacementScale ?? rootScale;
             card.ScaleSource = entry?.PlacementScale != null ? "override" : "prefab";
+            card.Lift = entry?.Lift ?? 0;
+            card.FootprintOverride = entry?.Footprint;
             // Role from the overrides, else from the name and the blocking (collider-first) bounds.
             var blocking = card.ColliderBounds ?? card.VisualBounds;
-            var placed = Footprint(blocking, card.RootRotation, card.PlacementScale, 1.0, card.Skewed);
+            var placed = Lifted(Footprint(blocking, card.RootRotation, card.PlacementScale, 1.0, card.Skewed), card.Lift);
             if (entry?.Role != null)
             {
                 card.Role = entry.Role.Value;
@@ -392,7 +442,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             card.Cover = entry?.Cover ?? CoverFor(card.Role);
             var bounds = card.FootprintBounds;
             card.PivotOffset = new Vec3(bounds.Center.X, bounds.Min.Y, bounds.Center.Z);
-            card.Height = Footprint(bounds, card.RootRotation, card.PlacementScale, 1.0, card.Skewed).Height;
+            card.Height = Footprint(bounds, card.RootRotation, card.PlacementScale, 1.0, card.Skewed).Height + card.Lift;
             card.Storeys = entry?.Storeys ?? (card.Role == LevelRole.Building ? StoreysFor(card.Height) : (int?)null);
         }
 
@@ -443,6 +493,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 ["colliderBounds"] = card.ColliderBounds.HasValue ? BoxJson(card.ColliderBounds.Value) : null,
                 ["pivotOffset"] = VecJson(card.PivotOffset),
                 ["height"] = Mm(card.Height),
+                ["lift"] = Mm(card.Lift),
+                ["footprintOverride"] = card.FootprintOverride.HasValue
+                    ? new JArray(Mm(card.FootprintOverride.Value.X), Mm(card.FootprintOverride.Value.Z)) : null,
                 ["storeys"] = card.Storeys,
                 ["skewed"] = card.Skewed,
                 ["placementScale"] = VecJson(card.PlacementScale),
@@ -471,6 +524,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 ColliderBounds = collider == null || collider.Type == JTokenType.Null ? (Box3?)null : ParseBox(collider),
                 PivotOffset = ParseVec(json["pivotOffset"]),
                 Height = (double)json["height"],
+                Lift = (double?)json["lift"] ?? 0,
+                FootprintOverride = ParseFootprint(json["footprintOverride"]),
                 Storeys = storeys == null || storeys.Type == JTokenType.Null ? (int?)null : (int)storeys,
                 Skewed = (bool?)json["skewed"] ?? false,
                 PlacementScale = ParseVec(json["placementScale"]),
@@ -478,6 +533,16 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 RootRotation = ParseVec(json["rootRotation"]),
                 Thumbnail = (string)json["thumbnail"],
             };
+        }
+
+        /// <summary>A "footprint" value: [x, z] meters, both positive; null for a missing or null token.</summary>
+        public static FootprintSize? ParseFootprint(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null) return null;
+            if (!(token is JArray a) || a.Count != 2) throw new FormatException("Expected [x, z] in meters.");
+            var size = new FootprintSize((double)a[0], (double)a[1]);
+            if (!(size.X > 0) || !(size.Z > 0)) throw new FormatException("footprint sides must be positive");
+            return size;
         }
 
         /// <summary>Reads level-catalog.json into cards keyed by GUID.</summary>
