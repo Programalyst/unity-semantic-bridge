@@ -113,6 +113,13 @@ namespace Gamenami.UnitySemanticBridge.Layout
             return merged;
         }
 
+        /// <summary>
+        /// True when the file has a per-piece entry for the prefab (by GUID or catalog id): a reviewed
+        /// piece. Family rules alone don't count.
+        /// </summary>
+        public bool HasPieceEntry(string guid, string id) =>
+            (guid != null && _pieces.ContainsKey(guid)) || (id != null && _pieces.ContainsKey(id));
+
         private static LevelOverride ParseEntry(JObject json, string where, string extraKey)
         {
             var entry = new LevelOverride();

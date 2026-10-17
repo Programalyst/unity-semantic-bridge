@@ -3,8 +3,10 @@
 The level catalog holds one **card** per level-relevant prefab, so an agent can pick
 pieces and size them on the grid without opening each prefab. It is a separate file from
 the asset catalog (`asset-catalog.json`, which serves character outfits), so neither file
-grows the other. Cards feed [grid layouts](grid-layouts.md): from Phase 4c, apply and bake
-read each piece's footprint and `placementScale` from its card. Background:
+grows the other. Cards feed [grid layouts](grid-layouts.md): since Phase 4c, apply and bake
+read each reviewed piece's `placementScale`, `lift`, footprint and `cover` from its card,
+which they build on demand from the prefab and the overrides file (`LevelCardSource`), so a
+game project needs only the overrides file, not a generated catalog. Background:
 [asset intelligence plan](asset-intelligence-plan.md) §3 *Catalog cards* and *Piece scale*.
 
 - Output: `<Project>/AssetCatalog/level-catalog.json` (cards keyed by prefab GUID) and
@@ -179,7 +181,8 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
   - `storeys`
   - `footprint` (`[x, z]` meters at layout rotation 0, both positive) is the size the piece claims on the
     grid; its cells come from this instead of the bounds, so a piece can overhang its cells visually. The
-    card stores it as `footprintOverride`. Apply must then fit the blocking collider to the claimed cells (4c).
+    card stores it as `footprintOverride`. Apply fits the blocking collider to the claimed cells: colliders
+    that reach past them are disabled and replaced by one box inset 0.1 m ([grid layouts](grid-layouts.md)).
   - `lift` (meters, may be negative) raises the pivot above the floor; it is added to `height`, so it changes
     the detected role and cover too.
   - `exclude: true` leaves the prefab out of the catalog.
@@ -207,9 +210,24 @@ different thing. The overrides file sets the scale every layout uses, and
 - `mcp-editor-bridge/tests/test_level_catalog_tools.py`: the `catalog` parameter and
   `describe_level_cards` registration.
 
+## Cards in apply and bake
+
+A game project (NK) keeps no `level-catalog.json`: the generated files under `AssetCatalog/` are gitignored and only the overrides file is committed. The full catalog lives where the packs are scanned (Asset Preview); NK's `level-rules.md` (*Choosing pieces for a layout*) says where. A query tool is Phase 5.
+
+- Which pieces have a card: those with a **per-piece entry** (GUID or id) in the project's
+  `LevelCatalogOverrides.json`, i.e. reviewed pieces; family rules alone don't give one.
+  `LevelCatalogOverrides.HasPieceEntry` decides; `LevelCardSource.ForProject()` builds the
+  card with `LevelCatalogGenerator.BuildCard`.
+- Apply instantiates at `placementScale`, places the pivot at the floor + `lift` (+ the game
+  adapter's `GroundLift` for role `ground`), sizes the piece by `LevelCards.Footprint(card,
+  cellSize, blocking)` (collider bounds when placed as a blocker, visual bounds as decor) and
+  passes `cover` to the game's piece hook (`None` for movement-only blockers; the adapter
+  decides only when the card's cover is null).
+- Bake reads card pieces at their card footprint and reports any instance whose scale differs
+  from its card's `placementScale` (`OFFGRID_SCALE`).
+
 ## Not yet
 
-- Apply and bake still measure each instance at its prefab scale. Reading cards is 4c.
 - The scale and plausibility validators are 4d. The 4b scan, review and import are done:
   NK `docs/level-piece-review.md` and `docs/level-rules.md` (§ *Level pieces and the catalog overrides*).
 - No thumbnail vision for `unknown` cards, and no `query_level_catalog` tool (Phase 5).

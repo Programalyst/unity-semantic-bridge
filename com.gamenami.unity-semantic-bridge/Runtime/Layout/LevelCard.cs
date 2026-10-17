@@ -143,7 +143,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public string Thumbnail;
 
         /// <summary>The bounds footprints use: colliders for blocking roles when present, visual otherwise.</summary>
-        public Box3 FootprintBounds => LevelCards.IsBlocking(Role) && ColliderBounds.HasValue ? ColliderBounds.Value : VisualBounds;
+        public Box3 FootprintBounds => BoundsFor(LevelCards.IsBlocking(Role));
+
+        /// <summary>Colliders (when present) for a piece placed as a blocker, visual bounds for decor.</summary>
+        public Box3 BoundsFor(bool blocking) => blocking && ColliderBounds.HasValue ? ColliderBounds.Value : VisualBounds;
     }
 
     /// <summary>A footprint size override in meters at layout rotation 0: X along grid x, Z along grid y.</summary>
@@ -236,11 +239,14 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>
         /// Footprint of a card at layout rotation 0: the footprint bounds scaled by <paramref name="scale"/>
         /// (the card's PlacementScale when null, e.g. a per-piece exception otherwise), turned by the root
-        /// rotation, rounded up to whole cells after the 5 cm tolerance.
+        /// rotation, rounded up to whole cells after the 5 cm tolerance. <paramref name="blocking"/> picks the
+        /// bounds by how the piece is placed (a layout blocker measures its colliders, decor its renderers);
+        /// null follows the card's role.
         /// </summary>
-        public static CardFootprint Footprint(LevelCard card, double cellSize, Vec3? scale = null)
+        public static CardFootprint Footprint(LevelCard card, double cellSize, Vec3? scale = null, bool? blocking = null)
         {
-            var measured = Lifted(Footprint(card.FootprintBounds, card.RootRotation, scale ?? card.PlacementScale, cellSize, card.Skewed), card.Lift);
+            var bounds = blocking.HasValue ? card.BoundsFor(blocking.Value) : card.FootprintBounds;
+            var measured = Lifted(Footprint(bounds, card.RootRotation, scale ?? card.PlacementScale, cellSize, card.Skewed), card.Lift);
             if (!card.FootprintOverride.HasValue) return measured;
             // The override claims a size on the grid; the measured size and centre stay, so a negative fit error shows the overhang.
             var claimed = card.FootprintOverride.Value;

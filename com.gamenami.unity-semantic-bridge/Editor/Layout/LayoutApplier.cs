@@ -22,6 +22,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public readonly List<string> Notes = new List<string>();
         public int PieceCount;
         public int DecorCount;
+        /// <summary>Pieces and decor placed from their level catalog card (the rest were measured on the instance).</summary>
+        public int CardCount;
 
         internal void AddPlacementIssue(string line)
         {
@@ -33,7 +35,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         {
             var lines = new List<string>
             {
-                $"Applied {PieceCount} pieces and {DecorCount} decor under {LayoutApplier.RootName}; {Expected?.BlockedCount ?? 0} blocked cells.",
+                $"Applied {PieceCount} pieces and {DecorCount} decor under {LayoutApplier.RootName} ({CardCount} from catalog cards); {Expected?.BlockedCount ?? 0} blocked cells.",
                 $"Issues ({Issues.Count}):",
             };
             lines.AddRange(Issues);
@@ -47,8 +49,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     /// Builds a layout document into a scene: prefab instances by GUID under one
     /// [Generated Layout] root, quarter-turn rotation, footprint-centred placement
     /// (pivot offset), the game's piece hook, and blocking colliders shrunk inside their
-    /// footprint cells so runtime triggers reproduce the layout. One Undo group;
-    /// reapplying replaces only that root.
+    /// footprint cells so runtime triggers reproduce the layout. Pieces with a level catalog
+    /// card take its placementScale, lift, footprint and cover; others are measured on the
+    /// instance at their prefab scale. One Undo group; reapplying replaces only that root.
     /// </summary>
     public static class LayoutApplier
     {
@@ -57,8 +60,14 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public const string DecorName = "Decor";
         /// <summary>Gap kept between a fitted collider and its footprint edge, meters.</summary>
         public const float ColliderInset = 0.1f;
+        /// <summary>Name of the child holding the box a card piece's oversized colliders are replaced by.</summary>
+        public const string FootprintColliderName = "Footprint Collider";
+        // Rounding slack when checking a collider against its footprint, meters.
+        private const float FitEpsilon = 1e-4f;
 
-        public static LayoutApplyResult Apply(LayoutDocument document, Scene scene, IGridRulesAdapter adapter = null)
+        /// <param name="cards">Where pieces' catalog cards come from; the project's reviewed pieces when null.</param>
+        public static LayoutApplyResult Apply(LayoutDocument document, Scene scene, IGridRulesAdapter adapter = null,
+            LevelCardSource cards = null)
         {
             adapter ??= LayoutAdapters.Find();
             if (!scene.IsValid() || !scene.isLoaded) throw new BridgeToolException("Open the target scene before applying a layout.");
@@ -68,6 +77,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 throw new BridgeToolException($"Layout size {document.Width}x{document.Height} differs from the level's board {board.Width}x{board.Height}. Change one of them.");
             var prefabs = ResolvePrefabs(document);
             CheckEnemyAssets(document);
+            // Cards are built before the scene is touched (a bad overrides file stops here).
+            cards ??= LevelCardSource.ForProject();
+            var pieceCards = prefabs.Keys.ToDictionary(guid => guid, cards.Find);
 
             Undo.IncrementCurrentGroup();
             var undoGroup = Undo.GetCurrentGroup();
@@ -75,7 +87,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var result = new LayoutApplyResult();
             try
             {
-                return Build(document, scene, adapter, board, prefabs, undoGroup, result);
+                return Build(document, scene, adapter, board, prefabs, pieceCards, undoGroup, result);
             }
             catch
             {
@@ -89,7 +101,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         }
 
         private static LayoutApplyResult Build(LayoutDocument document, Scene scene, IGridRulesAdapter adapter,
-            GridBoard board, Dictionary<string, GameObject> prefabs, int undoGroup, LayoutApplyResult result)
+            GridBoard board, Dictionary<string, GameObject> prefabs, Dictionary<string, LevelCard> cards, int undoGroup,
+            LayoutApplyResult result)
         {
             foreach (var old in scene.GetRootGameObjects().Where(go => go.name == RootName))
                 Undo.DestroyObjectImmediate(old);
@@ -104,13 +117,13 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
 
             foreach (var piece in document.Pieces)
             {
-                var spec = Place(piece, prefabs[piece.PrefabGuid], piecesParent, true, scene, board, adapter, result);
+                var spec = Place(piece, prefabs[piece.PrefabGuid], cards[piece.PrefabGuid], piecesParent, true, scene, board, adapter, result);
                 result.Specs[piece.LocalId] = spec;
                 result.PieceCount++;
             }
             foreach (var decor in document.Decor)
             {
-                Place(decor, prefabs[decor.PrefabGuid], decorParent, false, scene, board, adapter, result);
+                Place(decor, prefabs[decor.PrefabGuid], cards[decor.PrefabGuid], decorParent, false, scene, board, adapter, result);
                 result.DecorCount++;
             }
 
@@ -163,15 +176,54 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 throw new BridgeToolException($"No asset for enemy spawn GUIDs: {string.Join(", ", missing)}.");
         }
 
-        private static PieceSpec Place(LayoutPiece piece, GameObject prefab, Transform parent, bool blocker, Scene scene,
-            GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
+        private static PieceSpec Place(LayoutPiece piece, GameObject prefab, LevelCard card, Transform parent, bool blocker,
+            Scene scene, GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
         {
             var frame = PieceGeometry.Frame(piece.Rotation);
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
             instance.name = piece.LocalId;
             instance.transform.SetParent(parent, false);
             instance.transform.SetPositionAndRotation(Vector3.zero, frame * prefab.transform.localRotation);
+            if (card == null) return PlaceMeasured(piece, instance, frame, blocker, board, adapter, result);
+            result.CardCount++;
+            return PlaceFromCard(piece, instance, card, frame, blocker, board, adapter, result);
+        }
 
+        // A piece with a catalog card: its scale, lift, footprint and cover come from the card. Colliders
+        // that reach past the footprint are fitted before the piece hook (boxes shrunk, other shapes
+        // replaced by one fitted box), so the hook configures what the game will see.
+        private static PieceSpec PlaceFromCard(LayoutPiece piece, GameObject instance, LevelCard card, Quaternion frame,
+            bool blocker, GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
+        {
+            instance.transform.localScale = ToVector3(card.PlacementScale);
+            var cellSize = adapter.Rules.CellSize;
+            var footprint = LevelCards.Footprint(card, cellSize, blocking: blocker);
+            var size = footprint.RotatedSize(piece.Rotation);
+            var center = FootprintCenter(adapter, board, piece.Anchor, size);
+            var offset = frame * ToVector3(footprint.Center);
+            var lift = (float)card.Lift + (card.Role == LevelRole.Ground ? adapter.GroundLift : 0f);
+            instance.transform.position = new Vector3(center.x - offset.x, board.FloorY + lift, center.z - offset.z);
+            if (footprint.Approximate)
+                result.Notes.Add($"APPROXIMATE {piece.Anchor} {piece.LocalId}: the card's box overstates the piece (skewed parts or a tilted root); footprint {footprint}");
+
+            var cover = CoverLevel.None;
+            if (blocker)
+            {
+                ContainSolidColliders(instance, piece, center, size, cellSize, result);
+                cover = card.Cover ?? adapter.DescribeCover(instance);
+                adapter.ConfigurePiece(instance, cover);
+                // Anything the hook added (e.g. a box around the renderers) is fitted like a measured piece's.
+                FitColliders(instance, piece, center, size, cellSize, adapter, result);
+                if (!instance.GetComponentsInChildren<Collider>(true).Any(adapter.IsBlockingCollider))
+                    result.AddPlacementIssue($"NO_BLOCKING_COLLIDER {piece.Anchor} {piece.LocalId}: the piece hook left no blocking collider");
+            }
+            return footprint.ToSpec(cover);
+        }
+
+        // A piece without a card: measured on the instance at its prefab scale (the Phase 2 path).
+        private static PieceSpec PlaceMeasured(LayoutPiece piece, GameObject instance, Quaternion frame, bool blocker,
+            GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
+        {
             var cover = CoverLevel.None;
             if (blocker)
             {
@@ -215,16 +267,12 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         private static void FitColliders(GameObject instance, LayoutPiece piece, Vector3 center, Cell size, float cellSize,
             IGridRulesAdapter adapter, LayoutApplyResult result)
         {
-            var halfX = size.X * cellSize * 0.5f - ColliderInset;
-            var halfZ = size.Y * cellSize * 0.5f - ColliderInset;
-            var limitMin = new Vector2(center.x - halfX, center.z - halfZ);
-            var limitMax = new Vector2(center.x + halfX, center.z + halfZ);
-
+            var (limitMin, limitMax) = FootprintLimits(center, size, cellSize);
             foreach (var collider in instance.GetComponentsInChildren<Collider>(true))
             {
                 if (!adapter.IsBlockingCollider(collider)) continue;
                 var (min, max) = WorldBox(PieceGeometry.ColliderCorners(collider));
-                if (min.x >= limitMin.x && min.z >= limitMin.y && max.x <= limitMax.x && max.z <= limitMax.y) continue;
+                if (Inside(min, max, limitMin, limitMax)) continue;
 
                 var path = RelativePath(instance.transform, collider.transform);
                 if (!(collider is BoxCollider box) || !IsAxisAligned(box.transform))
@@ -232,24 +280,100 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                     result.AddPlacementIssue($"FIT_UNSUPPORTED {piece.Anchor} {piece.LocalId}/{path}: {collider.GetType().Name} reaches past its footprint and only axis-aligned boxes can be fitted; neighbouring cells may block");
                     continue;
                 }
-
-                var fittedMin = new Vector3(Mathf.Max(min.x, limitMin.x), min.y, Mathf.Max(min.z, limitMin.y));
-                var fittedMax = new Vector3(Mathf.Min(max.x, limitMax.x), max.y, Mathf.Min(max.z, limitMax.y));
-                if (fittedMin.x >= fittedMax.x || fittedMin.z >= fittedMax.z)
-                {
-                    result.AddPlacementIssue($"FIT_EMPTY {piece.Anchor} {piece.LocalId}/{path}: collider lies outside its footprint");
-                    continue;
-                }
-
-                var oldSize = max - min;
-                var (localMin, localMax) = WorldBox(PieceGeometry.BoxCorners(box.transform.worldToLocalMatrix,
-                    (fittedMin + fittedMax) * 0.5f, fittedMax - fittedMin));
-                box.center = (localMin + localMax) * 0.5f;
-                box.size = localMax - localMin;
-                var newSize = fittedMax - fittedMin;
-                result.Notes.Add($"FIT {piece.Anchor} {piece.LocalId}/{path}: {oldSize.x:0.00} x {oldSize.z:0.00} m -> {newSize.x:0.00} x {newSize.z:0.00} m");
+                ShrinkBox(box, min, max, limitMin, limitMax, $"{piece.Anchor} {piece.LocalId}/{path}", result);
             }
         }
+
+        // Card pieces, before the piece hook: every solid collider (enabled, not a trigger) that reaches past
+        // the footprint is fitted. Axis-aligned boxes are shrunk; other shapes (mesh colliders, rotated boxes)
+        // are disabled and replaced by one box on a "Footprint Collider" child: their combined bounds clipped to
+        // the footprint inset, full height. The hook then configures that box like any solid collider.
+        private static void ContainSolidColliders(GameObject instance, LayoutPiece piece, Vector3 center, Cell size,
+            float cellSize, LayoutApplyResult result)
+        {
+            var (limitMin, limitMax) = FootprintLimits(center, size, cellSize);
+            var replacedMin = Vector3.positiveInfinity;
+            var replacedMax = Vector3.negativeInfinity;
+            var replaced = new List<string>();
+            foreach (var collider in instance.GetComponentsInChildren<Collider>(false))
+            {
+                if (!collider.enabled || collider.isTrigger) continue;
+                var (min, max) = WorldBox(PieceGeometry.ColliderCorners(collider));
+                if (Inside(min, max, limitMin, limitMax)) continue;
+
+                var path = RelativePath(instance.transform, collider.transform);
+                if (collider is BoxCollider box && IsAxisAligned(box.transform))
+                {
+                    ShrinkBox(box, min, max, limitMin, limitMax, $"{piece.Anchor} {piece.LocalId}/{path}", result);
+                    continue;
+                }
+                collider.enabled = false;
+                replacedMin = Vector3.Min(replacedMin, min);
+                replacedMax = Vector3.Max(replacedMax, max);
+                replaced.Add($"{collider.GetType().Name} {path} ({max.x - min.x:0.00} x {max.z - min.z:0.00} m)");
+            }
+            if (replaced.Count == 0) return;
+
+            var where = $"{piece.Anchor} {piece.LocalId}";
+            var fittedMin = new Vector3(Mathf.Max(replacedMin.x, limitMin.x), replacedMin.y, Mathf.Max(replacedMin.z, limitMin.y));
+            var fittedMax = new Vector3(Mathf.Min(replacedMax.x, limitMax.x), replacedMax.y, Mathf.Min(replacedMax.z, limitMax.y));
+            if (fittedMin.x >= fittedMax.x || fittedMin.z >= fittedMax.z)
+            {
+                result.AddPlacementIssue($"FIT_EMPTY {where}: disabled {string.Join(", ", replaced)}, which lie outside the footprint");
+                return;
+            }
+
+            var holder = new GameObject(FootprintColliderName);
+            holder.layer = instance.layer;
+            holder.transform.SetParent(instance.transform, false);
+            if (!IsAxisAligned(holder.transform))
+            {
+                Object.DestroyImmediate(holder);
+                result.AddPlacementIssue($"FIT_UNSUPPORTED {where}: disabled {string.Join(", ", replaced)}, but the piece's root is not turned in quarter turns, so no fitted box could replace them");
+                return;
+            }
+            var fitted = holder.AddComponent<BoxCollider>();
+            var (localMin, localMax) = WorldBox(PieceGeometry.BoxCorners(holder.transform.worldToLocalMatrix,
+                (fittedMin + fittedMax) * 0.5f, fittedMax - fittedMin));
+            fitted.center = (localMin + localMax) * 0.5f;
+            fitted.size = localMax - localMin;
+            var fittedSize = fittedMax - fittedMin;
+            result.Notes.Add($"FIT_BOX {where}: {string.Join(", ", replaced)} disabled; {FootprintColliderName} box {fittedSize.x:0.00} x {fittedSize.z:0.00} m");
+        }
+
+        // The footprint's X/Z rectangle inset by ColliderInset on every side (min and max as X, Z pairs).
+        private static (Vector2 min, Vector2 max) FootprintLimits(Vector3 center, Cell size, float cellSize)
+        {
+            var halfX = size.X * cellSize * 0.5f - ColliderInset;
+            var halfZ = size.Y * cellSize * 0.5f - ColliderInset;
+            return (new Vector2(center.x - halfX, center.z - halfZ), new Vector2(center.x + halfX, center.z + halfZ));
+        }
+
+        private static bool Inside(Vector3 min, Vector3 max, Vector2 limitMin, Vector2 limitMax) =>
+            min.x >= limitMin.x - FitEpsilon && min.z >= limitMin.y - FitEpsilon &&
+            max.x <= limitMax.x + FitEpsilon && max.z <= limitMax.y + FitEpsilon;
+
+        private static void ShrinkBox(BoxCollider box, Vector3 min, Vector3 max, Vector2 limitMin, Vector2 limitMax,
+            string where, LayoutApplyResult result)
+        {
+            var fittedMin = new Vector3(Mathf.Max(min.x, limitMin.x), min.y, Mathf.Max(min.z, limitMin.y));
+            var fittedMax = new Vector3(Mathf.Min(max.x, limitMax.x), max.y, Mathf.Min(max.z, limitMax.y));
+            if (fittedMin.x >= fittedMax.x || fittedMin.z >= fittedMax.z)
+            {
+                result.AddPlacementIssue($"FIT_EMPTY {where}: collider lies outside its footprint");
+                return;
+            }
+
+            var oldSize = max - min;
+            var (localMin, localMax) = WorldBox(PieceGeometry.BoxCorners(box.transform.worldToLocalMatrix,
+                (fittedMin + fittedMax) * 0.5f, fittedMax - fittedMin));
+            box.center = (localMin + localMax) * 0.5f;
+            box.size = localMax - localMin;
+            var newSize = fittedMax - fittedMin;
+            result.Notes.Add($"FIT {where}: {oldSize.x:0.00} x {oldSize.z:0.00} m -> {newSize.x:0.00} x {newSize.z:0.00} m");
+        }
+
+        public static Vector3 ToVector3(Vec3 v) => new Vector3((float)v.X, (float)v.Y, (float)v.Z);
 
         private static (Vector3 min, Vector3 max) WorldBox(IEnumerable<Vector3> points)
         {

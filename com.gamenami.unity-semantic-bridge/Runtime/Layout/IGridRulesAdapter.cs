@@ -45,6 +45,13 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>The cell containing a world position (X/Z only).</summary>
         Cell WorldToCell(Vector3 position);
 
+        /// <summary>
+        /// Meters the applier raises every ground-role piece (catalog card role ground: roads, sidewalks)
+        /// above the floor, against z-fighting with the terrain and parts modelled below the pivot (kerb
+        /// skirts). One value for the whole game, so ground pieces stay level with each other; 0 for none.
+        /// </summary>
+        float GroundLift { get; }
+
         /// <summary>Layers whose colliders the game's line-of-sight test hits.</summary>
         LayerMask SightLayers { get; }
 
@@ -62,8 +69,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         /// <summary>
         /// Piece hook, called by the layout applier on a fresh blocker instance before its
-        /// colliders are fitted: add whatever the game needs for occupancy and cover. After
-        /// the hook, at least one collider must satisfy IsBlockingCollider.
+        /// blocking colliders are fitted: add whatever the game needs for occupancy and cover. After
+        /// the hook, at least one collider must satisfy IsBlockingCollider. For a piece with a catalog
+        /// card the instance is already scaled and placed, <paramref name="cover"/> is the card's cover
+        /// when it has one (None for movement-only blockers), and colliders the card footprint could not
+        /// contain are already disabled and replaced by one box fitted to the footprint, which the hook
+        /// should treat like any other solid collider.
         /// </summary>
         void ConfigurePiece(GameObject instance, CoverLevel cover);
 

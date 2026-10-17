@@ -39,21 +39,25 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     /// <summary>
     /// Reads a scene (hand-made or applied) back into a layout document. Prefab instances
     /// the adapter classifies as blockers become pieces, the rest decor; deploy cells and enemy
-    /// spawns come from the level through the adapter. Anything that is
-    /// rotated off a quarter turn, scaled away from its prefab, between cells, off the board
-    /// or not a prefab instance is reported, never snapped.
+    /// spawns come from the level through the adapter. Pieces with a level catalog card are read
+    /// at the card's placementScale and footprint (height, i.e. lift, is not checked); others are
+    /// measured at their prefab's scale. Anything that is rotated off a quarter turn, scaled away
+    /// from its card (or prefab), between cells, off the board or not a prefab instance is
+    /// reported, never snapped.
     /// </summary>
     public static class LayoutBaker
     {
         /// <summary>How far a footprint centre may sit from cell alignment, meters.</summary>
         public const float PositionTolerance = 0.05f;
 
-        public static LayoutBakeResult Bake(Scene scene, IGridRulesAdapter adapter = null)
+        /// <param name="cards">Where pieces' catalog cards come from; the project's reviewed pieces when null.</param>
+        public static LayoutBakeResult Bake(Scene scene, IGridRulesAdapter adapter = null, LevelCardSource cards = null)
         {
             adapter ??= LayoutAdapters.Find();
             if (!scene.IsValid() || !scene.isLoaded) throw new BridgeToolException("Open the scene before baking its layout.");
             if (!adapter.TryGetBoard(scene, out var board, out var boardError)) throw new BridgeToolException(boardError);
 
+            cards ??= LevelCardSource.ForProject();
             var result = new LayoutBakeResult { Document = new LayoutDocument(board.Width, board.Height) };
             result.Document.Deploy.AddRange(adapter.ReadDeployCells(scene));
             var visited = new HashSet<Transform>();
@@ -62,7 +66,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 foreach (var candidate in PrefabInstanceRoots(root))
                 {
                     visited.Add(candidate.transform);
-                    BakeInstance(candidate, board, adapter, result, ids);
+                    BakeInstance(candidate, board, adapter, cards, result, ids);
                 }
             ReportLooseBlockers(scene, visited, adapter, result);
             BakeEnemies(scene, adapter, result, ids);
@@ -94,7 +98,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         }
 
         private static void BakeInstance(GameObject instance, GridBoard board, IGridRulesAdapter adapter,
-            LayoutBakeResult result, HashSet<string> ids)
+            LevelCardSource cards, LayoutBakeResult result, HashSet<string> ids)
         {
             var role = adapter.Classify(instance);
             if (role == PieceRole.Ignore) return;
@@ -116,31 +120,48 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 result.Issues.Add($"OFFGRID_ROTATION ~{nearCell} {name}: rotation {instance.transform.eulerAngles} is not a quarter turn of its prefab");
                 return;
             }
+            var guid = AssetDatabase.AssetPathToGUID(path);
+            var card = cards.Find(guid);
             var scale = instance.transform.lossyScale;
-            var prefabScale = asset.transform.localScale;
-            if ((scale - prefabScale).magnitude > 0.001f * Mathf.Max(1f, prefabScale.magnitude))
+            var expectedScale = card != null ? LayoutApplier.ToVector3(card.PlacementScale) : asset.transform.localScale;
+            if ((scale - expectedScale).magnitude > 0.001f * Mathf.Max(1f, expectedScale.magnitude))
             {
-                result.Issues.Add($"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from the prefab's {Format(prefabScale)}; a layout piece has the prefab's scale");
+                result.Issues.Add(card != null
+                    ? $"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from its card's placementScale {Format(expectedScale)}; a layout piece has its card's scale"
+                    : $"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from the prefab's {Format(expectedScale)}; a layout piece has the prefab's scale");
                 return;
             }
 
             var frame = PieceGeometry.Frame(turns.Value);
-            var bounds = role == PieceRole.Blocker
-                ? PieceGeometry.MeasureColliders(instance, frame, adapter.IsBlockingCollider)
-                : PieceGeometry.MeasureRenderers(instance, frame);
-            if (!bounds.HasValue)
+            var cellSize = adapter.Rules.CellSize;
+            int width, depth;
+            Vector3 boundsCenter;
+            if (card != null)
             {
-                if (role == PieceRole.Blocker)
-                    result.Issues.Add($"NO_BLOCKING_COLLIDER ~{nearCell} {name}: classified as a blocker without a blocking collider");
-                return;
+                // The card's footprint (claimed cells for an overridden one), as apply placed it.
+                var footprint = LevelCards.Footprint(card, cellSize, blocking: role == PieceRole.Blocker);
+                (width, depth) = (footprint.Width, footprint.Depth);
+                boundsCenter = LayoutApplier.ToVector3(footprint.Center);
+            }
+            else
+            {
+                var bounds = role == PieceRole.Blocker
+                    ? PieceGeometry.MeasureColliders(instance, frame, adapter.IsBlockingCollider)
+                    : PieceGeometry.MeasureRenderers(instance, frame);
+                if (!bounds.HasValue)
+                {
+                    if (role == PieceRole.Blocker)
+                        result.Issues.Add($"NO_BLOCKING_COLLIDER ~{nearCell} {name}: classified as a blocker without a blocking collider");
+                    return;
+                }
+                (width, depth) = PieceGeometry.Footprint(bounds.Value, cellSize);
+                boundsCenter = bounds.Value.Center;
             }
 
-            var cellSize = adapter.Rules.CellSize;
-            var (width, depth) = PieceGeometry.Footprint(bounds.Value, cellSize);
             var cover = role == PieceRole.Blocker ? adapter.DescribeCover(instance) : CoverLevel.None;
             var spec = new PieceSpec(width, depth, cover);
             var size = spec.RotatedSize(turns.Value);
-            var center = instance.transform.position + frame * bounds.Value.Center;
+            var center = instance.transform.position + frame * boundsCenter;
             var halfSpan = new Vector3((size.X - 1) * cellSize * 0.5f, 0f, (size.Y - 1) * cellSize * 0.5f);
             var anchor = adapter.WorldToCell(center - halfSpan);
             var expected = LayoutApplier.FootprintCenter(adapter, board, anchor, size);
@@ -163,7 +184,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             }
 
             var localId = UniqueId(name, ids);
-            var piece = new LayoutPiece(localId, AssetDatabase.AssetPathToGUID(path), anchor, turns.Value);
+            var piece = new LayoutPiece(localId, guid, anchor, turns.Value);
             if (role == PieceRole.Blocker)
             {
                 result.Document.Pieces.Add(piece);

@@ -44,7 +44,8 @@ Background and later phases are in the
 | Data | `Cell`, `LayoutDocument`, `LayoutJson` (`Runtime/Layout/`) | |
 | Rules | `GridRules` as data; `LayoutGrid` applies them (neighbours, corner rule, orthogonal cover, diffs, ASCII map) | Supplies the values: cell size, 8-way, no corner-cutting, orthogonal cover |
 | Board | | `TryGetBoard`, `CellToWorld`, `WorldToCell` (size from Level Info, origin, floor height) |
-| Pieces | `LayoutApplier`: instantiate, rotate, measure, place, fit colliders, one Undo step | `DescribeCover`, `ConfigurePiece` (piece hook), `IsBlockingCollider` |
+| Pieces | `LayoutApplier`: instantiate, rotate, scale and size from the catalog card (or measure), place, fit colliders, one Undo step | `DescribeCover`, `ConfigurePiece` (piece hook), `IsBlockingCollider`, `GroundLift` |
+| Cards | `LevelCardSource`: a reviewed piece's level catalog card, built on demand from the prefab and `AssetCatalog/LevelCatalogOverrides.json` | Commits the overrides file |
 | Reading scenes | `LayoutBaker`: pieces, decor, off-grid reports, occupancy diff | `Classify` (blocker, decor, ignore), `BakeOccupancy` |
 | Level data | Writes/reads deploy cells and enemy spawns through the adapter | `ReadDeployCells`, `WriteDeployCells`, `ReadEnemySpawns`, `WriteEnemySpawns` (resolves GUIDs to the game's asset types) |
 | Validators | `LayoutValidator` (pure: structural, encounter, reachability, consistency), `LayoutReport`; `LayoutSceneValidator` (Editor: physics tier) | Nothing new: rules, occupancy bake and sight rules above |
@@ -94,17 +95,61 @@ flowchart TB
 Solid links are USB calling the adapter. The dotted link is the Play Mode check:
 the game's own runtime occupancy must equal the layout.
 
+## Where pieces' cards come from
+
+Since Phase 4c, apply and bake take a piece's scale, lift, footprint and cover from its
+[level catalog card](level-catalog.md) when it has one. `LevelCardSource`
+(`Editor/Layout/LevelCardSource.cs`) supplies them; `Apply` and `Bake` take one as an
+optional last argument and default to `LevelCardSource.ForProject()`:
+
+- A game project commits only the overrides file (`<Project>/AssetCatalog/LevelCatalogOverrides.json`;
+  generated catalogs there are gitignored, NK included). So cards are **built on demand**
+  from the prefab and that file, by the same `LevelCatalogGenerator.BuildCard` the catalog
+  run uses (isolated `LoadPrefabContents`, never the open scene), once per prefab per
+  apply or bake. Nothing generated has to be kept fresh, and an overrides edit takes effect
+  on the next apply.
+- Only **reviewed pieces** have a card: a per-piece entry in the overrides file (by GUID or
+  catalog id). Family rules alone don't count, and prefabs without an entry (NK's own
+  Wall SF, Wall SF (half), Grid Crystal Patch) are measured on the instance at their prefab
+  scale, exactly as in Phase 2.
+- A missing overrides file means no cards; a malformed one stops apply and bake before
+  the scene is touched. Tests and tools can pass `LevelCardSource.From(cards)`,
+  `ForOverrides(overrides)` or `None`.
+
 ## How the applier instantiates pieces
 
-`LayoutApplier.Apply(document, scene, adapter)` (`Editor/Layout/LayoutApplier.cs`):
+`LayoutApplier.Apply(document, scene, adapter, cards)` (`Editor/Layout/LayoutApplier.cs`):
 
 1. **Checks first.** It refuses during Play Mode and when the layout's size differs
    from the board. It resolves every GUID (`AssetDatabase.GUIDToAssetPath`, then
    load, then check it is a prefab) and throws once, listing all missing pieces,
    before touching the scene. Pieces moved between projects must keep their GUIDs.
+   Then it builds the pieces' cards.
 2. **Root.** It opens one Undo group, removes any existing `[Generated Layout]` root
    (with Undo), and creates a fresh one with `Pieces` and `Decor` children.
-3. **Per piece:**
+3. **Per piece with a card** (`LayoutApplyResult.CardCount` counts them):
+   1. The live prefab instance (named by local id) gets the quarter turn × the prefab
+      root's own rotation and the card's **`placementScale`** as its root scale.
+   2. Footprint: `LevelCards.Footprint(card, cellSize, blocking)`, from the card's
+      collider bounds for a blocker and its visual bounds for decor, or its
+      `footprintOverride` (claimed cells; the piece may overhang them).
+   3. Position: the card's bounds centre goes to the footprint's centre, as below. The
+      pivot stands at the floor + the card's **`lift`**, plus the adapter's
+      **`GroundLift`** for ground-role cards (NK: 0.25 m for the whole road kit, so road
+      and sidewalk tiles stay level and clear the terrain).
+   4. Blockers only, before the piece hook: every solid collider (enabled, not a
+      trigger) that reaches past the footprint inset by 0.1 m is fitted. Axis-aligned
+      boxes are shrunk as below. Other shapes (Synty's mesh colliders, rotated boxes) are
+      **disabled** and replaced by one box on a `Footprint Collider` child: their combined
+      bounds clipped to the footprint inset, full height (`FIT_BOX` note). For a piece
+      with a footprint override this is the box fitted to the claimed cells; for others
+      it trims the piece's ends (a 2.02 m jersey barrier keeps 1.80 m), since
+      any sliver in a neighbour cell would block it.
+   5. Blockers only: the piece hook runs with the card's **`cover`** (`None` for
+      movement-only blockers; the adapter's `DescribeCover` only when the card has no
+      cover), then any blocking box the hook added is fitted, and a piece left without a
+      blocking collider is reported.
+4. **Per piece without a card:**
    1. `PrefabUtility.InstantiatePrefab` creates a live prefab instance, so later
       prefab edits carry through. It is named by local id.
    2. Rotation is the quarter turn × the prefab root's own rotation.
@@ -122,7 +167,7 @@ the game's own runtime occupancy must equal the layout.
    7. Blockers only: each axis-aligned `BoxCollider` that reaches past the footprint is
       shrunk to the footprint inset by 0.1 m per side, as a scene override on the
       instance. Other collider shapes that overhang are reported (`FIT_UNSUPPORTED`).
-4. **Finish.** It derives the expected grid from the recorded footprints (reporting
+5. **Finish.** It derives the expected grid from the recorded footprints (reporting
    `OVERLAP`, `OUT_OF_BOUNDS`, deploy problems), writes enemy spawns and deploy cells
    through the adapter with Undo recorded on the level, registers the root for Undo and
    collapses everything into one step. Before touching the scene it checks that every
@@ -131,7 +176,8 @@ the game's own runtime occupancy must equal the layout.
    so the previous root and level come back unchanged.
 
 The result lists issues (where the scene may not match the layout) and notes
-(deliberate adjustments, e.g. `FIT 3,6 wall_n/.: 1.00 x 3.91 m -> 1.00 x 3.80 m`).
+(deliberate adjustments, e.g. `FIT 3,6 wall_n/.: 1.00 x 3.91 m -> 1.00 x 3.80 m`, or
+`FIT_BOX 6,8 tyre_heap: MeshCollider . (2.21 x 2.31 m) disabled; Footprint Collider box 1.80 x 1.80 m`).
 Reapplying replaces only the generated root; hand edits to generated objects are
 lost on the next apply.
 
@@ -141,9 +187,14 @@ lost on the next apply.
 
 - Visits active outermost prefab instances. The adapter classifies each as blocker,
   decor or ignored. Decor wholly off the board is skipped silently.
-- Each instance must be a quarter turn of its prefab's rotation, at the prefab's
-  scale, with its footprint centre within 5 cm of cell alignment and inside the board.
-  Otherwise it is reported (`OFFGRID_ROTATION`, `OFFGRID_SCALE`, `OFFGRID_POSITION`,
+- Each instance must be a quarter turn of its prefab's rotation, at its card's
+  `placementScale` (the prefab's own scale when it has no card), with its footprint
+  centre within 5 cm of cell alignment and inside the board. A card piece's footprint and
+  centre come from its card (claimed cells for a footprint override), as apply placed
+  it; others are measured. Height is not checked, so lifted and ground-lifted pieces
+  bake back. Cover is the adapter's `DescribeCover` on the instance, so `None` stays
+  apart from `Half` in the layout grid, the occupancy diff (`COVER`) and the map (`o`).
+  Otherwise it is reported (`OFFGRID_ROTATION`, `OFFGRID_SCALE` naming the card's or the prefab's scale, `OFFGRID_POSITION`,
   `OFF_BOARD`) and left out; nothing is snapped. Blocking colliders outside any prefab
   instance are reported as `NOT_PREFAB`.
 - Deploy cells and enemy spawns come from the level through the adapter. A spawn
@@ -188,33 +239,42 @@ overhanging blockers comes later.
   Non-convex mesh colliders are found only where their surface crosses a cell.
 
 NK's checks against real content are in **Tools → Grid Combat → Validate Layout
-Reports**: applied LayoutTest gives a clean report, broken JSON fixtures report exactly
+Reports**: the NK pieces and catalog pieces fixtures give clean reports, broken JSON fixtures report exactly
 their expected lines, and a GridBattle report equals a recorded fixture.
 
 ## Current limits
 
-- Footprints are measured on each instance at its prefab scale. The Phase 4 catalog
-  cards ([level catalog](level-catalog.md)) now exist and compute footprints on request;
-  apply and bake switch to them, with the approved `placementScale`, in Phase 4c.
+- Pieces without a reviewed card are still measured on the instance at their prefab
+  scale (the Phase 2 path, `PieceGeometry`). A per-piece scale in the layout JSON (plan
+  §3) is not in the schema yet.
 - `apply_layout` and `validate_layout` are not MCP tools yet (Phase 5); call `LayoutApplier.Apply`
-  from an Editor menu or script (NK: **Tools → Grid Combat → Apply LayoutTest
+  from an Editor menu or script (NK: **Tools → Grid Combat → Apply CatalogTest
   Layout**).
-- Only axis-aligned box colliders are fitted. The applier does not check that a
+- For pieces without a card only axis-aligned box colliders are fitted; others are
+  reported (`FIT_UNSUPPORTED`). Card pieces replace them with a fitted box, which needs a
+  root turned in quarter turns. The applier does not check that a
   collider touches every footprint cell; the consistency check (`MISSING_BLOCK`) and
   the bake's occupancy diff catch that.
-- Plausibility (roads, building fronts) and scale validators wait for the Phase 4
-  catalog cards.
+- Plausibility (roads, building fronts) and scale validators are Phase 4d.
 
 ## Tests
 
 - `Tests/Editor/LayoutModelTests.cs`: NUnit tests for the parser (enemies included),
   serializer, diffs, footprints, neighbour/corner rule, cover and ASCII map.
+- `Tests/Editor/LayoutApplierCardTests.cs`: apply and bake in a temporary scene with a
+  small test adapter: card scale and the bake's `OFFGRID_SCALE` against it, lift and a
+  footprint override with its fitted box (occupancy blocks only the claimed cell), ground
+  lift, card cover `None` reaching the hook and staying apart from `Half`, and pieces
+  without a card (rules alone give none) measured as before.
 - `Tests/Editor/LayoutValidatorTests.cs`: deliberately broken layouts, each with the
   exact report line it must produce, plus corner-rule sealing, report capping and the
-  map, and the consistency check. Run both through `TestProject`:
-  `scripts/test-unity.sh -testFilter "Gamenami.UnitySemanticBridge.Editor.Tests.LayoutModelTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutValidatorTests"`.
+  map, and the consistency check. Run them through `TestProject`:
+  `scripts/test-unity.sh -testFilter "Gamenami.UnitySemanticBridge.Editor.Tests.LayoutModelTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutValidatorTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutApplierCardTests"`.
 - `mcp-editor-bridge/tests/test_layout_tools.py`: `bake_layout` registration.
 - Game side (NK): **Validate Layout Round Trip** compares the adapter's neighbour rule
   with `GridMap` and round-trips a fixture layout (pieces, deploy cells, enemy spawns)
-  through apply and bake in a temporary scene; **Validate Layout Reports** checks
-  the validators against NK content.
+  through apply and bake in a temporary scene, then a fixture of imported Synty pieces
+  placed from their cards (`docs/fixtures/layouts/catalog-pieces.layout.json`: scale,
+  lift, Tyre_Pile_02's 1 × 1 override, a movement-only tyre barrier, road tiles on the
+  ground lift); **Validate Layout Reports** checks the validators against NK content,
+  that fixture included (clean report).

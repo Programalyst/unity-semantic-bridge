@@ -111,6 +111,29 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         }
 
         [Test]
+        public void FootprintBoundsFollowHowThePieceIsPlaced()
+        {
+            // A cover piece placed as decor measures its renderers; a ground piece placed as a blocker its colliders.
+            var card = Barrier01();
+            card.ColliderBounds = new Box3(new Vec3(0, 0.5, 0), new Vec3(1.5, 1, 0.5));
+            Assert.AreEqual((2, 1), Size(LevelCards.Footprint(card, Cell, blocking: false)));
+            card.Role = LevelRole.Ground;
+            Assert.AreEqual((1, 1), Size(LevelCards.Footprint(card, Cell, blocking: true)));
+            Assert.AreEqual((2, 1), Size(LevelCards.Footprint(card, Cell)), "null follows the role");
+        }
+
+        [Test]
+        public void OnlyPieceEntriesCountAsReviewed()
+        {
+            var overrides = LevelCatalogOverrides.Parse(@"{""v"":1,
+                ""rules"":[{""match"":""**/SM_Prop_*"",""role"":""decor""}],
+                ""pieces"":{""g1"":{""role"":""cover_half""},""Pack/Prefabs/SM_Prop_B.prefab"":{""lift"":0.5}}}");
+            Assert.IsTrue(overrides.HasPieceEntry("g1", "Pack/Prefabs/SM_Prop_A.prefab"));
+            Assert.IsTrue(overrides.HasPieceEntry("g2", "Pack/Prefabs/SM_Prop_B.prefab"), "by catalog id");
+            Assert.IsFalse(overrides.HasPieceEntry("g3", "Pack/Prefabs/SM_Prop_C.prefab"), "a rule match alone is not a review");
+        }
+
+        [Test]
         public void OffCentrePivotMovesTheCentreNotTheSize()
         {
             var bounds = new Box3(new Vec3(1.5, 0.5, -0.25), new Vec3(3, 1, 0.5));
