@@ -215,15 +215,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return "Console cleared.";
         }
         
-        public static string SetPlayMode(bool enabled) 
-        {
-            // Next update tick, after the response; delayCall can wait for Editor focus.
-            EditorTick.Next(() => EditorApplication.isPlaying = enabled);
-            return enabled? 
-                "Entering Play Mode. RELOAD_IMMINENT: connection will momentarily drop" : 
-                "Exiting Play Mode. RELOAD_IMMINENT: connection will momentarily drop";
-        }
-        
         public static string InspectGameObject(JObject mcpMessage)
         {
             var instanceId = (int)mcpMessage["instanceId"];

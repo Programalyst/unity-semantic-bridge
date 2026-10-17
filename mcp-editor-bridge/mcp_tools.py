@@ -187,13 +187,6 @@ def register_unity_tools(mcp):
         })
     
     @mcp.tool()
-    async def notify_unity(text: str) -> str:
-        """Sends a message to the Unity Editor chat window."""
-        return await call_unity("notify_unity", {
-            "message": f"IDE Agent: {text}",
-        })
-
-    @mcp.tool()
     async def find_unity_files(
         filter: Annotated[str, "The search string (e.g., 't:Prefab Player' or 'l:LabelName')"], 
         limit: Annotated[int, "Max results to return (default 10)"] = 10, 
@@ -388,11 +381,6 @@ def register_unity_tools(mcp):
         """Returns the most recent errors and warnings from the Unity Console."""
         return await call_unity("get_console_logs")
     
-    @mcp.tool()
-    async def set_play_mode(enabled: bool) -> str:
-        """Enters or exits Play Mode in the Unity Editor."""
-        return await call_unity("set_play_mode", {"enabled": enabled})
-
     def _play_transport_failed(result: str) -> bool:
         low = result.lower()
         return ("not connected" in low or "timed out processing" in low

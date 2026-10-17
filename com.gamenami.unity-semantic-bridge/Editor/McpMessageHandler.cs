@@ -64,12 +64,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = SceneFunctions.GetGameObjectTree(mcpMessage);
                         break;
 
-                    case "notify_unity":
-                        var message = mcpMessage["message"]?.ToString();
-                        BridgeRelay.OnAgentMessage?.Invoke($"MCP agent: {message}");
-                        resultText = "Notification displayed.";
-                        break;
-
                     case "find_unity_files":
                         resultText = AssetFunctions.SearchAssets(mcpMessage);
                         break;
@@ -100,11 +94,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                     case "get_console_logs":
                         resultText = SceneFunctions.GetConsoleLogs();
-                        break;
-
-                    case "set_play_mode":
-                        var enabled = (bool)mcpMessage["enabled"];
-                        resultText = SceneFunctions.SetPlayMode(enabled);
                         break;
 
                     case "open_scene":

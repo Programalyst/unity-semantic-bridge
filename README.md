@@ -92,7 +92,6 @@ personal absolute package paths. An API key is only needed for
 
 **Human-Agent Cowork**
 - `get_recent_unity_events` — Returns Unity Editor events (`hierarchy`/`selection`/`play-mode`/`console`/`objectChanged` via `ObjectChangeEvents.changesPublished`) pushed since a time window — use to see human edits, `add_component`/`remove_component`/`set_field_values` etc.
-- `notify_unity` — Sends a message to the Unity Editor chat window (`BridgeRelay.OnAgentMessage`).
 
 **Project & Settings**
 - `get_project_settings` — Returns Unity Project Settings as JSON. Selectively fetch `core` (Unity version, build target), `rendering` (URP asset, color space, MSAA), `input` (Input Handling, `inputactions` assets), `ui` (uGUI vs UI Toolkit counts), `scripting` (API level, define symbols, backend), `tags_layers`. The `editor_prefs` section reports the current Interaction Mode, stored idle time, and restore availability; these are user-level Editor preferences.
@@ -144,11 +143,10 @@ personal absolute package paths. An API key is only needed for
 **Editor & Runtime**
 - `get_screenshot` — Captures `game` (`Camera.main`) or `scene` (Scene view) as JPEG; `scene` can `Frame` a `focus_instance_id` bounds before capture.
 - `open_scene` — Opens a scene by project-relative path. Default `dirty_policy=fail` refuses unsaved changes; `save` saves first. Returns scene path + dirty state.
-- `enter_play` / `exit_play` — Request Play/Edit Mode and wait for the idle terminal state (or a timeout carrying state); survives domain reload via `poll_play_state`. Prefer over legacy `set_play_mode`.
+- `enter_play` / `exit_play` — Request Play/Edit Mode and wait for the idle terminal state (or a timeout carrying state); survives domain reload via `poll_play_state`.
 - `poll_play_state` — `{isPlaying, transitioning, isCompiling, isUpdating, pendingOp, interactionMode}` snapshot with no side effects.
 - `invoke_menu_item` — Execute one Editor menu item by exact path; unknown paths are not-found errors.
 - `invoke_static` — Invoke one public static zero-arg method by exact type/method names; returns the value as string (`ok` for void).
-- `set_play_mode` — Legacy fire-and-forget Play Mode toggle (returns before the mode change completes); prefer `enter_play`/`exit_play`.
 - `set_editor_throttling` — `no_throttling` keeps the Editor tick rate un-throttled while unfocused for long sessions; `restore`/`default` afterwards.
 - `get_console_logs` / `clear_console_logs` — Read last 10 errors/warnings via `LogEntries` reflection or clear (`LogEntries.Clear`).
 
