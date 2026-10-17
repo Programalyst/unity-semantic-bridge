@@ -11,7 +11,11 @@ from state_manager import app_state, resolve_ports
 
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)  # mcp-editor-bridge/.env (see .env.example); explicit path so uv --directory works regardless of CWD
+# Optional mcp-editor-bridge/.env. Set ports with --unity-port/--event-port in the MCP
+# client config that adds this server, not USB_UNITY_PORT/USB_EVENT_PORT here: one .env
+# is shared by every project using this clone. Explicit path so uv --directory works
+# regardless of CWD.
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
 
 # --- CONFIG & STATE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
