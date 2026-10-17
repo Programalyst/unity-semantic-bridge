@@ -60,10 +60,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = SceneFunctions.GetSceneHierarchy(mcpMessage);
                         break;
 
-                    case "get_gameobject_tree":
-                        resultText = SceneFunctions.GetGameObjectTree(mcpMessage);
-                        break;
-
                     case "find_unity_files":
                         resultText = AssetFunctions.SearchAssets(mcpMessage);
                         break;
@@ -130,13 +126,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = SceneFunctions.InspectGameObject(mcpMessage);
                         break;
 
-                    case "get_component_inspector_values":
-                    case "Get_InspectorValues":
-                        resultText = ComponentFunctions.GetComponentInspectorValues(mcpMessage);
-                        break;
-
                     case "get_component_code":
-                    case "Get_ComponentCode":
                         resultText = ComponentFunctions.GetComponentCode(mcpMessage);
                         break;
 
@@ -178,10 +168,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
 
                     case "get_lights_affecting_object":
                         resultText = LightingFunctions.GetLightsAffectingObject(mcpMessage);
-                        break;
-
-                    case "get_urp_pipeline_settings":
-                        resultText = LightingFunctions.GetUrpPipelineSettings();
                         break;
 
                     case "set_editor_throttling":

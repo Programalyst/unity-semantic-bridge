@@ -285,7 +285,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             for (int copy = 0; copy < 2; copy++) foreach (var joint in joints)
             {
                 var completion = new TaskCompletionSource<string>();
-                McpMessageHandler.HandleMcpMessage(new JObject { ["method"] = "get_component_inspector_values", ["instanceId"] = joint.gameObject.GetInstanceID(), ["componentName"] = "CharacterJoint" }, completion);
+                McpMessageHandler.HandleMcpMessage(new JObject { ["method"] = "inspect_gameobject", ["instanceId"] = joint.gameObject.GetInstanceID(), ["componentName"] = "CharacterJoint" }, completion);
                 Assert.IsFalse(completion.Task.Result.StartsWith("Error:"));
             }
             long individualMs = watch.ElapsedMilliseconds;

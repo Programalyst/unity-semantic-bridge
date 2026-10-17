@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -100,6 +98,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 IncludePositions = mcpMessage["includePositions"]?.Value<bool>() ?? true,
                 OnlyMainCamVisible = mcpMessage["onlyMainCamVisible"]?.Value<bool>() ?? true,
                 IgnoreDisabled = mcpMessage["ignoreDisabled"]?.Value<bool>() ?? true,
+                PruneSkinned = mcpMessage["pruneSkinned"]?.Value<bool>() ?? true,
                 // direct cast to nullable int
                 RootInstanceId = mcpMessage["rootInstanceId"]?.Value<int?>() 
             };
@@ -114,62 +113,6 @@ namespace Gamenami.UnitySemanticBridge.Editor
             return sceneJson;
         }
 
-        public static string GetGameObjectTree(JObject mcpMessage)
-        {
-            var id = (int)mcpMessage["instanceId"];
-            var maxDepth = mcpMessage["depth"]?.ToObject<int>() ?? 5;
-            var includeComponents = mcpMessage["includeComponents"]?.ToObject<bool>() ?? true;
-            var includePositions = mcpMessage["includePositions"]?.ToObject<bool>() ?? false;
-
-            var go = EditorIdLookup.FromInstanceId(id) as GameObject;
-            if (go == null) return "Error: GameObject not found.";
-
-            var nodes = new List<object>();
-            TraverseTree(go.transform, go.name, 0, maxDepth, includeComponents, includePositions, nodes);
-
-            var result = new
-            {
-                root = go.name,
-                instanceID = id,
-                nodeCount = nodes.Count,
-                nodes = nodes
-            };
-
-            return JsonConvert.SerializeObject(result, Formatting.None, new JsonSerializerSettings
-            {
-                NullValueHandling = NullValueHandling.Ignore
-            });
-        }
-
-        private static void TraverseTree(
-            Transform t, string path, int depth, int maxDepth,
-            bool includeComponents, bool includePosition,
-            List<object> nodes)
-        {
-            var node = new Dictionary<string, object>
-            {
-                ["name"]       = t.gameObject.name,
-                ["path"]       = path,
-                ["instanceId"] = t.gameObject.GetInstanceID(),
-            };
-
-            if (includePosition)
-                node["position"] = new { x = t.position.x, y = t.position.y, z = t.position.z };
-
-            if (includeComponents)
-                node["components"] = t.GetComponents<Component>()
-                    .Where(c => c != null)
-                    .Select(c => c.GetType().Name)
-                    .ToList();
-
-            nodes.Add(node);
-
-            if (depth >= maxDepth) return;
-
-            foreach (Transform child in t)
-                TraverseTree(child, $"{path}/{child.name}", depth + 1, maxDepth, includeComponents, includePosition, nodes);
-        }
-        
         public static string GetConsoleLogs() 
         {
             var sb = new StringBuilder();
@@ -217,6 +160,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
         
         public static string InspectGameObject(JObject mcpMessage)
         {
+            // A component filter returns just that component's Inspector values.
+            if (!string.IsNullOrEmpty(mcpMessage["componentName"]?.ToString()))
+                return ComponentFunctions.GetComponentInspectorValues(mcpMessage);
+
             var instanceId = (int)mcpMessage["instanceId"];
 
             var go = EditorIdLookup.FromInstanceId(instanceId) as GameObject;

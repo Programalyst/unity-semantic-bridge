@@ -51,9 +51,8 @@ result = await diagnose_lighting_issue(
 
 The agent has access to:
 - `get_lights_affecting_object` - Inspect all lights near the object, using distance to the object's actual bounds (not just its transform pivot) — important for large/flat objects like terrain or ground planes
-- `get_urp_pipeline_settings` - Check render pipeline configuration, including the active Rendering Path (Forward / Forward+ / Deferred) and any per-object light limits
-- `get_component_inspector_values` - Inspect renderer/material settings
-- `inspect_gameobject` - Get full GameObject details
+- `get_urp_pipeline_settings` - Check render pipeline configuration, including the active Rendering Path (Forward / Forward+ / Deferred) and any per-object light limits (the `rendering` section of `get_project_settings`; not a separate MCP tool)
+- `inspect_gameobject` - Get full GameObject details, or one component's renderer/material settings via `component`
 - `search_unity_docs` - LLM-backed lookup for Unity/URP behavior via the injected `RunnableConfig` LLM
 
 ## Example Diagnostic Flow

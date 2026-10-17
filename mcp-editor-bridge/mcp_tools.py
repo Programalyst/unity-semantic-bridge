@@ -79,7 +79,7 @@ def register_unity_tools(mcp):
 
         Sections:
         - core: Unity version, editor platform, active build target/group, company/product/bundleVersion
-        - rendering: active pipeline (Built-in/URP/HDRP), URP asset path, color space, MSAA/quality, plus URP details (folded from get_urp_pipeline_settings)
+        - rendering: active pipeline (Built-in/URP/HDRP), URP asset path, color space, MSAA/quality, plus URP details (rendering path, per-object light limit)
         - input: Active Input Handling (Old/New/Both) and default InputActionAsset assets if any
         - ui: uGUI vs UI Toolkit signals — EventSystem/Canvas in open scenes, UIDocument/VisualTreeAsset/StyleSheet counts
         - scripting: API compatibility level, #define symbols (group), allowUnsafeCode, scripting backend
@@ -143,18 +143,25 @@ def register_unity_tools(mcp):
         depth: Annotated[int, "How many levels deep to traverse. Use 2 for a quick overview, 3–5 to find deeply nested objects. "] = 2,
         max_nodes: Annotated[int, "Maximum nodes to return before truncating, to avoid overwhelming context on large scenes."] = 300,
         include_layers: Annotated[bool, "If true, includes the layer (e.g. 'Default', 'UI') for each object. Omit if not needed to reduce output size."] = True,
-        include_components: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling get_component_inspector_values."] = True,
+        include_components: Annotated[bool, "If true, includes component names on each GameObject (e.g. 'Rigidbody', 'UnitHealth'). Required if you need to know what components exist before calling inspect_gameobject with a component."] = True,
         include_positions: Annotated[bool, "If true, includes world-space position for each object. Omit if not needed to reduce output size."] = True,
         only_main_cam_visible: Annotated[bool, "If true, objects out of the main camera view will be culled."] = False,
-        root_instance_id: Annotated[int | None, "Optional instance_id to start traversal from instead of the scene root — e.g. a UI Canvas root, or any subtree found via a previous call. depth/max_nodes apply relative to this root. Get the id from a prior get_scene_hierarchy or get_gameobject_tree call."] = None
+        root_instance_id: Annotated[int | None, "Optional instance_id to start traversal from instead of the scene root — e.g. a UI Canvas root, a character, or any subtree found via a previous call. depth/max_nodes apply relative to this root and paths are relative to it. Get the id from a prior get_scene_hierarchy call."] = None,
+        prune_skinned: Annotated[bool, "If true (default), skips objects with a SkinnedMeshRenderer and their children so character meshes don't flood the result. Set false to walk a character's rig."] = True,
     ) -> str:
         """
         Returns the current Unity scene hierarchy as a list of GameObjects with their paths and instance_ids.
-        Note: Scene hierarchy subtree traversal will always be pruned if a SkinnedMeshRenderer is encountered. Use get_gameobject_tree to inspect a character's rig
-    
-        This is usually the FIRST tool to call — use it to discover GameObjects and their instance_ids, which are required by inspect_gameobject and get_component_inspector_values.
-        
-        Tip: set includeComponents=True to confirm a component exists on a GameObject before inspecting it.
+
+        This is usually the FIRST tool to call — use it to discover GameObjects and their instance_ids, which are required by inspect_gameobject.
+
+        Inspecting one object's subtree, including a character's skeleton/rig:
+        1. Find the object's instance_id with a shallow call (default depth=2).
+        2. Call again with root_instance_id=<that id>, prune_skinned=False and a deep depth
+           (e.g. depth=15; rigs nest Hips > Spine > ... > fingers), include_positions=False
+           unless you need bone positions.
+        3. Pass a bone's instance_id to inspect_gameobject for its Transform/constraint values.
+
+        Tip: set include_components=True to confirm a component exists on a GameObject before inspecting it.
         Tip: for a specific known subtree (e.g. a UI Canvas), pass its instance_id as root_instance_id instead of raising max_nodes to reach it from the scene root.
         """
         return await call_unity("get_scene_hierarchy", {
@@ -164,26 +171,8 @@ def register_unity_tools(mcp):
             "includeComponents": include_components,
             "includePositions": include_positions,
             "onlyMainCamVisible": only_main_cam_visible,
-            "rootInstanceId": root_instance_id
-        })
-    
-    @mcp.tool()
-    async def get_gameobject_tree(
-        instance_id: Annotated[int, "The instance_id of the root GameObject to traverse. Get this from 'get_scene_hierarchy'."],
-        depth: Annotated[int, "How many levels of children to include. Default is 5."] = 5,
-        include_components: Annotated[bool, "Whether to include component names on each GameObject. Default is True."] = True,
-        include_positions: Annotated[bool, "Whether to include world position of each GameObject. Default is False."] = False,
-    ) -> str:
-        """
-        Returns the child hierarchy of a single GameObject as a flat list.
-        Use this instead of get_scene_hierarchy when you already know the root object
-        and want to avoid fetching the entire scene (faster, less likely to time out).
-        """
-        return await call_unity("get_gameobject_tree", {
-            "instanceId": instance_id,
-            "depth": depth,
-            "includeComponents": include_components,
-            "includePositions": include_positions,
+            "rootInstanceId": root_instance_id,
+            "pruneSkinned": prune_skinned,
         })
     
     @mcp.tool()
@@ -482,42 +471,35 @@ def register_unity_tools(mcp):
     
     @mcp.tool()
     async def inspect_gameobject(
-        instance_id: Annotated[int, "Get the instance_id from the 'get_scene_hierarchy' tool output."]
+        instance_id: Annotated[int, "The instance_id of the GameObject. Get it from get_scene_hierarchy."],
+        component: Annotated[str | None, "Optional exact component class name (e.g. 'UnitHealth', 'Rigidbody'). Omit to inspect every component on the GameObject."] = None,
     ) -> str:
         """
-        Detailed inspection of a GameObject including components and public fields.
-        """
-        return await call_unity("inspect_gameobject", {
-            "instanceId": instance_id
-        })
-    
-    @mcp.tool()
-    async def get_component_inspector_values(
-        instance_id: Annotated[int, "The instance_id of the GameObject. Obtain this from get_scene_hierarchy."],
-        component_name: Annotated[str, "The exact component class name to inspect (e.g. 'UnitHealth', 'Rigidbody'). Use get_scene_hierarchy with includeComponents=True to find valid component names."]
-    ) -> str:
-        """
-        Retrieves all serialized field values currently visible in the Unity Inspector for a specific component on a GameObject.
-        This includes [SerializeField] private fields and prefab overrides — i.e. live Editor values that may differ from source code defaults.
-        
-        Typical workflow:
-        1. Call get_scene_hierarchy (with includeComponents=True) to find the GameObject's instance_id and confirm the component name.
-        2. Call this tool with that instance_id and component_name.
-        
+        Returns the serialized field values currently visible in the Unity Inspector for a GameObject:
+        every component by default, or only `component` when given. Includes [SerializeField]
+        private fields and prefab overrides — live Editor values that may differ from source
+        code defaults — and expands Generic structs such as Animation Rigging constraint data.
+
+        Reading one component's values:
+        1. Call get_scene_hierarchy (include_components=True) to find the GameObject's instance_id
+           and confirm the component name.
+        2. Call this tool with that instance_id and component=<name>. This keeps the output small
+           on objects with many components.
+
         To read the component's source logic instead of its values, use get_component_code.
         """
-        return await call_unity("get_component_inspector_values", {
-            "instanceId": instance_id,
-            "componentName": component_name
-        })
-    
+        params: dict = {"instanceId": instance_id}
+        if component is not None:
+            params["componentName"] = component
+        return await call_unity("inspect_gameobject", params)
+
     @mcp.tool()
     async def get_component_code(
         component_name: Annotated[str, "The exact name of the C# class/component (e.g., 'HealthHandler' or 'Projectile')."]
     ) -> str:
         """
         Locates and returns the full C# source code for a specific Unity component.
-        Use this to analyze the logic of scripts identified via 'inspect_gameobject'.
+        Use this to analyze the logic of scripts identified via inspect_gameobject.
         """
         return await call_unity("get_component_code", {
             "componentName": component_name
@@ -563,14 +545,14 @@ def register_unity_tools(mcp):
     @mcp.tool()
     async def set_field_values(
         instance_id: Annotated[int, "The instance_id of the GameObject that owns the component. Get this from 'get_scene_hierarchy' or 'inspect_gameobject'."],
-        component_name: Annotated[str, "Name of the component type whose fields will be set. E.g. 'Rigidbody', 'CapsuleCollider', 'UnitLimb'. Use 'get_component_inspector_values' to see available field names."],
+        component_name: Annotated[str, "Name of the component type whose fields will be set. E.g. 'Rigidbody', 'CapsuleCollider', 'UnitLimb'. Use inspect_gameobject with component=<name> to see available field names."],
         fields: Annotated[dict, "Key-value map of field names to new values. Values may be: primitives (float, int, bool, string), structs as dicts (e.g. {'x':0,'y':1,'z':0}), enum strings, or integer instance_ids for Object reference fields."],
         component_index: Annotated[int, "Zero-based index to disambiguate when multiple components of the same type exist on the GameObject. Defaults to 0 (first found)."] = 0
     ) -> str:
         """
         Sets one or more serialized field values on a component attached to a GameObject.
         Records an Undo operation so changes are reversible in the Editor.
-        Use 'get_component_inspector_values' first to discover field names and current values.
+        Use inspect_gameobject with component=<name> first to discover field names and current values.
         """
         return await call_unity("set_field_values", {
             "instanceId": instance_id,
@@ -783,10 +765,9 @@ def register_unity_tools(mcp):
             "instanceId": instance_id
         })
     
-    @mcp.tool()
     async def get_urp_pipeline_settings() -> str:
-        """Returns the URP render pipeline asset's current render path setting"""
-        return await call_unity("get_urp_pipeline_settings")
+        """Returns the URP render pipeline asset's settings, including the rendering path and per-object light limit."""
+        return await call_unity("get_project_settings", {"sections": ["rendering"]})
 
     @mcp.tool()
     async def diagnose_lighting_issue(
@@ -818,7 +799,6 @@ def register_unity_tools(mcp):
             unity_tools = {
                 "get_lights_affecting_object": get_lights_affecting_object,
                 "get_urp_pipeline_settings": get_urp_pipeline_settings,
-                "get_component_inspector_values": get_component_inspector_values,
                 "inspect_gameobject": inspect_gameobject,
                 "get_screenshot": get_screenshot,
             }

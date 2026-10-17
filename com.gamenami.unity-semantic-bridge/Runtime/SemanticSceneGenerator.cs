@@ -14,6 +14,7 @@ namespace Gamenami.UnitySemanticBridge
         public bool IncludePositions = false; // include transform.position
         public bool OnlyMainCamVisible = false; // cull objects out of the main camera's view
         public bool IgnoreDisabled = false; // ignore disabled objects in Unity
+        public bool PruneSkinned = true; // skip SkinnedMeshRenderer objects and their children; false walks character rigs
         public int? RootInstanceId;
     }
 
@@ -44,7 +45,7 @@ namespace Gamenami.UnitySemanticBridge
                 if (rootObj == null) // rootObj can still be null if instanceId is invalid
                     throw new BridgeToolException($"No GameObject found for instance_id {rootId}.");
                 
-                AddNodesRecursively(rootObj, scene, "", config.MaxDepth, config, mainCamera);
+                AddNodesRecursively(rootObj, scene, "", 0, config, mainCamera);
             }
             else // traverse from all scene root objects
             {
@@ -120,7 +121,7 @@ namespace Gamenami.UnitySemanticBridge
 
             // Prune branch traversal if we hit a SkinnedMeshRenderer (Character Rig)
             // This ignores all bones, joints, and target points inside the character's rig
-            if (go.GetComponent<SkinnedMeshRenderer>()) return;
+            if (config.PruneSkinned && go.GetComponent<SkinnedMeshRenderer>()) return;
 
             var currentPath = string.IsNullOrEmpty(parentPath) ? go.name : $"{parentPath}/{go.name}";
     
