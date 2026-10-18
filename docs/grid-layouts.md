@@ -213,7 +213,21 @@ there are some). `LayoutReport.Format(maxLines = 40, ascii = false)` lists error
 then notes, caps
 the lines (`... N more lines not shown`), and on request appends the ASCII map
 (`#` full, `h` half, `o` blocked, `.` open, `A` deploy, `E` enemy, `!` a unit on a
-blocker, `-` open but unreachable).
+blocker, `-` open but unreachable). When the board has walls on cell sides the map is
+drawn at double resolution with the outline characters between cells (`-`/`|` wall,
+`w` window, `D` door, `+` where a wall meets a corner).
+
+**Walls on cell sides** (plan Phase W; `GridRules.SideWalls`, which NK sets). A card with a
+`walls` outline ([level catalog](level-catalog.md)) is a walled building: `LayoutGrid.Build`
+claims its footprint without blocking it (a second building on a claimed cell is `OVERLAP`;
+other pieces may stand inside), rotates the outline with the piece and puts each side on the
+board on both cells it separates (`SetSide`, `SideAt`). `CanStep` refuses a straight step across
+a wall or window and a diagonal past a corner where one meets (even without the corner rule),
+`CoverSides` takes the better of the neighbour's blocker and the side's own wall, and
+`DiffOccupancy` adds `WALL_MISSING`, `WALL_EXTRA`, `WALL_KIND` and `WALL_COVER`. An outline whose
+size differs from the footprint is `OUTLINE_SIZE`. Without `SideWalls` a walled card builds as a
+solid blocker. Reachability goes through doors with no extra code. Apply and bake writing the
+game's wall component, and the wall validators, come later (Phase W3/W4).
 
 | Check | Codes | Input |
 |---|---|---|
@@ -314,6 +328,10 @@ cell-addressed `OFFGRID_SCALE`, and a GridBattle report equals a recorded fixtur
   reviewed note, suggested scales with a lift, off-scale scene pieces, wrong layers, ground runs and
   overlaps, building fronts with rotation, notes in the report), role detection with a game's
   bands, and fronts from the model's forward or the override.
+- `Tests/Editor/WallOutlineTests.cs`: walls on cell sides: the outline picture (parsing, errors,
+  rotation with door points, JSON), the step and corner rule, wall cover, diffs and the double-resolution
+  map, building claims and rotated walls in `Build`, reachability through a door, and the overrides and
+  card fields. `Tests/Editor/WallOutlineSuggesterTests.cs`: the suggester on a box-built room.
 - `Tests/Editor/LayoutValidatorTests.cs`: deliberately broken layouts, each with the
   exact report line it must produce, plus corner-rule sealing, report capping and the
   map, and the consistency check. Run them through `TestProject`:

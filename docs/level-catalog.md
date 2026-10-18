@@ -84,6 +84,8 @@ resolve in the game.
 | `lift` | Height of the pivot above the floor when placed, in meters (0 unless an override sets it). For pieces modelled below their pivot, such as the Wasteland barricades pivoted at mid-height, which otherwise sink half into the floor. Layouts place the pivot at floor + `lift`. |
 | `storeys` | Buildings only: `height / 3 m`, rounded, at least 1; an override can set it. |
 | `front`, `frontSource` | Buildings only: the side the front faces on the grid at layout rotation 0, root rotation applied: `+x`, `-x`, `+y` or `-y` (y = world Z). From the overrides file (`"override"`), else the **model's forward, +Z**, turned by `rootRotation` (`"forward"`; +y for an unrotated root). Synty models their buildings facing +Z (owner check of the 4b gallery, 2026-10-18: Shop_Medium_02, Warehouse_Brick_01 and AutoRepair_01 have their front at +Z). Door children are no guide: Shop_Medium_02 and Warehouse_Brick_01 have doors front and back. `null` only for a root tilted so forward points up or down. The plausibility validator checks what a front faces ([grid layouts](grid-layouts.md#validators)). |
+| `walls` | Buildings only, and only when the overrides file sets them (plan Phase W): walls on cell sides, the same object as the overrides field below. Absent from other cards. |
+| `footprintOffset` | `[x, z]` meters: the footprint bounds' centre relative to the footprint centre at layout rotation 0, when the overrides file sets it (absent otherwise). Lets a building's walls sit on cell lines while porches overhang. |
 | `skewed` | A measured child is rotated off 90° steps (by more than about 0.8°), so the boxes overstate the size. |
 | `levelRole` | `blocker`, `cover_half`, `cover_full`, `ground`, `decor`, `building` or `unknown` (see below). |
 | `roleSource` | `override`, `name` or `geometry`: which rule decided the role. |
@@ -195,6 +197,24 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
     the detected role and cover too.
   - `front` (`+x`, `-x`, `+y`, `-y`): a building's front side at layout rotation 0 (y = world Z), for a building
     not modelled facing +Z. It wins over the model's forward.
+  - `walls` (buildings only; plan Phase W): walls on cell sides, so the building's footprint stays walkable
+    and its ground floor can be entered. An object:
+    - `outline`: an ASCII picture of the footprint at layout rotation 0, top row = +y, 2H + 1 lines of
+      2W + 1 characters. Even lines are horizontal sides (`+` at even columns, a side character at odd
+      ones); odd lines are cell rows (a side character at even columns, a space for each cell). Side
+      characters: `-` or `|` wall, `w` window, `D` door, space open. It must be as many cells as the footprint.
+    - `wallCover` (default `Full`) and `windowCover` (default `Half`); doors give none.
+    - `doorPoints`: `[[x, y, side, offset]]`, where units cross an off-centre doorway, meters along the side
+      from its midpoint (towards +x on a ±y side, towards +y on a ±x side), at most 0.9 m on 2 m cells.
+    - `sightFill`: `[[x, y, side]]`, wall or window sides whose collision mesh lets sight through; apply adds a box.
+    - `cutHeight` (meters, the cutaway) and `roofed` (`[[x0, y0, x1, y1]]`, roofed cells outside the footprint).
+    Example, SM_Bld_Building_08 at (1.15, 1, 1.15): `"footprint": [6, 6], "lift": -0.09, "walls": {"outline":
+    ["+-+-+D+", "|     |", "+ + + +", "w     w", "+ + + +", "|     |", "+-+-+-+"], "doorPoints": [[2, 2, "+y", -0.45]]}`.
+    Editor helper `WallOutlineSuggester.Suggest(prefabPath, cellSize)` proposes the entry (frame, offset,
+    outline, door points, sight gaps, floor lift) from the prefab's colliders, and `RenderTopDown` draws a
+    cutaway with the frame; the owner approves the result into the file.
+  - `footprintOffset` (`[x, z]` meters, any sign): where the footprint bounds' centre sits relative to the
+    footprint centre at layout rotation 0, e.g. a building whose porch reaches further out at the front.
   - `exclude: true` leaves the prefab out of the catalog.
   - `note` is free text for review history.
 - Height, cover and storeys are measured at the overridden scale. Edit the file, then

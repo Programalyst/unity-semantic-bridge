@@ -19,6 +19,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public FootprintSize? Footprint;
         /// <summary>Buildings: the side the front faces at layout rotation 0, when it is not the model's forward (+Z).</summary>
         public GridSide? Front;
+        /// <summary>Buildings: walls on cell sides (plan Phase W); the footprint becomes walkable.</summary>
+        public WallOutline Walls;
+        /// <summary>Where the model's footprint-bounds centre sits relative to the footprint centre (meters, rotation 0).</summary>
+        public FootprintSize? FootprintOffset;
         /// <summary>Leave the prefab out of the level catalog.</summary>
         public bool? Exclude;
         public string Note;
@@ -34,6 +38,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
             Lift = other.Lift ?? Lift;
             Footprint = other.Footprint ?? Footprint;
             Front = other.Front ?? Front;
+            Walls = other.Walls ?? Walls;
+            FootprintOffset = other.FootprintOffset ?? FootprintOffset;
             Exclude = other.Exclude ?? Exclude;
             Note = other.Note ?? Note;
         }
@@ -58,7 +64,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         private static readonly HashSet<string> EntryKeys = new HashSet<string>(StringComparer.Ordinal)
         {
-            "role", "cover", "placementScale", "storeys", "lift", "footprint", "front", "exclude", "note",
+            "role", "cover", "placementScale", "storeys", "lift", "footprint", "front", "walls", "footprintOffset", "exclude", "note",
         };
 
         public static LevelCatalogOverrides Parse(string text)
@@ -130,7 +136,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             {
                 if (property.Name == extraKey) continue;
                 if (!EntryKeys.Contains(property.Name))
-                    throw new FormatException($"{FileName}: {where} has unknown key '{property.Name}' (role, cover, placementScale, storeys, lift, footprint, front, exclude, note).");
+                    throw new FormatException($"{FileName}: {where} has unknown key '{property.Name}' (role, cover, placementScale, storeys, lift, footprint, front, walls, footprintOffset, exclude, note).");
                 try
                 {
                     switch (property.Name)
@@ -156,6 +162,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                             break;
                         case "footprint": entry.Footprint = LevelCards.ParseFootprint(property.Value); break;
                         case "front": entry.Front = GridSides.Parse((string)property.Value); break;
+                        case "walls": entry.Walls = WallOutline.FromJson(property.Value); break;
+                        case "footprintOffset": entry.FootprintOffset = LevelCards.ParseOffset(property.Value); break;
                         case "exclude": entry.Exclude = (bool)property.Value; break;
                         case "note": entry.Note = (string)property.Value; break;
                     }

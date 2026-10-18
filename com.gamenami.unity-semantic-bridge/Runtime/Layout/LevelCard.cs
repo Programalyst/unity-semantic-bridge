@@ -173,6 +173,16 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// </summary>
         public GridSide? Front;
         public string FrontSource;
+        /// <summary>
+        /// Buildings only: walls on cell sides at layout rotation 0 (plan Phase W), from the overrides file; null for a
+        /// solid building. Its frame is the footprint, which stays walkable when the game supports side walls.
+        /// </summary>
+        public WallOutline Walls;
+        /// <summary>
+        /// The footprint bounds' centre relative to the footprint centre (meters, X along grid x and Z along grid y at
+        /// layout rotation 0); null for centred. Lets a building's walls sit on cell lines while porches overhang.
+        /// </summary>
+        public FootprintSize? FootprintOffset;
         /// <summary>Buildings only: storeys at PlacementScale (height / 3 m, at least 1).</summary>
         public int? Storeys;
         /// <summary>A measured child is rotated off 90° steps, so the boxes overstate its size.</summary>
@@ -491,6 +501,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             card.ScaleSource = entry?.PlacementScale != null ? "override" : "prefab";
             card.Lift = entry?.Lift ?? 0;
             card.FootprintOverride = entry?.Footprint;
+            card.FootprintOffset = entry?.FootprintOffset;
             // Role from the overrides, else from the name and the blocking (collider-first) bounds.
             var blocking = card.ColliderBounds ?? card.VisualBounds;
             var placed = Lifted(Footprint(blocking, card.RootRotation, card.PlacementScale, 1.0, card.Skewed), card.Lift);
@@ -511,8 +522,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
             card.Storeys = entry?.Storeys ?? (card.Role == LevelRole.Building ? StoreysFor(card.Height) : (int?)null);
             card.Front = null;
             card.FrontSource = null;
+            card.Walls = null;
             if (card.Role == LevelRole.Building)
             {
+                card.Walls = entry?.Walls;
                 card.Front = entry?.Front ?? ForwardSide(card.RootRotation);
                 if (card.Front.HasValue) card.FrontSource = entry?.Front != null ? "override" : "forward";
             }
@@ -576,6 +589,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 ["scaleSource"] = card.ScaleSource,
                 ["rootRotation"] = VecJson(card.RootRotation),
             };
+            // Only walled buildings carry these, so other cards keep their shape.
+            if (card.FootprintOffset.HasValue)
+                json["footprintOffset"] = new JArray(Mm(card.FootprintOffset.Value.X), Mm(card.FootprintOffset.Value.Z));
+            if (card.Walls != null) json["walls"] = card.Walls.ToJson();
             if (card.Thumbnail != null) json["thumbnail"] = card.Thumbnail;
             return json;
         }
@@ -604,6 +621,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 Storeys = storeys == null || storeys.Type == JTokenType.Null ? (int?)null : (int)storeys,
                 Front = front == null || front.Type == JTokenType.Null ? (GridSide?)null : GridSides.Parse((string)front),
                 FrontSource = (string)json["frontSource"],
+                Walls = json["walls"] == null || json["walls"].Type == JTokenType.Null ? null : WallOutline.FromJson(json["walls"]),
+                FootprintOffset = ParseOffset(json["footprintOffset"]),
                 Skewed = (bool?)json["skewed"] ?? false,
                 PlacementScale = ParseVec(json["placementScale"]),
                 ScaleSource = (string)json["scaleSource"] ?? "prefab",
@@ -620,6 +639,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
             var size = new FootprintSize((double)a[0], (double)a[1]);
             if (!(size.X > 0) || !(size.Z > 0)) throw new FormatException("footprint sides must be positive");
             return size;
+        }
+
+        /// <summary>A "footprintOffset" value: [x, z] meters, any sign; null for a missing or null token.</summary>
+        public static FootprintSize? ParseOffset(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null) return null;
+            if (!(token is JArray a) || a.Count != 2) throw new FormatException("Expected [x, z] in meters.");
+            var offset = new FootprintSize((double)a[0], (double)a[1]);
+            if (double.IsNaN(offset.X) || double.IsNaN(offset.Z) || double.IsInfinity(offset.X) || double.IsInfinity(offset.Z))
+                throw new FormatException("footprintOffset must be finite");
+            return offset;
         }
 
         /// <summary>Reads level-catalog.json into cards keyed by GUID.</summary>

@@ -12,6 +12,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public string Occupant;
     }
 
+    /// <summary>What sits on one side of a cell; stored on both cells it separates.</summary>
+    public struct SideState
+    {
+        public SideKind Kind;
+        public CoverLevel Cover;
+        /// <summary>Local id (or scene name) of the walled piece.</summary>
+        public string Owner;
+
+        public bool Blocks => Kind == SideKind.Wall || Kind == SideKind.Window;
+    }
+
     /// <summary>
     /// Derived per-cell state of a board: at most one blocking occupant per cell, which
     /// matches a one-obstacle-per-tile game rule. Pure C#; neighbours and cover follow
@@ -23,6 +34,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
         private static readonly Cell[] Diagonal = { new Cell(1, 1), new Cell(1, -1), new Cell(-1, 1), new Cell(-1, -1) };
 
         private readonly CellState[,] _cells;
+        // Per cell and side, in Orthogonal order: +y, -y, -x, +x.
+        private readonly SideState[,,] _sides;
+        // Walled pieces claim their frame without blocking it, so two buildings can't share cells.
+        private readonly string[,] _claims;
 
         public int Width { get; }
         public int Height { get; }
@@ -35,6 +50,48 @@ namespace Gamenami.UnitySemanticBridge.Layout
             Height = height;
             Rules = rules ?? throw new ArgumentNullException(nameof(rules));
             _cells = new CellState[width, height];
+            _sides = new SideState[width, height, 4];
+            _claims = new string[width, height];
+        }
+
+        /// <summary>True once any side has a wall, window or door.</summary>
+        public bool HasWalls { get; private set; }
+
+        private static int SideIndex(GridSide side) => side switch
+        {
+            GridSide.PlusY => 0,
+            GridSide.MinusY => 1,
+            GridSide.MinusX => 2,
+            _ => 3,
+        };
+
+        private static readonly GridSide[] SideOrder = { GridSide.PlusY, GridSide.MinusY, GridSide.MinusX, GridSide.PlusX };
+
+        private static GridSide Opposite(GridSide side) => GridSides.Rotate(side, 2);
+
+        /// <summary>What sits on a side of a cell; Open for a cell off the board.</summary>
+        public SideState SideAt(Cell cell, GridSide side) => Contains(cell) ? _sides[cell.X, cell.Y, SideIndex(side)] : default;
+
+        public bool IsWalled(Cell cell, GridSide side) => SideAt(cell, side).Blocks;
+
+        /// <summary>Sets a side on the cell and the matching side of its neighbour (either may be off the board).</summary>
+        public void SetSide(Cell cell, GridSide side, SideKind kind, CoverLevel cover, string owner)
+        {
+            var state = kind == SideKind.Open ? default : new SideState { Kind = kind, Cover = cover, Owner = owner };
+            var neighbour = cell + GridSides.Step(side);
+            if (!Contains(cell) && !Contains(neighbour)) throw new ArgumentOutOfRangeException(nameof(cell), cell, "Side is outside the board.");
+            if (Contains(cell)) _sides[cell.X, cell.Y, SideIndex(side)] = state;
+            if (Contains(neighbour)) _sides[neighbour.X, neighbour.Y, SideIndex(Opposite(side))] = state;
+            if (kind != SideKind.Open) HasWalls = true;
+        }
+
+        /// <summary>The walled piece whose frame covers a cell, or null.</summary>
+        public string ClaimedBy(Cell cell) => Contains(cell) ? _claims[cell.X, cell.Y] : null;
+
+        public void Claim(Cell cell, string owner)
+        {
+            if (!Contains(cell)) throw new ArgumentOutOfRangeException(nameof(cell), cell, "Cell is outside the board.");
+            _claims[cell.X, cell.Y] = owner;
         }
 
         public bool Contains(Cell cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
@@ -70,8 +127,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         /// <summary>
         /// Whether a single step between adjacent cells is legal: the target is on the board
-        /// and open, and a diagonal does not cut past a blocked orthogonal neighbour when the
-        /// rules forbid that. Only blockers count; units are not part of the layout.
+        /// and open, a straight step does not cross a walled side, and a diagonal does not cut
+        /// past a blocked orthogonal neighbour (when the rules forbid that) nor pass a corner
+        /// where a walled side meets. Only blockers and walls count; units are not part of the layout.
         /// </summary>
         public bool CanStep(Cell from, Cell to)
         {
@@ -79,10 +137,16 @@ namespace Gamenami.UnitySemanticBridge.Layout
             var dy = to.Y - from.Y;
             if (Math.Abs(dx) > 1 || Math.Abs(dy) > 1 || (dx == 0 && dy == 0)) return false;
             if (!Contains(to) || IsBlocked(to)) return false;
-            if (dx == 0 || dy == 0) return true;
+            if (dx == 0 || dy == 0) return !IsWalled(from, dx > 0 ? GridSide.PlusX : dx < 0 ? GridSide.MinusX : dy > 0 ? GridSide.PlusY : GridSide.MinusY);
             if (!Rules.DiagonalMoves) return false;
+            // Walls seal at their corners whatever the corner-cutting rule says.
+            var xSide = dx > 0 ? GridSide.PlusX : GridSide.MinusX;
+            var ySide = dy > 0 ? GridSide.PlusY : GridSide.MinusY;
+            var besideX = new Cell(from.X + dx, from.Y);
+            var besideY = new Cell(from.X, from.Y + dy);
+            if (IsWalled(from, xSide) || IsWalled(from, ySide) || IsWalled(besideX, ySide) || IsWalled(besideY, xSide)) return false;
             if (!Rules.NoCornerCutting) return true;
-            return !IsBlocked(new Cell(from.X + dx, from.Y)) && !IsBlocked(new Cell(from.X, from.Y + dy));
+            return !IsBlocked(besideX) && !IsBlocked(besideY);
         }
 
         public IEnumerable<Cell> Neighbours(Cell cell)
@@ -97,9 +161,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>Cover a cell gets from its neighbour on one side; outside the board gives None.</summary>
         public CoverLevel CoverFrom(Cell neighbour) => IsBlocked(neighbour) ? this[neighbour].Cover : CoverLevel.None;
 
+        /// <summary>Cover on one side of a cell: the better of the neighbour's blocker and a wall or window on that side.</summary>
+        public CoverLevel CoverOn(Cell cell, GridSide side)
+        {
+            var cover = CoverFrom(cell + GridSides.Step(side));
+            var wall = SideAt(cell, side);
+            return wall.Blocks && wall.Cover > cover ? wall.Cover : cover;
+        }
+
         /// <summary>Per-side cover: forward (+y), back (-y), left (-x), right (+x).</summary>
         public (CoverLevel forward, CoverLevel back, CoverLevel left, CoverLevel right) CoverSides(Cell cell) =>
-            (CoverFrom(cell + Orthogonal[0]), CoverFrom(cell + Orthogonal[1]), CoverFrom(cell + Orthogonal[2]), CoverFrom(cell + Orthogonal[3]));
+            (CoverOn(cell, GridSide.PlusY), CoverOn(cell, GridSide.MinusY), CoverOn(cell, GridSide.MinusX), CoverOn(cell, GridSide.PlusX));
 
         /// <summary>Cells whose blocked flag or cover differs, as "CODE x,y" lines.</summary>
         public List<string> DiffOccupancy(LayoutGrid actual)
@@ -119,6 +191,25 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 else if (expected.Blocked && expected.Cover != got.Cover)
                     lines.Add($"COVER {cell} expected {expected.Cover} from {expected.Occupant}, got {got.Cover} from {got.Occupant}");
             }
+            if (!HasWalls && !actual.HasWalls) return lines;
+            // Each side once: +x and +y of every cell, plus the board's left and bottom edges.
+            foreach (var cell in AllCells())
+                foreach (var side in SideOrder)
+                {
+                    if ((side == GridSide.MinusX && cell.X != 0) || (side == GridSide.MinusY && cell.Y != 0)) continue;
+                    var expected = SideAt(cell, side);
+                    var got = actual.SideAt(cell, side);
+                    var name = GridSides.Name(side);
+                    if (expected.Kind == got.Kind && (expected.Kind == SideKind.Open || expected.Cover == got.Cover)) continue;
+                    if (got.Kind == SideKind.Open)
+                        lines.Add($"WALL_MISSING {cell} {name} expected {expected.Kind} {expected.Cover} from {expected.Owner}");
+                    else if (expected.Kind == SideKind.Open)
+                        lines.Add($"WALL_EXTRA {cell} {name} {got.Kind} {got.Cover} from {got.Owner}");
+                    else if (expected.Kind != got.Kind)
+                        lines.Add($"WALL_KIND {cell} {name} expected {expected.Kind} from {expected.Owner}, got {got.Kind} from {got.Owner}");
+                    else
+                        lines.Add($"WALL_COVER {cell} {name} expected {expected.Cover} from {expected.Owner}, got {got.Cover} from {got.Owner}");
+                }
             return lines;
         }
 
@@ -131,22 +222,54 @@ namespace Gamenami.UnitySemanticBridge.Layout
             var deployCells = deploy == null ? new HashSet<Cell>() : new HashSet<Cell>(deploy);
             var enemyCells = enemies == null ? new HashSet<Cell>() : new HashSet<Cell>(enemies);
             var unreachableCells = unreachable == null ? new HashSet<Cell>() : new HashSet<Cell>(unreachable);
-            var builder = new StringBuilder();
-            for (var y = Height - 1; y >= 0; y--)
+            char CellChar(Cell cell)
             {
-                for (var x = 0; x < Width; x++)
+                var state = this[cell];
+                var unit = deployCells.Contains(cell) || enemyCells.Contains(cell);
+                return state.Blocked
+                    ? unit ? '!' : state.Cover == CoverLevel.Full ? '#' : state.Cover == CoverLevel.Half ? 'h' : 'o'
+                    : deployCells.Contains(cell) ? 'A' : enemyCells.Contains(cell) ? 'E' : unreachableCells.Contains(cell) ? '-' : '.';
+            }
+            var builder = new StringBuilder();
+            if (!HasWalls)
+            {
+                for (var y = Height - 1; y >= 0; y--)
                 {
-                    var cell = new Cell(x, y);
-                    var state = this[cell];
-                    var unit = deployCells.Contains(cell) || enemyCells.Contains(cell);
-                    builder.Append(state.Blocked
-                        ? unit ? '!' : state.Cover == CoverLevel.Full ? '#' : state.Cover == CoverLevel.Half ? 'h' : 'o'
-                        : deployCells.Contains(cell) ? 'A' : enemyCells.Contains(cell) ? 'E' : unreachableCells.Contains(cell) ? '-' : '.');
+                    for (var x = 0; x < Width; x++) builder.Append(CellChar(new Cell(x, y)));
+                    builder.Append('\n');
+                }
+                return builder.ToString();
+            }
+            // With walls: double resolution, the outline characters between cells ('-'/'|' wall, 'w' window,
+            // 'D' door), '+' where a non-open side meets a corner, spaces elsewhere.
+            for (var row = 2 * Height; row >= 0; row--)
+            {
+                for (var col = 0; col <= 2 * Width; col++)
+                {
+                    bool evenRow = row % 2 == 0, evenCol = col % 2 == 0;
+                    int x = col / 2, y = row / 2;
+                    if (!evenRow && !evenCol) builder.Append(CellChar(new Cell(x, y)));
+                    else if (evenRow && !evenCol) builder.Append(WallOutline.SideChar(HorizontalSide(x, y).Kind, true));
+                    else if (!evenRow) builder.Append(WallOutline.SideChar(VerticalSide(x, y).Kind, false));
+                    else
+                    {
+                        var corner = HorizontalSide(x - 1, y).Kind != SideKind.Open || HorizontalSide(x, y).Kind != SideKind.Open ||
+                                     VerticalSide(x, y - 1).Kind != SideKind.Open || VerticalSide(x, y).Kind != SideKind.Open;
+                        builder.Append(corner ? '+' : ' ');
+                    }
                 }
                 builder.Append('\n');
             }
             return builder.ToString();
         }
+
+        // The side below cell (x, y) (its -y side), or above the top row.
+        private SideState HorizontalSide(int x, int y) =>
+            y < Height ? SideAt(new Cell(x, y), GridSide.MinusY) : SideAt(new Cell(x, y - 1), GridSide.PlusY);
+
+        // The side left of cell (x, y) (its -x side), or right of the last column.
+        private SideState VerticalSide(int x, int y) =>
+            x < Width ? SideAt(new Cell(x, y), GridSide.MinusX) : SideAt(new Cell(x - 1, y), GridSide.PlusX);
 
         /// <summary>
         /// Derives the occupancy a layout should produce. Pieces whose spec cannot be resolved,
@@ -163,6 +286,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 if (!spec.HasValue)
                 {
                     issues.Add(new LayoutIssue("UNKNOWN_PIECE", piece.Anchor, $"{piece.LocalId}: no footprint for prefab {piece.PrefabGuid}"));
+                    continue;
+                }
+                if (spec.Value.Outline != null && rules.SideWalls)
+                {
+                    BuildWalled(grid, piece, spec.Value, issues);
                     continue;
                 }
                 foreach (var cell in Footprint(piece, spec.Value))
@@ -186,6 +314,40 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 else if (grid.IsBlocked(cell)) issues.Add(new LayoutIssue("DEPLOY_BLOCKED", cell, $"deploy cell is under {grid[cell].Occupant}"));
             }
             return grid;
+        }
+
+        // A walled piece claims its frame (cells stay walkable) and puts its outline's sides on the board.
+        private static void BuildWalled(LayoutGrid grid, LayoutPiece piece, PieceSpec spec, List<LayoutIssue> issues)
+        {
+            var outline = spec.Outline.Rotate(piece.Rotation);
+            var size = spec.RotatedSize(piece.Rotation);
+            if (outline.Width != size.X || outline.Height != size.Y)
+            {
+                issues.Add(new LayoutIssue("OUTLINE_SIZE", piece.Anchor,
+                    $"{piece.LocalId}: outline is {outline.Width}x{outline.Height}, footprint is {size.X}x{size.Y}"));
+                return;
+            }
+            foreach (var cell in Footprint(piece, spec))
+            {
+                if (!grid.Contains(cell))
+                {
+                    issues.Add(new LayoutIssue("OUT_OF_BOUNDS", cell, $"{piece.LocalId} ({size} at {piece.Anchor})"));
+                    continue;
+                }
+                var other = grid.ClaimedBy(cell);
+                if (other != null)
+                {
+                    issues.Add(new LayoutIssue("OVERLAP", cell, $"{piece.LocalId} overlaps {other}"));
+                    continue;
+                }
+                grid.Claim(cell, piece.LocalId);
+            }
+            foreach (var side in outline.Sides)
+            {
+                var cell = piece.Anchor + side.Cell;
+                if (grid.Contains(cell) || grid.Contains(cell + GridSides.Step(side.Side)))
+                    grid.SetSide(cell, side.Side, side.Kind, outline.CoverFor(side.Kind), piece.LocalId);
+            }
         }
 
         public static IEnumerable<Cell> Footprint(LayoutPiece piece, PieceSpec spec)

@@ -17,6 +17,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public bool NoCornerCutting = true;
         /// <summary>A cell takes cover from blockers on its four orthogonal neighbours (the only rule supported so far).</summary>
         public bool OrthogonalCover = true;
+        /// <summary>
+        /// Walls on cell sides (plan Phase W): a walled piece (card outline) keeps its footprint walkable and puts its
+        /// walls on cell sides, which refuse straight steps across them and diagonals past a corner they meet, and give
+        /// cover to both cells. False builds walled pieces as solid blockers.
+        /// </summary>
+        public bool SideWalls;
         /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
         public CoverHeightBands CoverHeights = new CoverHeightBands();
     }
@@ -74,12 +80,15 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public readonly int Width;
         public readonly int Depth;
         public readonly CoverLevel Cover;
+        /// <summary>Walls on cell sides at rotation 0 (a walled building); null for a solid piece.</summary>
+        public readonly WallOutline Outline;
 
-        public PieceSpec(int width, int depth, CoverLevel cover)
+        public PieceSpec(int width, int depth, CoverLevel cover, WallOutline outline = null)
         {
             Width = width;
             Depth = depth;
             Cover = cover;
+            Outline = outline;
         }
 
         /// <summary>Footprint size on the board after quarter turns (odd turns swap the axes).</summary>
