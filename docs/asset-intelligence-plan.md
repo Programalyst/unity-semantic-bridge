@@ -454,7 +454,9 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
   - **On hover** (NK `BuildingCutaway`), Upper is hidden and the sides facing the camera are drawn faded: dithered (`NK/Building Dither`, an opaque screen-door fade, chosen over transparency, which already misbehaves with the fog on the crystal patch hologram) or a Fresnel ghost. Far walls stay as they are.
   - **Shadows** stay through shadow-only twins.
   - **The walk camera is off** (`GridCamera` **Use Walk Camera**, code kept), so only the overhead view matters.
-  - **Status:** set up on CatalogTest's walls test building for the owner to compare the two styles; checked in Play Mode only with forced hover under fog, so the look is not judged yet.
+  - **Status:** set up on CatalogTest's walls test building (NK 7742e02a).
+  - **Owner's choice** (2026-10-18): **dither**, visible fraction 0.3. Fresnel looked good but suits a pure cyberpunk theme better, and it is transparent. Hidden also works but drops the windows and doorways of near walls.
+  - **To finish W5:** dither only; section the shop; build the cutaway into the buildings rather than one scene instance; fog reveal for buildings.
   - Work: cutaway spike, then the hover-driven `GridWalls` cutaway; fog reveal.
   - Exit: owner Play Mode review (enter, fight from inside, see inside on hover).
 
