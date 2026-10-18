@@ -22,6 +22,13 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public LayoutGrid Derived;
         /// <summary>Occupancy the game itself would compute (adapter physics bake).</summary>
         public LayoutGrid Physics;
+        /// <summary>
+        /// Instances with a level catalog card: the baked ones, and those left out for a scale other than the
+        /// card's (Scale set; their OFFGRID_SCALE line is in OffScaleIssues), for the scale and plausibility validators.
+        /// </summary>
+        public readonly List<PlacedCard> Cards = new List<PlacedCard>();
+        /// <summary>The OFFGRID_SCALE lines of card pieces (also in Issues); the scale validator reports them cell-addressed.</summary>
+        public readonly List<string> OffScaleIssues = new List<string>();
         /// <summary>Cells where Derived and Physics disagree.</summary>
         public List<string> OccupancyDiff = new List<string>();
 
@@ -124,16 +131,31 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var card = cards.Find(guid);
             var scale = instance.transform.lossyScale;
             var expectedScale = card != null ? LayoutApplier.ToVector3(card.PlacementScale) : asset.transform.localScale;
+            var frame = PieceGeometry.Frame(turns.Value);
+            var cellSize = adapter.Rules.CellSize;
             if ((scale - expectedScale).magnitude > 0.001f * Mathf.Max(1f, expectedScale.magnitude))
             {
-                result.Issues.Add(card != null
-                    ? $"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from its card's placementScale {Format(expectedScale)}; a layout piece has its card's scale"
-                    : $"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from the prefab's {Format(expectedScale)}; a layout piece has the prefab's scale");
+                if (card == null)
+                {
+                    result.Issues.Add($"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from the prefab's {Format(expectedScale)}; a layout piece has the prefab's scale");
+                    return;
+                }
+                var line = $"OFFGRID_SCALE ~{nearCell} {name}: scale {Format(scale)} differs from its card's placementScale {Format(expectedScale)}; a layout piece has its card's scale";
+                result.Issues.Add(line);
+                result.OffScaleIssues.Add(line);
+                // Left out of the layout, but placed where its card footprint at this scale would put it, for the scale report.
+                var actual = new Vec3(scale.x, scale.y, scale.z);
+                var scaled = LevelCards.Footprint(card, cellSize, actual, role == PieceRole.Blocker);
+                var scaledSize = scaled.RotatedSize(turns.Value);
+                result.Cards.Add(new PlacedCard
+                {
+                    LocalId = name, Card = card, Size = scaledSize, Rotation = turns.Value, Blocking = role == PieceRole.Blocker,
+                    Anchor = AnchorOf(instance, frame, LayoutApplier.ToVector3(scaled.Center), scaledSize, cellSize, adapter),
+                    Cover = role == PieceRole.Blocker ? adapter.DescribeCover(instance) : CoverLevel.None, Scale = actual,
+                });
                 return;
             }
 
-            var frame = PieceGeometry.Frame(turns.Value);
-            var cellSize = adapter.Rules.CellSize;
             int width, depth;
             Vector3 boundsCenter;
             if (card != null)
@@ -162,8 +184,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var spec = new PieceSpec(width, depth, cover);
             var size = spec.RotatedSize(turns.Value);
             var center = instance.transform.position + frame * boundsCenter;
-            var halfSpan = new Vector3((size.X - 1) * cellSize * 0.5f, 0f, (size.Y - 1) * cellSize * 0.5f);
-            var anchor = adapter.WorldToCell(center - halfSpan);
+            var anchor = AnchorOf(instance, frame, boundsCenter, size, cellSize, adapter);
             var expected = LayoutApplier.FootprintCenter(adapter, board, anchor, size);
             var offset = new Vector2(center.x - expected.x, center.z - expected.z);
             if (offset.magnitude > PositionTolerance)
@@ -194,6 +215,21 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             {
                 result.Document.Decor.Add(piece);
             }
+            if (card != null)
+                result.Cards.Add(new PlacedCard
+                {
+                    LocalId = localId, Card = card, Anchor = anchor, Size = size, Rotation = turns.Value,
+                    Blocking = role == PieceRole.Blocker, Cover = cover,
+                });
+        }
+
+        // The min-corner cell of a footprint whose bounds centre sits at boundsCenter in the piece's frame.
+        private static Cell AnchorOf(GameObject instance, Quaternion frame, Vector3 boundsCenter, Cell size, float cellSize,
+            IGridRulesAdapter adapter)
+        {
+            var center = instance.transform.position + frame * boundsCenter;
+            var halfSpan = new Vector3((size.X - 1) * cellSize * 0.5f, 0f, (size.Y - 1) * cellSize * 0.5f);
+            return adapter.WorldToCell(center - halfSpan);
         }
 
         // Spawns keep the level's order. Levels store no ids, so unnamed spawns become enemy1, enemy2, ...

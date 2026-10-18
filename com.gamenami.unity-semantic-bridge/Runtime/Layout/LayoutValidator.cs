@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 
@@ -24,6 +25,35 @@ namespace Gamenami.UnitySemanticBridge.Layout
         }
     }
 
+    /// <summary>
+    /// A placed piece that has a level catalog card, as the scale and plausibility checks see it: where it
+    /// sits, how it is placed, and the cover it gives. Apply and bake fill these from the scene.
+    /// </summary>
+    public sealed class PlacedCard
+    {
+        public string LocalId;
+        public LevelCard Card;
+        /// <summary>Min-corner cell of the footprint.</summary>
+        public Cell Anchor;
+        /// <summary>Footprint size in cells on the board (layout rotation applied).</summary>
+        public Cell Size;
+        /// <summary>Layout quarter turns (0-3).</summary>
+        public int Rotation;
+        /// <summary>Placed as a layout blocker (pieces), not decor.</summary>
+        public bool Blocking;
+        /// <summary>Cover the piece gives as placed (None for decor).</summary>
+        public CoverLevel Cover;
+        /// <summary>The instance's scale when it differs from the card's placementScale (a scene edit); null when it has the card's.</summary>
+        public Vec3? Scale;
+
+        public IEnumerable<Cell> Cells()
+        {
+            for (var y = 0; y < Size.Y; y++)
+                for (var x = 0; x < Size.X; x++)
+                    yield return new Cell(Anchor.X + x, Anchor.Y + y);
+        }
+    }
+
     /// <summary>Validator output: cell-addressed issues plus what the ASCII map needs.</summary>
     public sealed class LayoutReport
     {
@@ -39,25 +69,28 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         public int ErrorCount => Issues.Count(i => i.Severity == IssueSeverity.Error);
         public int WarningCount => Issues.Count(i => i.Severity == IssueSeverity.Warning);
+        public int NoteCount => Issues.Count(i => i.Severity == IssueSeverity.Note);
         public bool HasErrors => ErrorCount > 0;
 
         public IEnumerable<LayoutIssue> WithCode(string code) => Issues.Where(i => i.Code == code);
 
         /// <summary>
-        /// Errors, then warnings, one "CODE x,y message" line each, at most <paramref name="maxLines"/>
+        /// Errors, then warnings, then notes, one "CODE x,y message" line each, at most <paramref name="maxLines"/>
         /// issue lines (0 = all); the ASCII map is appended on request.
         /// </summary>
         public string Format(int maxLines = DefaultMaxLines, bool ascii = false)
         {
             var builder = new StringBuilder();
-            builder.Append("LAYOUT_REPORT ").Append(ErrorCount).Append(" errors, ").Append(WarningCount).Append(" warnings\n");
+            builder.Append("LAYOUT_REPORT ").Append(ErrorCount).Append(" errors, ").Append(WarningCount).Append(" warnings");
+            if (NoteCount > 0) builder.Append(", ").Append(NoteCount).Append(" notes");
+            builder.Append('\n');
             var shown = 0;
             var hidden = 0;
-            foreach (var severity in new[] { IssueSeverity.Error, IssueSeverity.Warning })
+            foreach (var severity in new[] { IssueSeverity.Error, IssueSeverity.Warning, IssueSeverity.Note })
             {
                 var group = Issues.Where(i => i.Severity == severity).ToList();
                 if (group.Count == 0) continue;
-                builder.Append(severity == IssueSeverity.Error ? "Errors" : "Warnings").Append(" (").Append(group.Count).Append("):\n");
+                builder.Append(severity == IssueSeverity.Error ? "Errors" : severity == IssueSeverity.Warning ? "Warnings" : "Notes").Append(" (").Append(group.Count).Append("):\n");
                 foreach (var issue in group)
                 {
                     if (maxLines > 0 && shown >= maxLines)
@@ -216,6 +249,181 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     IssueSeverity.Warning));
             return issues;
         }
+
+        /// <summary>
+        /// Scale: a piece with a card has its card's placementScale (OFFGRID_SCALE, with its height at both
+        /// scales), and a blocker giving Half or Full cover is as tall as the game's band for that cover
+        /// (HEIGHT_BAND: the card's height, lift included, with a suggested Y scale). Movement-only blockers
+        /// (cover None) may be any height. A piece whose role and scale are both owner-approved overrides
+        /// is reviewed truth: outside its band it is a note, not an error.
+        /// </summary>
+        public static List<LayoutIssue> Scale(IEnumerable<PlacedCard> pieces, CoverHeightBands bands)
+        {
+            bands ??= CoverHeightBands.Default;
+            var issues = new List<LayoutIssue>();
+            foreach (var piece in pieces)
+            {
+                var card = piece.Card;
+                if (card == null) continue;
+                var top = card.Height - card.Lift;
+                if (piece.Scale.HasValue && !SameScale(piece.Scale.Value, card.PlacementScale))
+                {
+                    var here = top * Ratio(piece.Scale.Value.Y, card.PlacementScale.Y) + card.Lift;
+                    var message = $"{piece.LocalId}: scale {piece.Scale.Value} differs from its card's placementScale {card.PlacementScale}: " +
+                                  $"{M(here)} m tall here, {M(card.Height)} m at the card's scale";
+                    if (piece.Blocking && !bands.Fits(piece.Cover, here))
+                        message += $" (outside the {CoverName(piece.Cover)} band {bands.Describe(piece.Cover)})";
+                    issues.Add(new LayoutIssue("OFFGRID_SCALE", piece.Anchor,
+                        message + "; a layout places it at the card's scale, so reapply, or make this scale its placementScale in the overrides file"));
+                }
+                if (!piece.Blocking || bands.Fits(piece.Cover, card.Height)) continue;
+
+                var reviewed = card.RoleSource == "override" && card.ScaleSource == "override";
+                var text = $"{piece.LocalId}: {M(card.Height)} m tall gives {piece.Cover} cover, outside the {CoverName(piece.Cover)} band " +
+                           $"{bands.Describe(piece.Cover)}";
+                var target = bands.Nearest(piece.Cover, card.Height);
+                if (top > 0 && target > card.Lift)
+                {
+                    // Three decimals, rounded towards the band so the suggestion lands inside it.
+                    var exact = card.PlacementScale.Y * (target - card.Lift) / top * 1000;
+                    var suggested = (target < card.Height ? Math.Floor(exact + 1e-6) : Math.Ceiling(exact - 1e-6)) / 1000;
+                    var reached = top * Ratio(suggested, card.PlacementScale.Y) + card.Lift;
+                    text += $"; Y scale {suggested.ToString("0.###", CultureInfo.InvariantCulture)} (now {card.PlacementScale.Y.ToString("0.###", CultureInfo.InvariantCulture)}) makes it {M(reached)} m";
+                }
+                else
+                {
+                    text += "; lower its lift";
+                }
+                var other = piece.Cover == CoverLevel.Half ? CoverLevel.Full : CoverLevel.Half;
+                if (bands.Fits(other, card.Height)) text += $", or give it {other} cover";
+                if (reviewed) text += " (owner-approved role and scale; the height is a bounding-box top, which thin parts such as posts can overstate)";
+                issues.Add(new LayoutIssue("HEIGHT_BAND", piece.Anchor, text, reviewed ? IssueSeverity.Note : IssueSeverity.Error));
+            }
+            return issues;
+        }
+
+        /// <summary>
+        /// Plausibility, from cards and the layout only; warnings, since judgement is involved:
+        /// ROLE_LAYER (a ground or decor piece placed as a blocker, or a blocking role placed as decor);
+        /// GROUND_RUN (a 4-connected run of ground cells, e.g. road and sidewalk tiles, that reaches no board
+        /// edge, so its free edges show the ground lift step) and GROUND_OVERLAP (two ground pieces on one cell
+        /// z-fight); BUILDING_FRONT (a building's front faces the board edge or only blocked cells). A
+        /// building without a known front is a BUILDING_NO_FRONT note.
+        /// </summary>
+        public static List<LayoutIssue> Plausibility(LayoutGrid grid, IEnumerable<PlacedCard> pieces)
+        {
+            var issues = new List<LayoutIssue>();
+            var placed = pieces.Where(p => p.Card != null).ToList();
+            foreach (var piece in placed)
+            {
+                var role = piece.Card.Role;
+                if (piece.Blocking && (role == LevelRole.Ground || role == LevelRole.Decor))
+                    issues.Add(new LayoutIssue("ROLE_LAYER", piece.Anchor,
+                        $"{piece.LocalId}: a {LevelCards.RoleName(role)} piece placed as a blocker; put it in decor", IssueSeverity.Warning));
+                else if (!piece.Blocking && LevelCards.IsBlocking(role))
+                    issues.Add(new LayoutIssue("ROLE_LAYER", piece.Anchor,
+                        $"{piece.LocalId}: a {LevelCards.RoleName(role)} piece placed as decor never blocks; put it in pieces", IssueSeverity.Warning));
+            }
+            issues.AddRange(GroundRuns(grid, placed.Where(p => p.Card.Role == LevelRole.Ground).ToList()));
+            foreach (var building in placed.Where(p => p.Card.Role == LevelRole.Building))
+                if (BuildingFront(grid, building) is LayoutIssue issue)
+                    issues.Add(issue);
+            return issues;
+        }
+
+        private static IEnumerable<LayoutIssue> GroundRuns(LayoutGrid grid, List<PlacedCard> ground)
+        {
+            var owners = new Dictionary<Cell, List<string>>();
+            var reported = new HashSet<(string, string)>();
+            var edgeTouching = new HashSet<string>();
+            foreach (var piece in ground)
+                foreach (var cell in piece.Cells())
+                {
+                    if (!grid.Contains(cell))
+                    {
+                        edgeTouching.Add(piece.LocalId); // reaches past the edge
+                        continue;
+                    }
+                    if (!owners.TryGetValue(cell, out var here)) owners[cell] = here = new List<string>();
+                    foreach (var other in here)
+                        if (other != piece.LocalId && reported.Add((other, piece.LocalId)))
+                            yield return new LayoutIssue("GROUND_OVERLAP", cell,
+                                $"{piece.LocalId} overlaps ground piece {other}: both sit at the same ground lift and z-fight", IssueSeverity.Warning);
+                    if (!here.Contains(piece.LocalId)) here.Add(piece.LocalId);
+                }
+
+            var seen = new HashSet<Cell>();
+            foreach (var start in owners.Keys.OrderBy(c => c.Y).ThenBy(c => c.X))
+            {
+                if (!seen.Add(start)) continue;
+                var run = new List<Cell> { start };
+                var queue = new Queue<Cell>(run);
+                while (queue.Count > 0)
+                {
+                    var cell = queue.Dequeue();
+                    foreach (var step in new[] { new Cell(1, 0), new Cell(-1, 0), new Cell(0, 1), new Cell(0, -1) })
+                    {
+                        var next = cell + step;
+                        if (owners.ContainsKey(next) && seen.Add(next))
+                        {
+                            run.Add(next);
+                            queue.Enqueue(next);
+                        }
+                    }
+                }
+                var ids = run.SelectMany(c => owners[c]).Distinct().OrderBy(id => id, StringComparer.Ordinal).ToList();
+                var atEdge = run.Any(c => c.X == 0 || c.Y == 0 || c.X == grid.Width - 1 || c.Y == grid.Height - 1) || ids.Any(edgeTouching.Contains);
+                if (atEdge) continue;
+                yield return new LayoutIssue("GROUND_RUN", run.OrderBy(c => c.Y).ThenBy(c => c.X).First(),
+                    $"ground run of {run.Count} cell{(run.Count == 1 ? "" : "s")} ({string.Join(", ", ids)}) reaches no board edge, so its free edges show the ground lift step; " +
+                    "extend it to the board edge", IssueSeverity.Warning);
+            }
+        }
+
+        private static LayoutIssue? BuildingFront(LayoutGrid grid, PlacedCard building)
+        {
+            if (!building.Card.Front.HasValue)
+                return new LayoutIssue("BUILDING_NO_FRONT", building.Anchor,
+                    $"{building.LocalId}: no front known (its root is tilted); add \"front\" to its overrides entry to have it checked", IssueSeverity.Note);
+            var side = GridSides.Rotate(building.Card.Front.Value, building.Rotation);
+            var cells = FrontCells(building, side).Where(grid.Contains).ToList();
+            var name = GridSides.Name(side);
+            if (cells.Count == 0)
+                return new LayoutIssue("BUILDING_FRONT", building.Anchor,
+                    $"{building.LocalId}: its front ({name}) faces the board edge; turn it towards the board", IssueSeverity.Warning);
+            if (cells.All(grid.IsBlocked))
+            {
+                var blockers = cells.Select(c => grid[c].Occupant).Distinct().OrderBy(id => id, StringComparer.Ordinal);
+                return new LayoutIssue("BUILDING_FRONT", building.Anchor,
+                    $"{building.LocalId}: its front ({name}) faces only blocked cells ({string.Join(", ", blockers)}); leave open or road cells before it",
+                    IssueSeverity.Warning);
+            }
+            return null;
+        }
+
+        // The row of cells just outside a footprint on one side.
+        private static IEnumerable<Cell> FrontCells(PlacedCard piece, GridSide side)
+        {
+            var a = piece.Anchor;
+            var s = piece.Size;
+            switch (side)
+            {
+                case GridSide.PlusX: for (var y = 0; y < s.Y; y++) yield return new Cell(a.X + s.X, a.Y + y); break;
+                case GridSide.MinusX: for (var y = 0; y < s.Y; y++) yield return new Cell(a.X - 1, a.Y + y); break;
+                case GridSide.PlusY: for (var x = 0; x < s.X; x++) yield return new Cell(a.X + x, a.Y + s.Y); break;
+                default: for (var x = 0; x < s.X; x++) yield return new Cell(a.X + x, a.Y - 1); break;
+            }
+        }
+
+        private static bool SameScale(Vec3 a, Vec3 b) =>
+            Math.Abs(a.X - b.X) <= 1e-3 * Math.Max(1, Math.Abs(b.X)) && Math.Abs(a.Y - b.Y) <= 1e-3 * Math.Max(1, Math.Abs(b.Y)) &&
+            Math.Abs(a.Z - b.Z) <= 1e-3 * Math.Max(1, Math.Abs(b.Z));
+
+        private static double Ratio(double value, double of) => of == 0 ? 1 : value / of;
+
+        private static string CoverName(CoverLevel cover) => cover == CoverLevel.Half ? "half-cover" : cover == CoverLevel.Full ? "full-cover" : "no-cover";
+
+        private static string M(double meters) => CoverHeightBands.Meters(meters);
 
         private static HashSet<Cell> Flood(LayoutGrid grid, IEnumerable<Cell> starts)
         {

@@ -207,8 +207,10 @@ lost on the next apply.
 ## Validators
 
 `LayoutValidator` (`Runtime/Layout/LayoutValidator.cs`) is pure C#. Each check returns
-`LayoutIssue`s, printed as `CODE x,y message` with an `Error` or `Warning` severity.
-`LayoutReport.Format(maxLines = 40, ascii = false)` lists errors, then warnings, caps
+`LayoutIssue`s, printed as `CODE x,y message` with an `Error`, `Warning` or `Note` severity
+(a note is for the record: reviewed content outside a rule; the header counts notes only when
+there are some). `LayoutReport.Format(maxLines = 40, ascii = false)` lists errors, then warnings,
+then notes, caps
 the lines (`... N more lines not shown`), and on request appends the ASCII map
 (`#` full, `h` half, `o` blocked, `.` open, `A` deploy, `E` enemy, `!` a unit on a
 blocker, `-` open but unreachable).
@@ -219,18 +221,54 @@ blocker, `-` open but unreachable).
 | Encounter | `DEPLOY_`/`ENEMY_OUT_OF_BOUNDS`, `DEPLOY_`/`ENEMY_BLOCKED`, `CELL_SHARED`, `FACING_RANGE` (outside 0–359), `FACING_OFF_AXIS` (warning: not one of the eight grid directions) | Occupancy grid, deploy, spawns |
 | Reachability | `NO_DEPLOY`, `ENEMY_UNREACHABLE`, `POCKET` (warning, one per unreached region of open cells, at its lowest cell) | Breadth-first search from the open deploy cells with `LayoutGrid.CanStep` (the game's neighbour and corner rule) |
 | Consistency | `MISSING_BLOCK` (a layout blocker without a game collider), `EXTRA_BLOCK`, `COVER`, `SIGHT_NO_OBSTACLE` (warning) | Layout grid, the game's occupancy bake, sight colliders |
+| Scale | `OFFGRID_SCALE` (a card piece in a scene at another scale than its card's `placementScale`, on its cell, with its height at both scales), `HEIGHT_BAND` (a blocker's card height outside the game's band for the cover it gives, with a suggested Y scale; a **note** when its role and scale are both owner-approved overrides) | Placed card pieces (`PlacedCard`), the adapter's `GridRules.CoverHeights` |
+| Plausibility (warnings) | `ROLE_LAYER` (a ground/decor card in `pieces`, or a blocking role in `decor`), `GROUND_RUN` (a 4-connected run of ground cells reaching no board edge), `GROUND_OVERLAP` (two ground pieces on one cell z-fight), `BUILDING_FRONT` (front faces the board edge or only blocked cells), `BUILDING_NO_FRONT` (note: no front known) | Placed card pieces, occupancy grid |
 
 Pieces must sit on whole cells (plan decision D10). Relaxing that for decor or
 overhanging blockers comes later.
 
+**Scale and plausibility** (Phase 4d) need cards, so they cover pieces with a card only
+(`LayoutValidator.Scale`, `LayoutValidator.Plausibility`, pure; apply and bake fill
+`LayoutApplyResult.Cards` / `LayoutBakeResult.Cards` with `PlacedCard`s):
+
+- **Bands from the game.** `GridRules.CoverHeights` (`CoverHeightBands`: `HalfMin`, `HalfMax`,
+  `FullMin`; USB's defaults: up to 1.2 m, from 2 m) are the target heights, also used by catalog
+  role detection. NK sets half 0.9–1.2 m, full from 1.6 m. The check uses the cover the piece
+  **gives as placed** (card cover, or the adapter's when the card has none), so a movement-only
+  blocker (cover `None`) may be any height and decor is not checked. Heights compare with 5 mm slack.
+- **Height** is the card's `height` (bounding-box top above the floor at `placementScale`,
+  `lift` included). The suggested Y scale only scales the part above the lift, is rounded to
+  three decimals towards the band, and the line offers the other cover where the height fits it
+  (`... ; Y scale 0.805 (now 1) makes it 1.20 m, or give it Full cover`). When the lift alone
+  is above the band it says to lower the lift.
+- **Reviewed truth.** A card whose `roleSource` and `scaleSource` are both `override` was approved
+  by the owner; outside its band it is a `HEIGHT_BAND` note, since a box top can overstate thin
+  parts (NK's Fence_04 at 1.23 m: its end posts). A reviewed role with an unreviewed scale is
+  still an error.
+- **Off-scale scene pieces.** The bake leaves a card piece at another scale out of the layout
+  (its `OFFGRID_SCALE ~x,y` line stays in `LayoutBakeResult.Issues`); `ValidateScene` replaces
+  that line with the scale check's cell-addressed one, which adds the heights and whether the
+  scene height leaves the band (`OFFGRID_SCALE 4,3 jersey: scale (1, 1.5, 1) differs from its
+  card's placementScale (1, 1, 1): 1.40 m tall here, 0.93 m at the card's scale (outside the
+  half-cover band 0.90-1.20 m); ...`). Applied layouts are at card scale by construction.
+- **Ground runs.** Road and sidewalk tiles (card role `ground`) sit on the adapter's
+  `GroundLift`, so a free tile edge shows the step: each 4-connected run of ground cells must
+  touch the board edge (or hang past it). Ground tiles on the same cell z-fight (`GROUND_OVERLAP`).
+- **Building fronts.** A building's card `front` (the model's +Z, or the overrides file,
+  [level catalog](level-catalog.md)) is turned by the layout rotation; the row of cells outside
+  that side must hold at least one open cell (open or road; the occupancy grid decides). A front
+  off the board or facing only blockers is a warning; a building without a known front is a
+  `BUILDING_NO_FRONT` note (only a building with a tilted root has none).
+
 `LayoutSceneValidator` (`Editor/Layout/`) adds the physics tier:
 
 - `ValidateApplied(document, applyResult, scene)`: structural, encounter and
-  reachability on the draft's footprints, the apply's placement issues, the adapter's
-  occupancy bake issues, then consistency.
+  reachability on the draft's footprints, the apply's placement issues, scale and
+  plausibility on the applied card pieces, the adapter's occupancy bake issues, then consistency.
 - `ValidateScene(scene, bake = null)`: any scene. The bake's report lines are the
-  structural tier; encounter and reachability run on the game's own occupancy bake,
-  because pieces the layout cannot express still block at runtime.
+  structural tier (card pieces' `OFFGRID_SCALE` replaced by the scale check's); encounter and
+  reachability run on the game's own occupancy bake, because pieces the layout cannot express
+  still block at runtime; scale and plausibility run on the baked card pieces.
 - `GatherSight`: for each board cell, an overlap box across the sight band (0.5–2.5 m
   above the floor) on `SightLayers`, triggers and `IgnoredBySight` colliders excluded.
   Colliders are grouped by their outermost prefab instance (or GameObject); a group
@@ -240,7 +278,10 @@ overhanging blockers comes later.
 
 NK's checks against real content are in **Tools → Grid Combat → Validate Layout
 Reports**: the NK pieces and catalog pieces fixtures give clean reports, broken JSON fixtures report exactly
-their expected lines, and a GridBattle report equals a recorded fixture.
+their expected lines (`scale-plausibility.layout.json`: Fence_04's note, a building facing the edge,
+one facing only blockers, one without a front, a mid-board road run with an overlapping sidewalk tile),
+a card piece without an approved scale is a `HEIGHT_BAND` error, a rescaled card piece gives the
+cell-addressed `OFFGRID_SCALE`, and a GridBattle report equals a recorded fixture.
 
 ## Current limits
 
@@ -255,7 +296,10 @@ their expected lines, and a GridBattle report equals a recorded fixture.
   root turned in quarter turns. The applier does not check that a
   collider touches every footprint cell; the consistency check (`MISSING_BLOCK`) and
   the bake's occupancy diff catch that.
-- Plausibility (roads, building fronts) and scale validators are Phase 4d.
+- Plausibility is kept to what cards and the layout decide: ground runs do not know which tile is a
+  straight, corner or end, so a run that reaches the edge passes even if its tiles don't line up; and a
+  building's front is its model's +Z unless the overrides file says otherwise, so a pack modelled
+  another way needs `front` overrides.
 
 ## Tests
 
@@ -266,10 +310,14 @@ their expected lines, and a GridBattle report equals a recorded fixture.
   footprint override with its fitted box (occupancy blocks only the claimed cell), ground
   lift, card cover `None` reaching the hook and staying apart from `Half`, and pieces
   without a card (rules alone give none) measured as before.
+- `Tests/Editor/LayoutScalePlausibilityTests.cs`: the scale and plausibility checks (bands, the
+  reviewed note, suggested scales with a lift, off-scale scene pieces, wrong layers, ground runs and
+  overlaps, building fronts with rotation, notes in the report), role detection with a game's
+  bands, and fronts from the model's forward or the override.
 - `Tests/Editor/LayoutValidatorTests.cs`: deliberately broken layouts, each with the
   exact report line it must produce, plus corner-rule sealing, report capping and the
   map, and the consistency check. Run them through `TestProject`:
-  `scripts/test-unity.sh -testFilter "Gamenami.UnitySemanticBridge.Editor.Tests.LayoutModelTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutValidatorTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutApplierCardTests"`.
+  `scripts/test-unity.sh -testFilter "Gamenami.UnitySemanticBridge.Editor.Tests.LayoutModelTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutValidatorTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutApplierCardTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutScalePlausibilityTests"`.
 - `mcp-editor-bridge/tests/test_layout_tools.py`: `bake_layout` registration.
 - Game side (NK): **Validate Layout Round Trip** compares the adapter's neighbour rule
   with `GridMap` and round-trips a fixture layout (pieces, deploy cells, enemy spawns)
@@ -277,4 +325,4 @@ their expected lines, and a GridBattle report equals a recorded fixture.
   placed from their cards (`docs/fixtures/layouts/catalog-pieces.layout.json`: scale,
   lift, Tyre_Pile_02's 1 × 1 override, a movement-only tyre barrier, road tiles on the
   ground lift); **Validate Layout Reports** checks the validators against NK content,
-  that fixture included (clean report).
+  that fixture included (clean report), and the scale and plausibility checks on NK's cards.

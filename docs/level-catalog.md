@@ -63,7 +63,8 @@ blocker, 85 building, 181 cover_full, 139 cover_half, 359 decor, 152 ground and 
    "levelRole": "blocker", "roleSource": "name", "cover": null,
    "visualBounds":   {"center": [0, 0.732, 0],      "size": [3.263, 1.446, 0.79]},
    "colliderBounds": {"center": [0, 0.747, -0.007], "size": [3.314, 1.476, 0.829]},
-   "pivotOffset": [0, 0.009, -0.007], "height": 1.485, "lift": 0, "storeys": null, "skewed": false,
+   "pivotOffset": [0, 0.009, -0.007], "height": 1.485, "lift": 0, "storeys": null,
+   "front": null, "frontSource": null, "skewed": false,
    "placementScale": [1, 1, 1], "scaleSource": "prefab", "rootRotation": [0, 0, 0],
    "thumbnail": "level-thumbs/PolygonApocalypseWasteland__Prefabs__Props__SM_Prop_Barrier_01.prefab.png"}}}
 ```
@@ -82,6 +83,7 @@ resolve in the game.
 | `footprintOverride` | `[x, z]` meters the piece claims on the grid at layout rotation 0, instead of its bounds; `null` unless an override sets it. For pieces allowed to overhang their cells visually (e.g. a tyre heap scaled past one cell). |
 | `lift` | Height of the pivot above the floor when placed, in meters (0 unless an override sets it). For pieces modelled below their pivot, such as the Wasteland barricades pivoted at mid-height, which otherwise sink half into the floor. Layouts place the pivot at floor + `lift`. |
 | `storeys` | Buildings only: `height / 3 m`, rounded, at least 1; an override can set it. |
+| `front`, `frontSource` | Buildings only: the side the front faces on the grid at layout rotation 0, root rotation applied: `+x`, `-x`, `+y` or `-y` (y = world Z). From the overrides file (`"override"`), else the **model's forward, +Z**, turned by `rootRotation` (`"forward"`; +y for an unrotated root). Synty models their buildings facing +Z (owner check of the 4b gallery, 2026-10-18: Shop_Medium_02, Warehouse_Brick_01 and AutoRepair_01 have their front at +Z). Door children are no guide: Shop_Medium_02 and Warehouse_Brick_01 have doors front and back. `null` only for a root tilted so forward points up or down. The plausibility validator checks what a front faces ([grid layouts](grid-layouts.md#validators)). |
 | `skewed` | A measured child is rotated off 90° steps (by more than about 0.8°), so the boxes overstate the size. |
 | `levelRole` | `blocker`, `cover_half`, `cover_full`, `ground`, `decor`, `building` or `unknown` (see below). |
 | `roleSource` | `override`, `name` or `geometry`: which rule decided the role. |
@@ -135,16 +137,22 @@ The first rule that decides wins:
    folder path), in this order:
    - `Greeble`, `Decal`, `Sign` → `decor` (so `Greeble_Wall` and `Sign_Road` aren't walls or roads)
    - `Road`, `Sidewalk` → `ground`
-   - `Sandbag`, `Barrier`, `Wall`, `Fence` → cover by height: below 1.2 m `cover_half`,
-     2 m or more `cover_full`, in between `blocker` (it blocks; its cover class needs review)
+   - `Sandbag`, `Barrier`, `Wall`, `Fence` → cover by height: below the half-cover maximum
+     `cover_half`, from the full-cover minimum `cover_full`, in between `blocker` (it blocks;
+     its cover class needs review)
    - `Bld_` → `building` when the box is at least 2 × 2 m and 2 m tall; smaller `Bld_`
      parts (doors, signs, stools) fall through to geometry
 3. **Geometry** (footprint bounds at `placementScale`): longest side below 0.5 m →
-   `decor`; height below 0.35 m → `ground` (floor tiles, walkways); below 1.2 m →
-   `cover_half`; 2 m or more → `cover_full`; otherwise `unknown`.
+   `decor`; height below 0.35 m → `ground` (floor tiles, walkways); below the half-cover
+   maximum → `cover_half`; from the full-cover minimum → `cover_full`; otherwise `unknown`.
 4. Vision on the thumbnail for leftover `unknown` cards is not built yet.
 
-Thresholds are constants on `LevelCards`. Expect mistakes from geometry: doors come out
+The cover heights come from the **game**: its adapter's `GridRules.CoverHeights`
+(`CoverHeightBands`: `HalfMin`, `HalfMax`, `FullMin`), found through `LayoutAdapters.CoverHeights()`
+when the project has an `IGridRulesAdapter`. NK sets half 0.9–1.2 m and full from 1.6 m, so in NK a
+cover-named piece of 1.7 m is `cover_full`. A project without an adapter (Asset Preview) uses USB's
+defaults: half below 1.2 m, full from 2 m (`LevelCards.HalfCoverMaxHeight`, `FullCoverMinHeight`), so
+AP's catalog is unchanged. The other thresholds are constants on `LevelCards`. Expect mistakes from geometry: doors come out
 as `cover_full`, and beams and ceiling tiles are guessed from their size. The 4b review
 fixes them through the overrides file.
 
@@ -185,6 +193,8 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
     that reach past them are disabled and replaced by one box inset 0.1 m ([grid layouts](grid-layouts.md)).
   - `lift` (meters, may be negative) raises the pivot above the floor; it is added to `height`, so it changes
     the detected role and cover too.
+  - `front` (`+x`, `-x`, `+y`, `-y`): a building's front side at layout rotation 0 (y = world Z), for a building
+    not modelled facing +Z. It wins over the model's forward.
   - `exclude: true` leaves the prefab out of the catalog.
   - `note` is free text for review history.
 - Height, cover and storeys are measured at the overridden scale. Edit the file, then
@@ -201,6 +211,8 @@ different thing. The overrides file sets the scale every layout uses, and
   tolerance, collider-versus-visual bounds, the Euler convention, approximate
   footprints, role rules, overrides (rules, id and GUID entries, exclude, strict
   errors) and the card JSON round trip.
+- `Tests/Editor/LayoutScalePlausibilityTests.cs` (pure): role detection with a game's bands,
+  building fronts from the model's forward (root rotation) and the `front` override.
 - `Tests/Editor/LevelCatalogGeneratorTests.cs` (Editor): real prefabs in a scratch folder
   measured through `LoadPrefabContents` (root scale and rotation ignored, child scales
   counted, skew detection, characters and empty prefabs left out, overrides by GUID,
@@ -225,9 +237,14 @@ A game project (NK) keeps no `level-catalog.json`: the generated files under `As
   decides only when the card's cover is null).
 - Bake reads card pieces at their card footprint and reports any instance whose scale differs
   from its card's `placementScale` (`OFFGRID_SCALE`).
+- The scale and plausibility validators (Phase 4d) check every placed card piece: its scale,
+  its `height` against the game's band for the cover it gives, ground runs and building fronts
+  ([grid layouts](grid-layouts.md#validators)). Pieces whose `roleSource` and `scaleSource` are
+  both `override` are owner-reviewed: outside their band they get a note, not an error.
 
 ## Not yet
 
-- The scale and plausibility validators are 4d. The 4b scan, review and import are done:
-  NK `docs/level-piece-review.md` and `docs/level-rules.md` (§ *Level pieces and the catalog overrides*).
+- The 4b scan, review and import are done: NK `docs/level-piece-review.md` and
+  `docs/level-rules.md` (§ *Level pieces and the catalog overrides*). NK's 19 approved buildings
+  all face their model's +Z, so none needs a `front` override.
 - No thumbnail vision for `unknown` cards, and no `query_level_catalog` tool (Phase 5).

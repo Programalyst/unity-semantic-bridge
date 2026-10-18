@@ -21,5 +21,21 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 throw new BridgeToolException($"{types[0].FullName} needs a public parameterless constructor.");
             return (IGridRulesAdapter)Activator.CreateInstance(types[0]);
         }
+
+        /// <summary>The project's adapter, or null when it has none (or several): for optional uses such as catalog role detection.</summary>
+        public static IGridRulesAdapter TryFind()
+        {
+            try
+            {
+                return Find();
+            }
+            catch (BridgeToolException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The project's cover height bands (its adapter's GridRules.CoverHeights), else USB's defaults.</summary>
+        public static CoverHeightBands CoverHeights() => TryFind()?.Rules?.CoverHeights ?? CoverHeightBands.Default;
     }
 }

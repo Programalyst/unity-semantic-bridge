@@ -17,6 +17,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public double? Lift;
         /// <summary>Horizontal size in meters the piece claims on the grid (rotation 0), instead of its bounds.</summary>
         public FootprintSize? Footprint;
+        /// <summary>Buildings: the side the front faces at layout rotation 0, when it is not the model's forward (+Z).</summary>
+        public GridSide? Front;
         /// <summary>Leave the prefab out of the level catalog.</summary>
         public bool? Exclude;
         public string Note;
@@ -31,6 +33,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             Storeys = other.Storeys ?? Storeys;
             Lift = other.Lift ?? Lift;
             Footprint = other.Footprint ?? Footprint;
+            Front = other.Front ?? Front;
             Exclude = other.Exclude ?? Exclude;
             Note = other.Note ?? Note;
         }
@@ -55,7 +58,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         private static readonly HashSet<string> EntryKeys = new HashSet<string>(StringComparer.Ordinal)
         {
-            "role", "cover", "placementScale", "storeys", "lift", "footprint", "exclude", "note",
+            "role", "cover", "placementScale", "storeys", "lift", "footprint", "front", "exclude", "note",
         };
 
         public static LevelCatalogOverrides Parse(string text)
@@ -127,7 +130,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             {
                 if (property.Name == extraKey) continue;
                 if (!EntryKeys.Contains(property.Name))
-                    throw new FormatException($"{FileName}: {where} has unknown key '{property.Name}' (role, cover, placementScale, storeys, lift, footprint, exclude, note).");
+                    throw new FormatException($"{FileName}: {where} has unknown key '{property.Name}' (role, cover, placementScale, storeys, lift, footprint, front, exclude, note).");
                 try
                 {
                     switch (property.Name)
@@ -152,6 +155,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
                             entry.Lift = lift;
                             break;
                         case "footprint": entry.Footprint = LevelCards.ParseFootprint(property.Value); break;
+                        case "front": entry.Front = GridSides.Parse((string)property.Value); break;
                         case "exclude": entry.Exclude = (bool)property.Value; break;
                         case "note": entry.Note = (string)property.Value; break;
                     }

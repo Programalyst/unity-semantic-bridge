@@ -1,3 +1,6 @@
+using System;
+using System.Globalization;
+
 namespace Gamenami.UnitySemanticBridge.Layout
 {
     /// <summary>
@@ -14,6 +17,52 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public bool NoCornerCutting = true;
         /// <summary>A cell takes cover from blockers on its four orthogonal neighbours (the only rule supported so far).</summary>
         public bool OrthogonalCover = true;
+        /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
+        public CoverHeightBands CoverHeights = new CoverHeightBands();
+    }
+
+    /// <summary>
+    /// The heights a game wants per cover class, meters from the floor to the top of a piece as placed
+    /// (a catalog card's height, lift included). Half cover is HalfMin to HalfMax, full cover FullMin or
+    /// more; nothing should sit in between. Movement-only blockers (cover None) may be any height. The
+    /// defaults (half below 1.2 m, full from 2 m, no lower limit) are USB's own until a game sets its own.
+    /// </summary>
+    public sealed class CoverHeightBands
+    {
+        /// <summary>Lowest height that still counts as half cover.</summary>
+        public double HalfMin;
+        /// <summary>Highest half-cover height; catalog role detection calls anything lower half cover.</summary>
+        public double HalfMax = 1.2;
+        /// <summary>Lowest full-cover height; catalog role detection calls anything this tall or taller full cover.</summary>
+        public double FullMin = 2.0;
+
+        /// <summary>Heights are compared with this slack, meters, so a measured 1.2004 m is still 1.2 m.</summary>
+        public const double Tolerance = 0.005;
+
+        public static readonly CoverHeightBands Default = new CoverHeightBands();
+
+        /// <summary>Whether a piece of this height fits the band of the cover it gives (None and others always fit).</summary>
+        public bool Fits(CoverLevel cover, double height)
+        {
+            switch (cover)
+            {
+                case CoverLevel.Half: return height >= HalfMin - Tolerance && height <= HalfMax + Tolerance;
+                case CoverLevel.Full: return height >= FullMin - Tolerance;
+                default: return true;
+            }
+        }
+
+        /// <summary>"0.90-1.20 m" for Half, "1.60 m or more" for Full.</summary>
+        public string Describe(CoverLevel cover) => cover == CoverLevel.Half
+            ? (HalfMin > 0 ? $"{Meters(HalfMin)}-{Meters(HalfMax)} m" : $"up to {Meters(HalfMax)} m")
+            : cover == CoverLevel.Full ? $"{Meters(FullMin)} m or more" : "any height";
+
+        /// <summary>The nearest height inside the band of <paramref name="cover"/>.</summary>
+        public double Nearest(CoverLevel cover, double height) => cover == CoverLevel.Half
+            ? Math.Min(Math.Max(height, HalfMin), HalfMax)
+            : cover == CoverLevel.Full ? Math.Max(height, FullMin) : height;
+
+        internal static string Meters(double value) => value.ToString("0.00", CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -45,6 +94,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         Error,
         /// <summary>Allowed, but worth a look (e.g. a sealed pocket, scenery that blocks sight only).</summary>
         Warning,
+        /// <summary>For the record only: reviewed content outside a rule (e.g. an owner-approved piece outside its height band).</summary>
+        Note,
     }
 
     /// <summary>A cell-addressed report line: "CODE x,y message".</summary>

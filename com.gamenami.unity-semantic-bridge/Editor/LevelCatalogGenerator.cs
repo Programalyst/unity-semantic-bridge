@@ -78,7 +78,8 @@ namespace Gamenami.UnitySemanticBridge.Editor
         }
 
         /// <summary>Measures and classifies one prefab; null when it is not a level piece.</summary>
-        public static LevelCard BuildCard(string path, LevelCatalogOverrides overrides, out bool excluded)
+        /// <param name="bands">Cover heights for role detection; the project adapter's (GridRules.CoverHeights), else USB's defaults, when null.</param>
+        public static LevelCard BuildCard(string path, LevelCatalogOverrides overrides, out bool excluded, CoverHeightBands bands = null)
         {
             excluded = false;
             var guid = AssetDatabase.AssetPathToGUID(path);
@@ -122,7 +123,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     Skewed = measured.skewed,
                     RootRotation = ToVec(NormalizeEuler(rootRotation)),
                 };
-                LevelCards.Classify(card, ToVec(rootScale), entry);
+                LevelCards.Classify(card, ToVec(rootScale), entry, bands ?? LayoutAdapters.CoverHeights());
                 return card;
             }
             finally

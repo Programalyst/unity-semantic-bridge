@@ -71,14 +71,52 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public override string ToString() => $"{Center} {Size}";
     }
 
+    /// <summary>A side of a footprint on the grid: +x, -x, +y (world +Z) or -y.</summary>
+    public enum GridSide { PlusX, MinusX, PlusY, MinusY }
+
+    public static class GridSides
+    {
+        // Clockwise seen from above, the way layout quarter turns go: +y, +x, -y, -x.
+        private static readonly GridSide[] Clockwise = { GridSide.PlusY, GridSide.PlusX, GridSide.MinusY, GridSide.MinusX };
+
+        /// <summary>The side after <paramref name="quarterTurns"/> clockwise layout rotations.</summary>
+        public static GridSide Rotate(GridSide side, int quarterTurns) =>
+            Clockwise[(((Array.IndexOf(Clockwise, side) + quarterTurns) % 4) + 4) % 4];
+
+        /// <summary>One step off this side, in cells.</summary>
+        public static Cell Step(GridSide side) => side switch
+        {
+            GridSide.PlusX => new Cell(1, 0),
+            GridSide.MinusX => new Cell(-1, 0),
+            GridSide.PlusY => new Cell(0, 1),
+            _ => new Cell(0, -1),
+        };
+
+        public static string Name(GridSide side) => side switch
+        {
+            GridSide.PlusX => "+x",
+            GridSide.MinusX => "-x",
+            GridSide.PlusY => "+y",
+            _ => "-y",
+        };
+
+        public static GridSide Parse(string text)
+        {
+            foreach (GridSide side in Enum.GetValues(typeof(GridSide)))
+                if (string.Equals(Name(side), text, StringComparison.Ordinal))
+                    return side;
+            throw new FormatException($"Unknown side '{text}' (+x, -x, +y, -y: grid axes at layout rotation 0, y = world Z).");
+        }
+    }
+
     /// <summary>What a piece is for in a level. Serialized as snake_case (see LevelCards.RoleName).</summary>
     public enum LevelRole
     {
-        /// <summary>Blocks movement; its cover class needs review (1.2 to 2 m tall) or comes from the overrides file.</summary>
+        /// <summary>Blocks movement; its cover class needs review (between the half and full cover bands) or comes from the overrides file.</summary>
         Blocker,
-        /// <summary>Blocks movement, half cover (below 1.2 m).</summary>
+        /// <summary>Blocks movement, half cover (below the half-cover maximum, USB default 1.2 m).</summary>
         CoverHalf,
-        /// <summary>Blocks movement, full cover and sight (2 m or taller).</summary>
+        /// <summary>Blocks movement, full cover and sight (from the full-cover minimum, USB default 2 m).</summary>
         CoverFull,
         /// <summary>Flat ground pieces (roads, sidewalks); never blocks.</summary>
         Ground,
@@ -129,6 +167,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// visually overhang their cells, e.g. a tyre heap scaled past one cell. Its cells come from this size.
         /// </summary>
         public FootprintSize? FootprintOverride;
+        /// <summary>
+        /// Buildings only: the side the front faces on the grid at layout rotation 0, root rotation applied; null when
+        /// unknown. From the overrides file, else the model's forward, +Z (FrontSource "override" or "forward").
+        /// </summary>
+        public GridSide? Front;
+        public string FrontSource;
         /// <summary>Buildings only: storeys at PlacementScale (height / 3 m, at least 1).</summary>
         public int? Storeys;
         /// <summary>A measured child is rotated off 90° steps, so the boxes overstate its size.</summary>
@@ -219,9 +263,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
     {
         /// <summary>A piece up to 5 cm longer than whole cells still counts as fitting them (same as the applier).</summary>
         public const double FootprintTolerance = 0.05;
-        /// <summary>Below this a cover-family piece is half cover.</summary>
+        /// <summary>USB's default: below this a cover-family piece is half cover (a game sets its own in GridRules.CoverHeights).</summary>
         public const double HalfCoverMaxHeight = 1.2;
-        /// <summary>From this height up a piece is full cover.</summary>
+        /// <summary>USB's default: from this height up a piece is full cover (a game sets its own in GridRules.CoverHeights).</summary>
         public const double FullCoverMinHeight = 2.0;
         /// <summary>Unnamed pieces lower than this are ground (floor tiles, walkways: about 0.25-0.31 m in the Apocalypse packs).</summary>
         public const double GroundMaxHeight = 0.35;
@@ -378,8 +422,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// Cover-family names split by height; Bld_ needs a building-sized box; everything
         /// else falls to geometry (small → decor, flat → ground, then the cover heights).
         /// </summary>
-        public static LevelRole RoleFrom(NameHint hint, CardFootprint placed, out string source)
+        public static LevelRole RoleFrom(NameHint hint, CardFootprint placed, out string source, CoverHeightBands bands = null)
         {
+            bands ??= CoverHeightBands.Default;
             var height = placed.Height;
             source = "name";
             switch (hint)
@@ -389,21 +434,34 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 case NameHint.Ground:
                     return LevelRole.Ground;
                 case NameHint.Cover:
-                    return CoverByHeight(height, LevelRole.Blocker);
+                    return CoverByHeight(height, LevelRole.Blocker, bands);
                 case NameHint.Building when Math.Min(placed.Size.X, placed.Size.Z) >= BuildingMinExtent && height >= BuildingMinExtent:
                     return LevelRole.Building;
             }
             source = "geometry";
             if (Math.Max(placed.Size.X, placed.Size.Z) < DecorMaxExtent) return LevelRole.Decor;
             if (height < GroundMaxHeight) return LevelRole.Ground;
-            return CoverByHeight(height, LevelRole.Unknown);
+            return CoverByHeight(height, LevelRole.Unknown, bands);
         }
 
-        private static LevelRole CoverByHeight(double height, LevelRole between)
+        private static LevelRole CoverByHeight(double height, LevelRole between, CoverHeightBands bands)
         {
-            if (height < HalfCoverMaxHeight) return LevelRole.CoverHalf;
-            if (height >= FullCoverMinHeight) return LevelRole.CoverFull;
+            if (height < bands.HalfMax) return LevelRole.CoverHalf;
+            if (height >= bands.FullMin) return LevelRole.CoverFull;
             return between;
+        }
+
+        /// <summary>
+        /// The grid side a model's forward (+Z) faces at layout rotation 0, turned by the root rotation; null when
+        /// the root is tilted so forward points mostly up or down. Synty buildings are modelled facing +Z.
+        /// </summary>
+        public static GridSide? ForwardSide(Vec3 rootRotation)
+        {
+            var forward = Rotate(rootRotation, new Vec3(0, 0, 1));
+            if (Math.Abs(forward.Y) >= Math.Max(Math.Abs(forward.X), Math.Abs(forward.Z))) return null;
+            return Math.Abs(forward.X) > Math.Abs(forward.Z)
+                ? (forward.X > 0 ? GridSide.PlusX : GridSide.MinusX)
+                : (forward.Z > 0 ? GridSide.PlusY : GridSide.MinusY);
         }
 
         /// <summary>Cover implied by a role; null for Blocker and Unknown (the game adapter decides).</summary>
@@ -426,7 +484,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// Fills role, cover, placement scale and storeys from the overrides, the name and the
         /// measured bounds (card bounds, root rotation, skew and root scale must be set).
         /// </summary>
-        public static void Classify(LevelCard card, Vec3 rootScale, LevelOverride entry)
+        /// <param name="bands">The game's cover heights for role detection (GridRules.CoverHeights); USB's defaults when null.</param>
+        public static void Classify(LevelCard card, Vec3 rootScale, LevelOverride entry, CoverHeightBands bands = null)
         {
             card.PlacementScale = entry?.PlacementScale ?? rootScale;
             card.ScaleSource = entry?.PlacementScale != null ? "override" : "prefab";
@@ -442,7 +501,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             }
             else
             {
-                card.Role = RoleFrom(HintFromName(card.Name, card.Id), placed, out var source);
+                card.Role = RoleFrom(HintFromName(card.Name, card.Id), placed, out var source, bands);
                 card.RoleSource = source;
             }
             card.Cover = entry?.Cover ?? CoverFor(card.Role);
@@ -450,6 +509,13 @@ namespace Gamenami.UnitySemanticBridge.Layout
             card.PivotOffset = new Vec3(bounds.Center.X, bounds.Min.Y, bounds.Center.Z);
             card.Height = Footprint(bounds, card.RootRotation, card.PlacementScale, 1.0, card.Skewed).Height + card.Lift;
             card.Storeys = entry?.Storeys ?? (card.Role == LevelRole.Building ? StoreysFor(card.Height) : (int?)null);
+            card.Front = null;
+            card.FrontSource = null;
+            if (card.Role == LevelRole.Building)
+            {
+                card.Front = entry?.Front ?? ForwardSide(card.RootRotation);
+                if (card.Front.HasValue) card.FrontSource = entry?.Front != null ? "override" : "forward";
+            }
         }
 
         // ---- Names ----
@@ -503,6 +569,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 ["footprintOverride"] = card.FootprintOverride.HasValue
                     ? new JArray(Mm(card.FootprintOverride.Value.X), Mm(card.FootprintOverride.Value.Z)) : null,
                 ["storeys"] = card.Storeys,
+                ["front"] = card.Front.HasValue ? new JValue(GridSides.Name(card.Front.Value)) : JValue.CreateNull(),
+                ["frontSource"] = card.FrontSource,
                 ["skewed"] = card.Skewed,
                 ["placementScale"] = VecJson(card.PlacementScale),
                 ["scaleSource"] = card.ScaleSource,
@@ -517,6 +585,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             var collider = json["colliderBounds"];
             var storeys = json["storeys"];
             var cover = json["cover"];
+            var front = json["front"];
             return new LevelCard
             {
                 Guid = guid,
@@ -533,6 +602,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 Lift = (double?)json["lift"] ?? 0,
                 FootprintOverride = ParseFootprint(json["footprintOverride"]),
                 Storeys = storeys == null || storeys.Type == JTokenType.Null ? (int?)null : (int)storeys,
+                Front = front == null || front.Type == JTokenType.Null ? (GridSide?)null : GridSides.Parse((string)front),
+                FrontSource = (string)json["frontSource"],
                 Skewed = (bool?)json["skewed"] ?? false,
                 PlacementScale = ParseVec(json["placementScale"]),
                 ScaleSource = (string)json["scaleSource"] ?? "prefab",

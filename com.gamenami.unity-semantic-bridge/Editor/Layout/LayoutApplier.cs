@@ -24,6 +24,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public int DecorCount;
         /// <summary>Pieces and decor placed from their level catalog card (the rest were measured on the instance).</summary>
         public int CardCount;
+        /// <summary>Each piece and decor placed from a card, for the scale and plausibility validators.</summary>
+        public readonly List<PlacedCard> Cards = new List<PlacedCard>();
 
         internal void AddPlacementIssue(string line)
         {
@@ -217,6 +219,11 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 if (!instance.GetComponentsInChildren<Collider>(true).Any(adapter.IsBlockingCollider))
                     result.AddPlacementIssue($"NO_BLOCKING_COLLIDER {piece.Anchor} {piece.LocalId}: the piece hook left no blocking collider");
             }
+            result.Cards.Add(new PlacedCard
+            {
+                LocalId = piece.LocalId, Card = card, Anchor = piece.Anchor, Size = size, Rotation = piece.Rotation,
+                Blocking = blocker, Cover = cover,
+            });
             return footprint.ToSpec(cover);
         }
 

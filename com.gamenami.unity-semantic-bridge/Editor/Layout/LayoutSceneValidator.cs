@@ -10,7 +10,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     /// <summary>
     /// Runs the layout validators against a scene: the grid tier (LayoutValidator) plus the
     /// physics tier, which compares the layout with the game's own occupancy bake and with the
-    /// colliders its line-of-sight test hits (IGridRulesAdapter.SightLayers, IgnoredBySight).
+    /// colliders its line-of-sight test hits (IGridRulesAdapter.SightLayers, IgnoredBySight). Pieces with a
+    /// level catalog card also get the scale and plausibility checks (heights against the game's
+    /// GridRules.CoverHeights, ground runs, building fronts).
     /// </summary>
     public static class LayoutSceneValidator
     {
@@ -30,6 +32,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var report = LayoutValidator.Validate(document,
                 p => applied.Specs.TryGetValue(p.LocalId, out var s) ? s : (PieceSpec?)null, adapter.Rules);
             report.Issues.InsertRange(0, applied.PlacementIssues.Select(line => LayoutIssue.FromLine(line)));
+            report.Issues.AddRange(LayoutValidator.Scale(applied.Cards, adapter.Rules.CoverHeights));
+            report.Issues.AddRange(LayoutValidator.Plausibility(report.Grid, applied.Cards));
             var physicsIssues = new List<string>();
             var physics = adapter.BakeOccupancy(scene, physicsIssues);
             report.Issues.AddRange(physicsIssues.Select(line => LayoutIssue.FromLine(line)));
@@ -51,8 +55,12 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var report = LayoutValidator.ForGrid(bake.Physics, bake.Document.Deploy, bake.Document.Enemies);
             var readIssues = new List<string>(bake.Issues);
             foreach (var line in bake.PhysicsIssues) readIssues.Remove(line);
+            // The scale check reports card pieces' scales cell-addressed, with heights.
+            foreach (var line in bake.OffScaleIssues) readIssues.Remove(line);
             // The encounter check reports deploy cells itself.
             report.Issues.InsertRange(0, readIssues.Where(line => !line.StartsWith("DEPLOY_")).Select(line => LayoutIssue.FromLine(line)));
+            report.Issues.AddRange(LayoutValidator.Scale(bake.Cards, adapter.Rules.CoverHeights));
+            report.Issues.AddRange(LayoutValidator.Plausibility(bake.Physics, bake.Cards.Where(c => !c.Scale.HasValue)));
             report.Issues.AddRange(bake.PhysicsIssues.Select(line => LayoutIssue.FromLine(line)));
             report.Issues.AddRange(LayoutValidator.Consistency(bake.Derived, bake.Physics, GatherSight(scene, board, adapter)));
             return report;
