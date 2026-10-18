@@ -449,7 +449,12 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - [ ] **W4 Validators (USB + NK).**
   - Work: `BUILDING_SEALED`, door checks, `DOOR_POINT_RANGE`, `WALL_CROSSES_PIECE`, claim `OVERLAP`, `WALL_SIGHT_GAP`, the door-collider check, the `SIGHT_NO_OBSTACLE` exemption, double-resolution ASCII; broken fixtures for each, and the 4d fixture's updated lines.
   - Exit: clean fixtures stay clean and each broken fixture reports exactly its lines.
-- [ ] **W5 Rendering (NK).**
+- [ ] **W5 Rendering (NK).** Spike started 2026-10-18; the approach changed after discussion with the owner:
+  - **Mesh chunks instead of a height-cut shader.** An Editor tool (NK `BuildingSectioner`) splits the render mesh (no Blender) into Upper (above 2.4 m, clipped at the cut), one chunk per outer side of the `GridWalls` frame, and Base.
+  - **On hover** (NK `BuildingCutaway`), Upper is hidden and the sides facing the camera are drawn faded: dithered (`NK/Building Dither`, an opaque screen-door fade, chosen over transparency, which already misbehaves with the fog on the crystal patch hologram) or a Fresnel ghost. Far walls stay as they are.
+  - **Shadows** stay through shadow-only twins.
+  - **The walk camera is off** (`GridCamera` **Use Walk Camera**, code kept), so only the overhead view matters.
+  - **Status:** set up on CatalogTest's walls test building for the owner to compare the two styles; checked in Play Mode only with forced hover under fog, so the look is not judged yet.
   - Work: cutaway spike, then the hover-driven `GridWalls` cutaway; fog reveal.
   - Exit: owner Play Mode review (enter, fight from inside, see inside on hover).
 
