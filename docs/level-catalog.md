@@ -245,6 +245,6 @@ A game project (NK) keeps no `level-catalog.json`: the generated files under `As
 ## Not yet
 
 - The 4b scan, review and import are done: NK `docs/level-piece-review.md` and
-  `docs/level-rules.md` (§ *Level pieces and the catalog overrides*). NK's 19 approved buildings
-  all face their model's +Z, so none needs a `front` override.
+  `docs/level-rules.md` (§ *Level pieces and the catalog overrides*). NK's buildings (since 2026-10-18 only
+  Bld_Building_08 and Bld_Shop_Medium_02) face their model's +Z, so neither needs a `front` override.
 - No thumbnail vision for `unknown` cards, and no `query_level_catalog` tool (Phase 5).
