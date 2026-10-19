@@ -505,7 +505,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - **Via points must not count as tiles.** The Action Points harness guards it.
 - **Placement in the plausibility fixture.** Buildings already placed as solid blockers (the 4d fixture) become enterable when their cards get walls.
 
-**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner and approved the same day; S1 done. Decision D13 (§6).
+**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner and approved the same day; S1–S3 done. Decision D13 (§6).
 
 *Why.* After Phase W the owner found that windows don't work.
 - **Fog reveal is tile-to-tile at a fixed height.** `GridManager.GetVisibleNodes` reveals a tile when a physics ray between two tiles' `VisionCheckPosition`s is clear. That point is the Grid Manager's height, 2.0 m in GridBattle and CatalogTest, an arbitrary number.
@@ -563,7 +563,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
     - **`GridVisibility` gets a sight grid** (`ISightGrid`, `MapSight`: a `GridMap` with the world position of its cell (0, 0)). `GridManager.Awake` registers the board (cleared in `OnDestroy`). With a grid:
       - `CanSeeUnit` is range, then `GridMap.CanSee` between the two units' cells; head and body rays are no longer used.
       - `IlluminationSource.Illuminates` uses `HasClearSight`.
-      - Physics remains only as the fallback without a grid or off the board, and for line of fire until S3.
+      - Physics remains only as the fallback without a grid or off the board, and for line of fire until S3 (S3 then removed the fallback).
     - **Fog reveal.** `GridManager.GetVisibleNodes` reveals by `GridMap.CanSee` from the observer's cell; `VisionCheckPosition` is used only for illumination positions now.
     - **The shop's windows.** Now that the outline decides sight, the shop's windows are windows: front cells 0–2 and 5–7 (boarded) and rows 1–3 of both sides (glazed). They were found in its render mesh with the glass submesh left out (open at 1.5 and 2.3 m, a mullion at 1.9 m). The boarded front door stays wall. The NK overrides file and AP copy are updated.
     - **Harnesses.**
@@ -574,7 +574,23 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
     - **Play Mode check** (scratch copy of CatalogTest, since deleted, with a temporary probe):
       - Cross walked into the house (16,5). Tiles through both windows ((16,1), (16,9)) and inside were revealed; (19,5) behind the solid wall stayed fogged.
       - Reno walked to (12,12) outside the shop's right window. The raider's tile inside was revealed and the raider spotted ("Contact: Reno spotted Raider"), which started combat, and a tile across the shop through its other windows was revealed.
-- [ ] **S3 Line of fire and cover (NK):** `HasLineOfFire*`, bug spit, removing the waist ray, head aim. Exit: Ranged Accuracy, Enemy Firing Positions and Bug Attack Range pass with re-checked expectations. In Play Mode a unit inside the house shoots out of a window at a target it sees, and nothing behind a Full wall is targetable.
+- [x] **S3 Line of fire and cover (NK):** `HasLineOfFire*`, bug spit, removing the waist ray, head aim. Exit: Ranged Accuracy, Enemy Firing Positions and Bug Attack Range pass with re-checked expectations. In Play Mode a unit inside the house shoots out of a window at a target it sees, and nothing behind a Full wall is targetable.
+  - S3 results (2026-10-19):
+    - **Line of fire.** `HasLineOfFire` and `HasLineOfFireAtPosition` are merged into one `RangedAccuracy.HasLineOfFire(shooter, shooterPosition, target, ...)` (owner, 2026-10-19); callers check target validity. `PreviewAtPosition` is likewise merged into `RangedAccuracy.Preview(..., plannedPosition)`, an optional position the AI planner passes to weigh a cell it might move to. Line of fire (and so `Preview`, AI firing positions, overwatch, `TargetDetector` and bug spit) is `GridVisibility.SightGrid.TryCanSee` between the shooter's (or planned) position and the target. Head aim needs a head, nothing more. `throughWalls` still passes.
+    - **No physics fallback** (owner, 2026-10-19). `GridVisibility.CanSeeUnit`, `HasClearSight` and line of fire are grid only: without a registered grid, or off the board, nothing is seen or shot (except through walls). `GridVisibility.HasClearSegment` and `RangedAccuracy.HasLineOfFireFrom` are removed. Colliders are presentation only.
+    - **Cover.** `CoverAgainst` is the tile's cover only; the waist-height ray and the unused public `CoverAgainst(GridUnit, GridUnit)` overload are removed. `GridTile.GetTileCoverInfo` works without a `GridManager` (only its own wall cover), for harness tiles.
+    - **Throws** are unchanged: they never checked sight (owner, 2026-10-19).
+    - **Harnesses.**
+      - Every combat harness registers a sight grid (`MapSight`) and builds walls as grid blockers (`BlocksSight` cells, `BlockSide`) and cover as tile cover, not colliders.
+      - Validate Hit Chance: a 64 × 24 grid for the whole run; its own small maps check that a collider without a grid blocker neither blocks nor gives cover, a Full side wall blocks body and head shots, wall penetration passes, a window lets the shot through, a Full-cover cell blocks, a planned position is checked from its own cell, and without a grid nothing is seen or shot. A head-only blocker no longer stops a head shot (head aim has no visibility of its own). 158 checks.
+      - Validate Enemy Firing Positions: the wall as cells, then as side walls (the AI finds a reachable cell that sees the target round it), then a window; the covered alternative target has Half cover on its tile. 24 (the duplicated physics/grid pairs merged).
+      - Validate Bug Attack Range: the same for spit (22). Validate Action Points registers an open grid for its focus and attack checks (67).
+      - Grid Sight (2,573), Paths (2,956), Illumination (22), Attack Alerts (23), Armor Damage (50), Power Armor (268), Layout Round Trip (3,108), Reports (77) and Baker (21) pass.
+    - **Play Mode check** (scratch copy of CatalogTest, since deleted, with a temporary probe):
+      - Line of fire to the raider inside the shop: blocked from (10,9) below its solid front wall; clear from (12,12) at its right window, for body and head.
+      - Reno walked to (12,12), spotted the raider and combat started. Reno's minigun preview at the raider was eligible (60%, no cover) and stayed so over 120 frames (no flips, the jitter's cause). The raider's line of fire back at Reno was clear too.
+      - The probe ran before the physics fallback was removed; in a battle it was never reached, so the result stands.
+      - Not checked by the probe: the enemy's own turn (whether it now shoots in clear sight); that is for the owner's playtest, as is a GridBattle spot-check.
 - [ ] **S4 Validators and docs (USB + NK):** `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` downgraded or removed, the GridBattle report fixture regenerated, and `level-rules.md` (Line of sight, Cover), `combat-flows.md` (aiming, enemy turns) and `grid-layouts.md` updated.
 
 *Risks.*
