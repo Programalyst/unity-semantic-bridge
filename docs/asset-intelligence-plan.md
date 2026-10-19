@@ -481,7 +481,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
     - **The 4d `scale-plausibility` fixture** now reports the scrap block's off-board door (`DOOR_OFF_BOARD`, `BUILDING_SEALED`, its `POCKET`) instead of the two `BUILDING_FRONT` lines; its shop's back door is open.
     - **`buildings.layout.json` gives a clean report**, wall-sight tier included, so neither building needs `sightFill` and neither doorway is obstructed.
     - **Counts:** Validate Layout Reports 77 (was 56); the GridBattle report fixture is unchanged. USB tests: `WallOutlineTests` gains structure and door tests, and `LayoutApplierCardTests` a walled building through apply and bake; `scripts/test-unity.sh` 271 passed, 7 skipped, 0 failed (was 268).
-- [ ] **W5 Rendering (NK).** Spike started 2026-10-18; the approach changed after discussion with the owner:
+- [x] **W5 Rendering (NK).** Spike started 2026-10-18; the approach changed after discussion with the owner:
   - **Mesh chunks instead of a height-cut shader.** An Editor tool (NK `BuildingSectioner`) splits the render mesh (no Blender) into Upper (above 2.4 m, clipped at the cut), one chunk per outer side of the `GridWalls` frame, and Base.
   - **On hover** (NK `BuildingCutaway`), Upper is hidden and the sides facing the camera are drawn faded: dithered (`NK/Building Dither`, an opaque screen-door fade, chosen over transparency, which already misbehaves with the fog on the crystal patch hologram) or a Fresnel ghost. Far walls stay as they are.
   - **Shadows** stay through shadow-only twins.
@@ -495,6 +495,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
   - **Fog reveal for buildings is not done:** a building has no `GridObstacle`, so `GridObstacle.Reveal`'s stencil material never reaches it. In the owner's Play Mode tests buildings looked right under fog, so whether that matters is still open. The owner then found that windows reveal nothing (the 2 m reveal rays pass above Building_08's openings, and the shop's glazing is solid). Phase S (grid sight) replaces physics sight, which also settles this item.
   - Work: cutaway spike, then the hover-driven `GridWalls` cutaway; fog reveal.
   - Exit: owner Play Mode review (enter, fight from inside, see inside on hover).
+  - **Closed 2026-10-19 (owner's Play Mode review):** no `GridWalls.Reveal` is needed. With one of a building's cells revealed, the fog around its unrevealed parts looks right; fogged tiles are revealed correctly when a unit moves past the windows inside (the reveal itself is Phase S's grid sight); and the hover cutaway works. Noted for later: the cutaway also works while the whole building is still fogged, which is fine for now but may change (e.g. no cutaway until one of its cells is revealed).
 
 *Risks.*
 - **Paths change when walls appear.** The harnesses are re-run and enemy behaviour near the buildings is spot-checked.
