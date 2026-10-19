@@ -239,6 +239,12 @@ Apply and bake (Phase W3):
 - **Defaults.** Both hooks have default implementations (nothing), so adapters for games without side
   walls need no change.
 
+Grid sight (Phase S, D13): `LayoutGrid.CanSee(a, b)` walks the supercover line between the two cell
+centres. It is blocked by a cell holding a Full-cover blocker (start and end excepted) or a wall or window
+side with Full cover; an exact cell corner is blocked if either way round it is. It is the game's rule (NK
+`GridMap.CanSee`, checked against it in Validate Layout Round Trip), for the planned metrics and sight
+validators. `GridRules.GridSight` says a game uses it.
+
 Wall validators (Phase W4):
 - **Structural:** `WALL_CROSSES_PIECE` (a solid piece straddling a wall) and `DOOR_POINT_RANGE`.
 - **Plausibility:** for walled buildings, door checks replace `BUILDING_FRONT`: `DOOR_OFF_BOARD`,

@@ -23,6 +23,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// cover to both cells. False builds walled pieces as solid blockers.
         /// </summary>
         public bool SideWalls;
+        /// <summary>
+        /// Grid sight (plan Phase S, D13): the game decides sight and line of fire with LayoutGrid.CanSee (a
+        /// supercover line between cell centres, blocked by Full-cover cells and walls) rather than physics rays.
+        /// </summary>
+        public bool GridSight;
         /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
         public CoverHeightBands CoverHeights = new CoverHeightBands();
     }

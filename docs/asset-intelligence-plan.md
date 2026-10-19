@@ -505,7 +505,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - **Via points must not count as tiles.** The Action Points harness guards it.
 - **Placement in the plausibility fixture.** Buildings already placed as solid blockers (the 4d fixture) become enterable when their cards get walls.
 
-**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner; **plan only, waiting for the owner's approval** (no code yet). Decision D13 (§6).
+**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner and approved the same day; S1 done. Decision D13 (§6).
 
 *Why.* After Phase W the owner found that windows don't work.
 - **Fog reveal is tile-to-tile at a fixed height.** `GridManager.GetVisibleNodes` reveals a tile when a physics ray between two tiles' `VisionCheckPosition`s is clear. That point is the Grid Manager's height, 2.0 m in GridBattle and CatalogTest, an arbitrary number.
@@ -548,7 +548,16 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - **Reports:** Validate Layout Reports' GridBattle fixture loses its rock-set `SIGHT_NO_OBSTACLE` lines and is regenerated (`LayoutReportValidation.WriteGridBattleFixture`, diff reviewed).
 
 *Sub-phases.*
-- [ ] **S1 Rule (NK + USB):** `GridSight` on `GridMap` (from `PathNode.HasObstacle` with its cover, and `BlockedSides` with wall cover), the `LayoutGrid.CanSee` mirror, Validate Grid Sight and NUnit tests. Exit: both agree on the seeded maps; the independent walk agrees.
+- [x] **S1 Rule (NK + USB):** `GridSight` on `GridMap` (from `PathNode.HasObstacle` with its cover, and `BlockedSides` with wall cover), the `LayoutGrid.CanSee` mirror, Validate Grid Sight and NUnit tests. Exit: both agree on the seeded maps; the independent walk agrees.
+  - S1 results (2026-10-19; nothing switched to the rule yet):
+    - **NK `PathNode`.** Gets `BlocksSight` (set by `GridManager.SetNodeObstacle` for a Full-cover obstacle; several overlapping obstacles OR together) and `SightBlockedSides`. `GridMap.BlockSide(..., blocksSight)` sets the latter; `RegisterWalls` passes the wall's cover being Full, so windows block movement only.
+    - **NK `GridMap.CanSee(from, to)`.** An integer supercover walk: the next boundary is compared as (1 + 2ix)·ny against (1 + 2iy)·nx. An exact corner is blocked by any of its four sides or either cell beside it. Start and end cells never block.
+    - **USB.** `LayoutGrid.CanSee`, `BlocksSight` and `IsSideSightBlocked` mirror it (cells with a Full blocker, wall or window sides with Full cover). `GridRules.GridSight` is set by NK.
+    - **NK harnesses.**
+      - New **Validate Grid Sight** (2,573 checks): named cases (Full, Half and movement-only obstacles; corners; walls; windows; a room with a door and a window) and 16 random maps against an independent oracle (Liang-Barsky clipping in doubled coordinates, exact lattice corners), with symmetry.
+      - **Validate Layout Round Trip** adds Half-cover blockers, windows and 1,000 sight pairs to its seeded maps, where `LayoutGrid.CanSee` must equal `GridMap.CanSee` (3,100 checks, was 2,100).
+      - The other harnesses are unchanged.
+    - **USB tests.** `GridSightTests` (4); `scripts/test-unity.sh` 275 passed, 7 skipped, 0 failed.
 - [ ] **S2 Fog and spotting (NK):** reveal, `CanSeeUnit`/`CanFactionSeeUnit`, contact, threat memory, illumination. Exit: Validate Fog Of War, Attack Alerts and Illumination pass with grid cases. In CatalogTest Play Mode, the raider inside the shop is revealed and spotted through a window, and Building_08 reveals the outside through its windows and door.
 - [ ] **S3 Line of fire and cover (NK):** `HasLineOfFire*`, bug spit, removing the waist ray, head aim. Exit: Ranged Accuracy, Enemy Firing Positions and Bug Attack Range pass with re-checked expectations. In Play Mode a unit inside the house shoots out of a window at a target it sees, and nothing behind a Full wall is targetable.
 - [ ] **S4 Validators and docs (USB + NK):** `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` downgraded or removed, the GridBattle report fixture regenerated, and `level-rules.md` (Line of sight, Cover), `combat-flows.md` (aiming, enemy turns) and `grid-layouts.md` updated.

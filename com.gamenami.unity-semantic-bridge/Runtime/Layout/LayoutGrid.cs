@@ -161,6 +161,57 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>Cover a cell gets from its neighbour on one side; outside the board gives None.</summary>
         public CoverLevel CoverFrom(Cell neighbour) => IsBlocked(neighbour) ? this[neighbour].Cover : CoverLevel.None;
 
+        /// <summary>Whether a cell blocks grid sight: it holds a Full-cover blocker.</summary>
+        public bool BlocksSight(Cell cell) => IsBlocked(cell) && this[cell].Cover == CoverLevel.Full;
+
+        /// <summary>Whether a side blocks grid sight: a wall or window there gives Full cover (windows are usually Half).</summary>
+        public bool IsSideSightBlocked(Cell cell, GridSide side)
+        {
+            var state = SideAt(cell, side);
+            return state.Blocks && state.Cover == CoverLevel.Full;
+        }
+
+        /// <summary>
+        /// Grid sight (plan Phase S, D13): the supercover line between the two cell centres meets no Full-cover
+        /// cell (start and end excepted) and crosses no Full-cover wall. Where the line passes exactly through a
+        /// cell corner it is blocked if either way round the corner is. Symmetric; range is the caller's.
+        /// </summary>
+        public bool CanSee(Cell from, Cell to)
+        {
+            int dx = to.X - from.X, dy = to.Y - from.Y;
+            int nx = Math.Abs(dx), ny = Math.Abs(dy);
+            int sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+            var xSide = sx > 0 ? GridSide.PlusX : GridSide.MinusX;
+            var ySide = sy > 0 ? GridSide.PlusY : GridSide.MinusY;
+            int x = from.X, y = from.Y, ix = 0, iy = 0;
+            while (ix < nx || iy < ny)
+            {
+                var cell = new Cell(x, y);
+                // Which boundary comes next: x at t = (ix + 1/2) / nx, y at t = (iy + 1/2) / ny.
+                var compare = ix >= nx ? 1 : iy >= ny ? -1 : ((1 + 2 * ix) * ny).CompareTo((1 + 2 * iy) * nx);
+                if (compare < 0)
+                {
+                    if (IsSideSightBlocked(cell, xSide)) return false;
+                    x += sx; ix++;
+                }
+                else if (compare > 0)
+                {
+                    if (IsSideSightBlocked(cell, ySide)) return false;
+                    y += sy; iy++;
+                }
+                else
+                {
+                    var besideX = new Cell(x + sx, y);
+                    var besideY = new Cell(x, y + sy);
+                    if (IsSideSightBlocked(cell, xSide) || IsSideSightBlocked(cell, ySide) || BlocksSight(besideX) || BlocksSight(besideY) ||
+                        IsSideSightBlocked(besideX, ySide) || IsSideSightBlocked(besideY, xSide)) return false;
+                    x += sx; y += sy; ix++; iy++;
+                }
+                if ((ix < nx || iy < ny) && BlocksSight(new Cell(x, y))) return false;
+            }
+            return true;
+        }
+
         /// <summary>Cover on one side of a cell: the better of the neighbour's blocker and a wall or window on that side.</summary>
         public CoverLevel CoverOn(Cell cell, GridSide side)
         {
