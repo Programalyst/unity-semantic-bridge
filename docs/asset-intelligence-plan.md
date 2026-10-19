@@ -492,7 +492,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
     - `BuildingCutaway` is dither only (the Fresnel copy was removed).
     - `BuildingSectioner` moved out of `Editor/` (`#if UNITY_EDITOR`) so the apply hook can call it. It now splits every enabled mesh renderer under the building (the shop's boards, rooftop junk, ladder and overgrowth too) in the root's space, one submesh per distinct material, and rerunning rebuilds the same chunks.
     - `NkGridRules.ConfigureWalls` sections each applied building into `Assets/Generated/Buildings/<prefab>/` (shared by its instances; cut at the outline's `cutHeight` or 2.4 m).
-  - **Fog reveal for buildings is not done:** a building has no `GridObstacle`, so `GridObstacle.Reveal`'s stencil material never reaches it. In the owner's Play Mode tests buildings looked right under fog, so whether that matters is still open.
+  - **Fog reveal for buildings is not done:** a building has no `GridObstacle`, so `GridObstacle.Reveal`'s stencil material never reaches it. In the owner's Play Mode tests buildings looked right under fog, so whether that matters is still open. The owner then found that windows reveal nothing (the 2 m reveal rays pass above Building_08's openings, and the shop's glazing is solid). Phase S (grid sight) replaces physics sight, which also settles this item.
   - Work: cutaway spike, then the hover-driven `GridWalls` cutaway; fog reveal.
   - Exit: owner Play Mode review (enter, fight from inside, see inside on hover).
 
@@ -504,6 +504,59 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - **The 4c collider fitting** would silently fill interiors if a walled card piece is not exempted. The Round Trip fixture guards it.
 - **Via points must not count as tiles.** The Action Points harness guards it.
 - **Placement in the plausibility fixture.** Buildings already placed as solid blockers (the 4d fixture) become enterable when their cards get walls.
+
+**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner; **plan only, waiting for the owner's approval** (no code yet). Decision D13 (§6).
+
+*Why.* After Phase W the owner found that windows don't work.
+- **Fog reveal is tile-to-tile at a fixed height.** `GridManager.GetVisibleNodes` reveals a tile when a physics ray between two tiles' `VisionCheckPosition`s is clear. That point is the Grid Manager's height, 2.0 m in GridBattle and CatalogTest, an arbitrary number.
+- **Building_08's openings are lower than 2 m.** Its windows are open only from about 1.0 to 1.7 m and its doorway to 1.9 m, so nothing outside is revealed through them.
+- **The shop's windows are solid** in its collision mesh (glazing and boards), so the raider inside stayed fogged until a unit stepped through the door.
+- **Unit spotting is a separate test.** `GridVisibility.CanSeeUnit` uses physics from the observer's head point (human 1.55 m, power armor 2.15 m) to the target's body or head. Line of fire uses the same rays. Fixing only the reveal would leave units revealed that can't be targeted or shot.
+- **The physics tests are a leftover.** They date from when shots were simulated from each weapon's muzzle; hit chance, cover and eligibility are rule-based now.
+
+*Rule (owner, 2026-10-19).* One grid rule replaces physics sight for fog, spotting and line of fire.
+- **The line.** `CanSee(a, b)` walks the supercover line between the two cell centres: every cell and cell side it crosses.
+- **What blocks it.** A cell holding a Full-cover obstacle, or a side holding a Full-cover wall (`GridWalls`). Windows (Half), doors, Half-cover and movement-only obstacles, and units don't block.
+- **Corners.** A line through an exact cell corner is **blocked** if either way round the corner is blocked. The rule stays symmetric: if A sees B, B sees A.
+- **Range.** Vision range stays today's circular range in tiles; night and illumination rules are unchanged.
+- **Scenery without a `GridObstacle`** no longer blocks sight. GridBattle's sandy rock sets are play-area borders and backdrop, so seeing through them is fine (owner).
+- **No height.** A Full obstacle blocks its whole cell, even a thin wall; walls on cell sides are exact. Height comes back with elevation, as cell levels with floors and roofs blocking between them.
+
+*What switches to it* (NK `Scripts/GridSystem/`):
+- **Fog:** `GridManager.GetVisibleNodes`, run from the observer's cell. `GridTile.VisionCheckPosition` is no longer used for sight (illumination positions can stay).
+- **Spotting:** `GridVisibility.CanSeeUnit`/`CanFactionSeeUnit` (range, then grid sight between the two units' cells), and through them `TargetDetector`, `AttackThreatMemory`, the contact check in `GridGameManager` and the eligibility check in `GridWeaponBase`'s preview.
+- **Line of fire:** `RangedAccuracy.HasLineOfFire`/`HasLineOfFireAtPosition` (a planned position means its cell), so a revealed enemy is targetable and anything targetable can be fired at. Bug spit range (`GridBugAttack`) follows. Weapons with `throughWalls` keep ignoring sight.
+- **Cover:** tile cover is already grid-based. `RangedAccuracy.CoverAgainst`'s waist-height ray, which credits off-grid cover within 2.5 m of the target, is removed: layouts never place cover off the grid, and GridBattle's off-grid windmill still covers through its cells.
+- **Head aim:** today "head visible" is its own ray, so a target behind low cover can expose its head and not its body. With grid sight the head and body are visible together. Head aim stays a weapon choice (accuracy and damage), not a sight question.
+- **Molotov illumination:** `IlluminationSource` lights a position when grid sight reaches its cell from the source's cell.
+- **What stays physics** (presentation only): projectile and laser visuals and impact points (`HeavyLaser`, planned shot points), mouse picking (`AimView`, the click plane) and `PlayerManualAim`.
+- **Building collision** no longer decides sight, so the shop's glazing and Building_08's low openings stop mattering. The outline (walls, windows, doors) is the single truth.
+
+*USB.*
+- **`LayoutGrid.CanSee`** mirrors the rule, with the same line walk, corner rule and blockers (cells with Full cover, Full walls). `GridRules` gets a `GridSight` flag.
+- **Tests.** NUnit for straight, diagonal and exact-corner lines, walls, windows and doors, symmetry, and Half/None blockers. NK's Round Trip compares `LayoutGrid.CanSee` with the game's rule on its 25 seeded maps.
+- **Validators.**
+  - The planned grid tier for metrics (§2 item 5, Phase 6) is exactly this rule.
+  - The physics-tier `SIGHT_NO_OBSTACLE` warning loses its purpose; it becomes a note, "looks solid but blocks nothing", or goes.
+  - `WALL_SIGHT_GAP` and `DOOR_COLLIDER` (W4) only matter if physics still decides something. They become notes, or go, for walled buildings.
+
+*Harnesses (NK).*
+- **Validate Paths:** unchanged.
+- **Firing, bug, attack and illumination harnesses.** Validate Enemy Firing Positions, Validate Bug Attack Range, Validate Attack Alerts, Validate Illumination and Validate Ranged Accuracy build physical walls (`BoxCollider`s) for sight and fire. They switch to grid blockers: obstacle cells already mirror their walls, and the side-wall cases already use `BlockSide`. Their expectations are re-checked, especially head versus body aim behind low cover.
+- **Validate Fog Of War** gets grid reveal cases: through a window, through a doorway, blocked by a wall, blocked at a building's corner, not blocked by Half cover.
+- **New `Validate Grid Sight`:** the rule against an independently written line walk on random maps with obstacles and walls, symmetry, and the corner rule.
+- **Reports:** Validate Layout Reports' GridBattle fixture loses its rock-set `SIGHT_NO_OBSTACLE` lines and is regenerated (`LayoutReportValidation.WriteGridBattleFixture`, diff reviewed).
+
+*Sub-phases.*
+- [ ] **S1 Rule (NK + USB):** `GridSight` on `GridMap` (from `PathNode.HasObstacle` with its cover, and `BlockedSides` with wall cover), the `LayoutGrid.CanSee` mirror, Validate Grid Sight and NUnit tests. Exit: both agree on the seeded maps; the independent walk agrees.
+- [ ] **S2 Fog and spotting (NK):** reveal, `CanSeeUnit`/`CanFactionSeeUnit`, contact, threat memory, illumination. Exit: Validate Fog Of War, Attack Alerts and Illumination pass with grid cases. In CatalogTest Play Mode, the raider inside the shop is revealed and spotted through a window, and Building_08 reveals the outside through its windows and door.
+- [ ] **S3 Line of fire and cover (NK):** `HasLineOfFire*`, bug spit, removing the waist ray, head aim. Exit: Ranged Accuracy, Enemy Firing Positions and Bug Attack Range pass with re-checked expectations. In Play Mode a unit inside the house shoots out of a window at a target it sees, and nothing behind a Full wall is targetable.
+- [ ] **S4 Validators and docs (USB + NK):** `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` downgraded or removed, the GridBattle report fixture regenerated, and `level-rules.md` (Line of sight, Cover), `combat-flows.md` (aiming, enemy turns) and `grid-layouts.md` updated.
+
+*Risks.*
+- **Gameplay change everywhere.** Fights in GridBattle change where sight relied on heights: thin Full walls block their whole cells, and heads no longer show over low cover on their own. Spot-check GridBattle in Play Mode after S3.
+- **No step-out.** A unit beside a wall corner sees only along lines from its cell centre (no XCOM step-out); a later rule could add it.
+- **Mismatched visuals.** A bullet's drawn path can still clip scenery the grid ignores (a lamp post, a rock); hits are decided by the rule.
 
 **Phase 5: MCP tools.**
 - [ ] `query_level_catalog` (filter by role and footprint, compact rows). It should also make the catalog findable (2026-10-17 gap): today an agent learns the path only from `generate_asset_catalog`'s description or a finished run's `jsonPath`, and a game project (NK) has no `level-catalog.json` at all. So: report which file it read; in a game project, list the reviewed pieces from `LevelCardSource` (overrides file + prefabs) instead of a catalog file. Until then NK `level-rules.md` § *Choosing pieces for a layout* and NK `AGENTS.md` point to AP's file by path.
@@ -548,6 +601,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - **D10 Cell alignment strictness (2026-10-16):** blockers stay on whole cells. Later, for pieces such as bushes, relax it: decor may get free placement (sub-cell offset, any rotation), and a card may allow a blocker's visual to overhang its footprint while its collider is still fitted inside. Not part of Phase 3.
 - **D11 "Apply", not "compile" (2026-10-16):** turning layout JSON into scene objects and level data is called *apply* (`LayoutApplier`, `apply_layout`, NK's **Apply LayoutTest Layout**), so it isn't mistaken for compiling code. Bake stays the reverse direction. Earlier entries in this plan use the new word; commits before this date say compile.
 - **D12 Walls on cell sides (2026-10-18):** amends D5 for two buildings (Bld_Building_08, Bld_Shop_Medium_02): their ground floors become enterable. The game stays cell-based. Each cell stores, per side, the cover a wall gives and whether movement may cross it, and a wall is stored on both cells it separates. Straight steps across a wall are refused, and diagonals are refused past any walled side at the corner. Tile cover is the max of neighbour-obstacle cover and own-wall cover. Sight stays physics, and the wall data comes from a `GridWalls` component written by apply from the card outline. Freestanding barricades, fences and piles stay ordinary cell obstacles, and no modular-wall structures are planned. Upper floors stay inaccessible (a second grid level comes later). The owner's follow-up answers the same day: Building_08 at scale (1.15, 1, 1.15) and the shop at (1.1, 1, 1.1), so their walls sit on the grid lines; the shop keeps its boards and is entered by its back door (closed door disabled); windows give Half cover; the cutaway applies on hover; units cross doors through a door point (a child transform), visual only; the AI approaches by path distance. Design: Phase W.
+- **D13 Grid sight (2026-10-19):** fog reveal, unit spotting and line of fire use one grid rule instead of physics rays: a supercover line between cell centres, blocked by cells with Full-cover obstacles and by Full-cover walls on cell sides. A line through an exact cell corner is blocked if either way round is blocked. Windows, doors, Half and movement-only obstacles, and units don't block. Scenery without a `GridObstacle` no longer blocks sight (the rock sets are play-area borders). Physics stays for presentation only (projectile visuals, mouse picking). Design: Phase S.
 
 ## 7. First milestone
 
