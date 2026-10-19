@@ -242,7 +242,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.IsEmpty(LayoutSceneValidator.WallSight(Array.Empty<PlacedCard>(), board, adapter));
         }
 
-        private sealed class TestAdapter : IGridRulesAdapter
+        internal sealed class TestAdapter : IGridRulesAdapter
         {
             public const float Lift = 0.25f;
             public readonly HashSet<Collider> Blocking = new HashSet<Collider>();
@@ -263,10 +263,36 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             public float GroundLift => Lift;
             public LayerMask SightLayers => ~0;
 
+            // Scene-level mode (create_layout_scene tests): the level is the material of a root renderer named
+            // "Level Holder", and board sizes are kept per level here (default 6 x 6).
+            public bool LevelFromScene;
+            public readonly Dictionary<Object, (int width, int height)> Sizes = new Dictionary<Object, (int, int)>();
+
             public bool TryGetBoard(Scene scene, out GridBoard board, out string error)
             {
-                board = new GridBoard { Width = 6, Height = 6, FloorY = 0f };
                 error = null;
+                if (!LevelFromScene)
+                {
+                    board = new GridBoard { Width = 6, Height = 6, FloorY = 0f };
+                    return true;
+                }
+                var holder = scene.GetRootGameObjects().FirstOrDefault(go => go.name == "Level Holder");
+                if (holder == null)
+                {
+                    board = null;
+                    error = "no Level Holder";
+                    return false;
+                }
+                var level = holder.GetComponent<MeshRenderer>().sharedMaterial;
+                var size = Sizes.TryGetValue(level, out var s) ? s : (6, 6);
+                board = new GridBoard { Width = size.Item1, Height = size.Item2, FloorY = 0f, LevelOwner = level };
+                return true;
+            }
+
+            public bool TryWriteBoardSize(Scene scene, int width, int height, out string error)
+            {
+                if (!TryGetBoard(scene, out var board, out error)) return false;
+                Sizes[board.LevelOwner] = (width, height);
                 return true;
             }
 

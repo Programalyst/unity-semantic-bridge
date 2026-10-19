@@ -50,6 +50,29 @@ The sample run of 2026-10-16 covered Wasteland `Prefabs/Props` and Apocalypse
 `Prefabs/Buildings`: 983 cards with 983 thumbnails, in about a minute. The roles were 13
 blocker, 85 building, 181 cover_full, 139 cover_half, 359 decor, 152 ground and 54 unknown.
 
+## Querying the catalog
+
+`query_level_catalog` (Phase 5) finds pieces without knowing where the catalog lives:
+
+```text
+query_level_catalog(role=["cover_half"], max_cells=[2, 1], name="sandbag")
+```
+
+- **Source.** `source="auto"` (default) reads `<Project>/AssetCatalog/level-catalog.json` when it exists
+  (Asset Preview), else lists the **reviewed pieces**: every per-piece entry of the overrides file (by GUID,
+  or by catalog id over the project's prefabs), carded from its prefab like apply does (a game project
+  such as NK). `catalog` or `reviewed` forces one. The first line names the file read; with neither file
+  it says so.
+- **Filters.** `role` (list), `cover`, `max_cells`/`min_cells` (`[w, h]` at rot 0; a card matches in either
+  orientation), `name` (case-insensitive substring of the id); `cell_size` defaults to the game's.
+- **Rows.** TSV sorted by id, `limit` (50) per page with `offset`: GUID, role (`+walls` for an enterable
+  building), cover, cells, height in meters at `placementScale`, scale (`1` when unscaled), id, and the
+  prefab path for reviewed pieces. Use the GUID (or the path) in a layout; `describe_level_cards` has the
+  full card.
+- **Problems.** Override entries that resolve to no prefab (`MISSING`) or to a prefab that is not a level
+  piece (`NOT_A_PIECE`) are listed after the rows, so stale entries show up. Excluded entries are skipped.
+- Code: `Editor/Layout/LevelCatalogQuery.cs`; tests: `Tests/Editor/LevelCatalogQueryTests.cs`.
+
 ## Card format
 
 ```json
@@ -239,12 +262,12 @@ different thing. The overrides file sets the scale every layout uses, and
   `level-catalog.json` keyed by GUID with exclusion), ids independent of the scan root,
   and the Euler math against `Quaternion.Euler`.
 - Run: `bash scripts/test-unity.sh -testFilter "Gamenami.UnitySemanticBridge.Editor.Tests.LevelCardTests|Gamenami.UnitySemanticBridge.Editor.Tests.LevelCatalogGeneratorTests"`.
-- `mcp-editor-bridge/tests/test_level_catalog_tools.py`: the `catalog` parameter and
-  `describe_level_cards` registration.
+- `mcp-editor-bridge/tests/test_level_catalog_tools.py`: the `catalog` parameter,
+  `describe_level_cards` and `query_level_catalog` registration.
 
 ## Cards in apply and bake
 
-A game project (NK) keeps no `level-catalog.json`: the generated files under `AssetCatalog/` are gitignored and only the overrides file is committed. The full catalog lives where the packs are scanned (Asset Preview); NK's `level-rules.md` (*Choosing pieces for a layout*) says where. A query tool is Phase 5.
+A game project (NK) keeps no `level-catalog.json`: the generated files under `AssetCatalog/` are gitignored and only the overrides file is committed. The full catalog lives where the packs are scanned (Asset Preview); `query_level_catalog` lists a game project's reviewed pieces instead ([above](#querying-the-catalog)).
 
 - Which pieces have a card: those with a **per-piece entry** (GUID or id) in the project's
   `LevelCatalogOverrides.json`, i.e. reviewed pieces; family rules alone don't give one.
@@ -267,4 +290,4 @@ A game project (NK) keeps no `level-catalog.json`: the generated files under `As
 - The 4b scan, review and import are done: NK `docs/level-piece-review.md` and
   `docs/level-rules.md` (§ *Level pieces and the catalog overrides*). NK's buildings (since 2026-10-18 only
   Bld_Building_08 and Bld_Shop_Medium_02) face their model's +Z, so neither needs a `front` override.
-- No thumbnail vision for `unknown` cards, and no `query_level_catalog` tool (Phase 5).
+- No thumbnail vision for `unknown` cards.

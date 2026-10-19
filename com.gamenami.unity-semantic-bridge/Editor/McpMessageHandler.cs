@@ -194,6 +194,34 @@ namespace Gamenami.UnitySemanticBridge.Editor
                         resultText = Layout.LayoutTools.BakeLayout(mcpMessage);
                         break;
 
+                    case "get_layout":
+                        resultText = Layout.LayoutTools.GetLayout(mcpMessage);
+                        break;
+
+                    case "set_layout":
+                        resultText = Layout.LayoutTools.SetLayout(mcpMessage);
+                        break;
+
+                    case "validate_layout":
+                        resultText = Layout.LayoutTools.ValidateLayout(mcpMessage);
+                        break;
+
+                    case "apply_layout":
+                        resultText = Layout.LayoutTools.ApplyLayout(mcpMessage);
+                        break;
+
+                    case "create_layout_scene":
+                        resultText = Layout.LayoutSceneCreator.CreateLayoutScene(mcpMessage);
+                        break;
+
+                    case "render_layout_topdown":
+                        resultText = Layout.LayoutRender.RenderTopDown(mcpMessage);
+                        break;
+
+                    case "query_level_catalog":
+                        resultText = Layout.LevelCatalogQuery.Query(mcpMessage);
+                        break;
+
                     case "generate_asset_catalog":
                         resultText = AssetCatalogGenerator.GenerateAssetCatalog(mcpMessage);
                         break;

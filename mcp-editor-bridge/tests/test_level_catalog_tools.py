@@ -28,6 +28,18 @@ class LevelCatalogToolTests(unittest.IsolatedAsyncioTestCase):
             await tool.fn(["Assets/a.prefab"])
             call.assert_awaited_once_with("describe_level_cards", {"paths": ["Assets/a.prefab"], "cell_size": 2.0})
 
+    async def test_query_level_catalog_forwards_only_given_filters(self):
+        tool = await self.server.get_tool("query_level_catalog")
+        self.assertEqual(tool.parameters.get("required", []), [])
+        with patch.object(mcp_tools, "call_unity", new_callable=AsyncMock) as call:
+            await tool.fn()
+            call.assert_awaited_once_with("query_level_catalog", {"source": "auto", "limit": 50, "offset": 0}, timeout=60.0)
+        with patch.object(mcp_tools, "call_unity", new_callable=AsyncMock) as call:
+            await tool.fn(role=["cover_half"], cover="Half", max_cells=[2, 1], name="Sandbag", source="reviewed", cell_size=2.0)
+            call.assert_awaited_once_with("query_level_catalog", {
+                "source": "reviewed", "limit": 50, "offset": 0, "role": ["cover_half"], "cover": "Half",
+                "max_cells": [2, 1], "name": "Sandbag", "cell_size": 2.0}, timeout=60.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,6 +59,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         public int RuleCount => _rules.Count;
         public int PieceCount => _pieces.Count;
+        /// <summary>The per-piece entries' keys (prefab GUIDs or catalog ids).</summary>
+        public IEnumerable<string> PieceKeys => _pieces.Keys;
 
         public static readonly LevelCatalogOverrides Empty = new LevelCatalogOverrides();
 

@@ -147,7 +147,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             return result;
         }
 
-        private static Dictionary<string, GameObject> ResolvePrefabs(LayoutDocument document)
+        internal static Dictionary<string, GameObject> ResolvePrefabs(LayoutDocument document)
         {
             var prefabs = new Dictionary<string, GameObject>();
             var missing = new List<string>();
@@ -167,7 +167,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         }
 
         // Generic check only: the GUIDs name assets. The adapter checks their types when writing.
-        private static void CheckEnemyAssets(LayoutDocument document)
+        internal static void CheckEnemyAssets(LayoutDocument document)
         {
             var missing = new List<string>();
             foreach (var enemy in document.Enemies)
@@ -245,6 +245,26 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         private static PieceSpec PlaceMeasured(LayoutPiece piece, GameObject instance, Quaternion frame, bool blocker,
             GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
         {
+            var spec = MeasureInstance(instance, frame, blocker, adapter, out var bounds, out var problem);
+            if (problem != null) result.AddPlacementIssue($"{problem} {piece.Anchor} {piece.LocalId}: {MeasureProblemText(problem)}");
+            var size = spec.RotatedSize(piece.Rotation);
+            var center = FootprintCenter(adapter, board, piece.Anchor, size);
+            var offset = frame * bounds.Center;
+            instance.transform.position = new Vector3(center.x - offset.x, board.FloorY, center.z - offset.z);
+
+            if (blocker) FitColliders(instance, piece, center, size, adapter.Rules.CellSize, adapter, result);
+            return spec;
+        }
+
+        /// <summary>
+        /// A piece without a card, on its instance at the origin turned by <paramref name="frame"/>: cover from the
+        /// game, the piece hook (blockers), and the footprint of its blocking colliders (blockers) or renderers (decor).
+        /// Apply and the scene-free grid tier (LayoutPieceResolver) both measure this way. Without anything to
+        /// measure, <paramref name="problem"/> is NO_BLOCKING_COLLIDER or NO_GEOMETRY and the piece counts as one cell.
+        /// </summary>
+        public static PieceSpec MeasureInstance(GameObject instance, Quaternion frame, bool blocker, IGridRulesAdapter adapter,
+            out PieceBounds bounds, out string problem)
+        {
             var cover = CoverLevel.None;
             if (blocker)
             {
@@ -252,28 +272,25 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 adapter.ConfigurePiece(instance, cover);
             }
 
-            var bounds = blocker
+            var measured = blocker
                 ? PieceGeometry.MeasureColliders(instance, frame, adapter.IsBlockingCollider)
                 : PieceGeometry.MeasureRenderers(instance, frame);
             var cellSize = adapter.Rules.CellSize;
-            if (!bounds.HasValue)
+            problem = null;
+            if (!measured.HasValue)
             {
-                result.AddPlacementIssue(blocker
-                    ? $"NO_BLOCKING_COLLIDER {piece.Anchor} {piece.LocalId}: the piece hook left no blocking collider"
-                    : $"NO_GEOMETRY {piece.Anchor} {piece.LocalId}: no renderers to measure; placed as one cell");
-                bounds = new PieceBounds(Vector3.zero, new Vector3(cellSize, 0f, cellSize));
+                problem = blocker ? "NO_BLOCKING_COLLIDER" : "NO_GEOMETRY";
+                measured = new PieceBounds(Vector3.zero, new Vector3(cellSize, 0f, cellSize));
             }
-
-            var (width, depth) = PieceGeometry.Footprint(bounds.Value, cellSize);
-            var spec = new PieceSpec(width, depth, cover);
-            var size = spec.RotatedSize(piece.Rotation);
-            var center = FootprintCenter(adapter, board, piece.Anchor, size);
-            var offset = frame * bounds.Value.Center;
-            instance.transform.position = new Vector3(center.x - offset.x, board.FloorY, center.z - offset.z);
-
-            if (blocker) FitColliders(instance, piece, center, size, cellSize, adapter, result);
-            return spec;
+            bounds = measured.Value;
+            var (width, depth) = PieceGeometry.Footprint(bounds, cellSize);
+            return new PieceSpec(width, depth, cover);
         }
+
+        /// <summary>The message for a MeasureInstance problem code.</summary>
+        public static string MeasureProblemText(string problem) => problem == "NO_BLOCKING_COLLIDER"
+            ? "the piece hook left no blocking collider"
+            : "no renderers to measure; placed as one cell";
 
         /// <summary>The card's footprintOffset as a vector at layout rotation 0 (zero when it has none).</summary>
         public static Vector3 FootprintOffset(LevelCard card) => card.FootprintOffset.HasValue

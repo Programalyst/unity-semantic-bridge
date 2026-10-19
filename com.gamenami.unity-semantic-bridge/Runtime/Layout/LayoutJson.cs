@@ -33,7 +33,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
         private static readonly Regex GuidPattern = new Regex("^[0-9a-f]{32}$");
         private static readonly HashSet<string> KnownKeys = new HashSet<string> { "v", "size", "pieces", "deploy", "enemies", "decor" };
 
-        public static LayoutDocument Parse(string json)
+        /// <param name="resolveAssetPath">
+        /// Optional: maps an asset path written where a GUID goes (e.g. "Assets/Props/Wall.prefab") to its GUID, or
+        /// null when no asset is there. The document then holds GUIDs only. Without it, GUID fields must be GUIDs.
+        /// </param>
+        public static LayoutDocument Parse(string json, Func<string, string> resolveAssetPath = null)
         {
             if (string.IsNullOrWhiteSpace(json)) throw new LayoutFormatException("Layout JSON is empty.");
             JObject root;
@@ -59,12 +63,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
             var document = new LayoutDocument(size.X, size.Y) { Version = version };
             var ids = new HashSet<string>();
-            document.Pieces.AddRange(ReadPieces(root["pieces"], "pieces", ids));
-            document.Decor.AddRange(ReadPieces(root["decor"], "decor", ids));
+            document.Pieces.AddRange(ReadPieces(root["pieces"], "pieces", ids, resolveAssetPath));
+            document.Decor.AddRange(ReadPieces(root["decor"], "decor", ids, resolveAssetPath));
             var deploy = OptionalArray(root["deploy"], "deploy");
             for (var i = 0; i < deploy.Count; i++)
                 document.Deploy.Add(ReadPair(deploy[i], $"deploy[{i}]"));
-            document.Enemies.AddRange(ReadEnemies(root["enemies"], ids));
+            document.Enemies.AddRange(ReadEnemies(root["enemies"], ids, resolveAssetPath));
             return document;
         }
 
@@ -120,7 +124,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 ? ((long)value).ToString(CultureInfo.InvariantCulture)
                 : value.ToString("0.###", CultureInfo.InvariantCulture);
 
-        private static IEnumerable<LayoutEnemySpawn> ReadEnemies(JToken token, HashSet<string> ids)
+        private static IEnumerable<LayoutEnemySpawn> ReadEnemies(JToken token, HashSet<string> ids, Func<string, string> resolve)
         {
             var array = OptionalArray(token, "enemies");
             for (var i = 0; i < array.Count; i++)
@@ -130,8 +134,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     throw new LayoutFormatException($"{path} must be [localId, profileGuid, visualGuid, x, y, facing].");
                 var localId = ReadString(entry[0], path + " localId");
                 if (!ids.Add(localId)) throw new LayoutFormatException($"{path}: duplicate localId '{localId}'.");
-                var profile = ReadGuid(entry[1], path + " profileGuid");
-                var visual = ReadGuid(entry[2], path + " visualGuid");
+                var profile = ReadGuid(entry[1], path + " profileGuid", resolve);
+                var visual = ReadGuid(entry[2], path + " visualGuid", resolve);
                 var cell = new Cell(ReadInt(entry[3], path + " x"), ReadInt(entry[4], path + " y"));
                 var facingToken = entry[5];
                 if (facingToken.Type != JTokenType.Integer && facingToken.Type != JTokenType.Float)
@@ -140,15 +144,19 @@ namespace Gamenami.UnitySemanticBridge.Layout
             }
         }
 
-        private static string ReadGuid(JToken token, string path)
+        private static string ReadGuid(JToken token, string path, Func<string, string> resolve)
         {
             var guid = ReadString(token, path);
-            if (!GuidPattern.IsMatch(guid))
+            if (GuidPattern.IsMatch(guid)) return guid;
+            if (resolve == null)
                 throw new LayoutFormatException($"{path} '{guid}' is not a 32-character lowercase hex asset GUID.");
-            return guid;
+            var resolved = resolve(guid);
+            if (string.IsNullOrEmpty(resolved) || !GuidPattern.IsMatch(resolved))
+                throw new LayoutFormatException($"{path} '{guid}' is neither an asset GUID nor the path of an asset in this project.");
+            return resolved;
         }
 
-        private static IEnumerable<LayoutPiece> ReadPieces(JToken token, string key, HashSet<string> ids)
+        private static IEnumerable<LayoutPiece> ReadPieces(JToken token, string key, HashSet<string> ids, Func<string, string> resolve)
         {
             var array = OptionalArray(token, key);
             for (var i = 0; i < array.Count; i++)
@@ -158,7 +166,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     throw new LayoutFormatException($"{path} must be [localId, prefabGuid, x, y, rot].");
                 var localId = ReadString(entry[0], path + " localId");
                 if (!ids.Add(localId)) throw new LayoutFormatException($"{path}: duplicate localId '{localId}'.");
-                var guid = ReadGuid(entry[1], path + " prefabGuid");
+                var guid = ReadGuid(entry[1], path + " prefabGuid", resolve);
                 var anchor = new Cell(ReadInt(entry[2], path + " x"), ReadInt(entry[3], path + " y"));
                 var rotation = ReadInt(entry[4], path + " rot");
                 if (rotation < 0 || rotation > 3)

@@ -121,5 +121,16 @@ namespace Gamenami.UnitySemanticBridge.Layout
             outline = null;
             return false;
         }
+
+        /// <summary>
+        /// Sets the board size of the level in <paramref name="scene"/> (create_layout_scene with a size). The caller
+        /// records Undo on GridBoard.LevelOwner and saves it. False with a reason when the game cannot; the default
+        /// refuses, so a game without it only copies levels at their template's size.
+        /// </summary>
+        bool TryWriteBoardSize(Scene scene, int width, int height, out string error)
+        {
+            error = "This game's IGridRulesAdapter does not implement TryWriteBoardSize; copy the template at its own size.";
+            return false;
+        }
     }
 }

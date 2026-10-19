@@ -276,9 +276,10 @@ def register_unity_tools(mcp):
 
     @mcp.tool()
     async def bake_layout(
-        path: Annotated[str | None, "Optional project-relative .json path under Assets/ to also write the layout to, e.g. Assets/Settings/Levels/LayoutTest.layout.json."] = None,
+        path: Annotated[str | None, "Optional project-relative .json path under Assets/ to also write the layout to, e.g. Assets/Settings/Levels/CatalogTest.layout.json."] = None,
+        scene: Annotated[str | None, "Project path of an open scene to bake, e.g. Assets/Scenes/CatalogTest.unity. Omit for the active scene."] = None,
     ) -> str:
-        """Read the active scene (hand-made or applied) back into compact layout JSON.
+        """Read a scene (hand-made or applied) back into compact layout JSON.
 
         Needs the game's IGridRulesAdapter. Blocking prefab instances become pieces
         [localId, prefabGuid, x, y, rot]; other on-board prefab instances become decor;
@@ -287,8 +288,172 @@ def register_unity_tools(mcp):
         cells where the layout's footprints disagree with the game's own occupancy bake.
         Edit Mode only. Without path it changes nothing; with path it writes only that file.
         """
-        params = {} if path is None else {"path": path}
+        params: dict = {}
+        if path is not None:
+            params["path"] = path
+        if scene is not None:
+            params["scene"] = scene
         return await call_unity("bake_layout", params)
+
+    @mcp.tool()
+    async def get_layout(
+        path: Annotated[str, "Project-relative layout file under Assets/, e.g. Assets/Settings/Levels/CatalogTest.layout.json."],
+    ) -> str:
+        """Read a layout JSON file: a one-line summary (size and counts) plus the canonical JSON,
+        or the schema error with where it is. Changes nothing.
+        Layout format: {"v":1,"size":[w,h],"pieces":[[localId,prefabGuid,x,y,rot]],"deploy":[[x,y]],
+        "enemies":[[localId,profileGuid,visualGuid,x,y,facingDegrees]],"decor":[[localId,prefabGuid,x,y,rot]]};
+        pieces anchor at their min corner, rot is 0-3 quarter turns (docs/grid-layouts.md).
+        """
+        return await call_unity("get_layout", {"path": path})
+
+    @mcp.tool()
+    async def set_layout(
+        path: Annotated[str, "Project-relative .json path under Assets/ to write (its folder must exist)."],
+        layout: Annotated[str | dict, "The layout JSON (text or object). A prefab path (Assets/....prefab) may stand where a GUID goes; it is written as the GUID."],
+        validate: Annotated[bool, "Run the grid tier (validate_layout tier='grid') on the written layout and append its report."] = True,
+        max_lines: Annotated[int, "Report issue lines to show (0 = all)."] = 40,
+        ascii: Annotated[bool, "Append the report's ASCII map of the layout."] = False,
+    ) -> str:
+        """Schema-check a layout and write it to a file in canonical form (one piece per line), then
+        import it. A schema error writes nothing. Replaces an existing file. Touches no scene;
+        use apply_layout to build it into a scene.
+        """
+        return await call_unity("set_layout", {
+            "path": path, "layout": layout, "validate": validate, "max_lines": max_lines, "ascii": ascii,
+        }, timeout=60.0, retry_connect=False)
+
+    @mcp.tool()
+    async def validate_layout(
+        path: Annotated[str | None, "Layout file under Assets/ to check (tier 'grid'). Give this or layout."] = None,
+        layout: Annotated[str | dict | None, "Inline layout JSON to check (tier 'grid'); prefab paths may stand for GUIDs."] = None,
+        tier: Annotated[Literal["grid", "scene"], "'grid': the draft alone, without touching any open scene (pieces without a catalog card are measured on a hidden preview instance). 'scene': an open scene, hand-made or applied, against the game's own occupancy bake (Edit Mode)."] = "grid",
+        scene: Annotated[str | None, "tier 'scene' only: project path of an open scene. Omit for the active scene."] = None,
+        ascii: Annotated[bool, "Append an ASCII map (# full, h half, o blocked, . open, A deploy, E enemy, - unreachable)."] = False,
+        max_lines: Annotated[int, "Issue lines to show (0 = all)."] = 40,
+    ) -> str:
+        """Validate a level layout. Report: LAYOUT_REPORT header, then 'CODE x,y message' lines,
+        errors first, then warnings and notes. The grid tier covers structure (bounds, overlap,
+        walls), encounter (deploy/enemy cells, facing), reachability, scale against the game's
+        cover heights and plausibility (ground runs, building fronts and doors). Collider fit and
+        the game's occupancy need apply_layout or tier='scene'.
+        """
+        params: dict = {"tier": tier, "ascii": ascii, "max_lines": max_lines}
+        if path is not None:
+            params["path"] = path
+        if layout is not None:
+            params["layout"] = layout
+        if scene is not None:
+            params["scene"] = scene
+        return await call_unity("validate_layout", params, timeout=60.0)
+
+    @mcp.tool()
+    async def apply_layout(
+        path: Annotated[str | None, "Layout file under Assets/ to apply. Give this or layout."] = None,
+        layout: Annotated[str | dict | None, "Inline layout JSON to apply; prefab paths may stand for GUIDs."] = None,
+        scene: Annotated[str | None, "Project path of the open scene to build into. Omit for the active scene."] = None,
+        validate: Annotated[bool, "Append the full report after apply: grid tier plus the physics tier (the game's occupancy bake of the result)."] = True,
+        ascii: Annotated[bool, "Append the report's ASCII map."] = False,
+        max_lines: Annotated[int, "Issue and note lines to show (0 = all)."] = 40,
+    ) -> str:
+        """Build a layout into an open scene: prefab instances by GUID under one [Generated Layout]
+        root (replacing only that root), at their catalog cards' scale and footprint, plus the
+        level's deploy cells and enemy spawns. One Undo group. Edit Mode only. The layout size must
+        equal the level's board. Never saves: the scene (and level asset) are left dirty for the owner.
+        """
+        params: dict = {"validate": validate, "ascii": ascii, "max_lines": max_lines}
+        if path is not None:
+            params["path"] = path
+        if layout is not None:
+            params["layout"] = layout
+        if scene is not None:
+            params["scene"] = scene
+        return await call_unity("apply_layout", params, timeout=60.0, retry_connect=False)
+
+    @mcp.tool()
+    async def create_layout_scene(
+        template: Annotated[str, "Project path of an existing level scene to copy, e.g. Assets/Scenes/CatalogTest.unity (NK)."],
+        path: Annotated[str, "Project path for the new scene (under Assets/, ending .unity; must not exist; its folder must)."],
+        level: Annotated[str | None, "Where the copy of the template's level asset goes. Omit for beside the template's level asset, named after the new scene."] = None,
+        size: Annotated[list[int] | None, Field(min_length=2, max_length=2), "New board size [width, height] in cells. Omit for the template's."] = None,
+    ) -> str:
+        """Start a new level from a template level scene: copies the scene (managers, cameras, UI,
+        lighting) and its level asset, repoints the copy to the new level so applying to it never
+        rewrites the template's, removes the template's [Generated Layout], and sets the board size.
+        Saves the new scene and level; does not open the scene or touch Build Settings (open it with
+        open_scene, then apply_layout). On failure nothing is left behind. Edit Mode only.
+        """
+        params: dict = {"template": template, "path": path}
+        if level is not None:
+            params["level"] = level
+        if size is not None:
+            params["size"] = size
+        return await call_unity("create_layout_scene", params, timeout=60.0, retry_connect=False)
+
+    # output_schema=None: a list of text plus image is content, not structured output (a `-> list` annotation
+    # would make FastMCP declare a schema and reject the image).
+    @mcp.tool(output_schema=None)
+    async def render_layout_topdown(
+        scene: Annotated[str | None, "Project path of an open scene. Omit for the active scene."] = None,
+        cells: Annotated[list[int] | None, Field(min_length=4, max_length=4), "Region [x0, y0, x1, y1] in cells, inclusive. Omit for the whole board."] = None,
+        margin_cells: Annotated[int, "Cells of margin around the region."] = 1,
+        grid: Annotated[bool, "Draw cell lines (every 5th yellow, board edge red, cell 0,0 marked with a cyan L)."] = True,
+        markers: Annotated[bool, "Outline the level's deploy cells (blue) and enemy spawns (red)."] = True,
+        cut_height: Annotated[float | None, "Meters above the floor: clip everything higher (roofs, upper floors) to see inside buildings, e.g. 2.4."] = None,
+        max_width: Annotated[int, "Image width in pixels (64-4096)."] = 1280,
+        jpg_quality: Annotated[int, "JPEG quality, 1-100."] = 70,
+    ) -> list:
+        """Orthographic capture straight down onto the board (or a cell region) of a scene with a
+        grid-rules adapter. Image right is grid +x and up is grid +y, like the validators' ASCII maps.
+        Uses a temporary hidden camera; the scene is not changed. Returns a caption and the image.
+        """
+        params: dict = {"margin_cells": margin_cells, "grid": grid, "markers": markers,
+                        "max_width": max_width, "jpg_quality": jpg_quality}
+        if scene is not None:
+            params["scene"] = scene
+        if cells is not None:
+            params["cells"] = cells
+        if cut_height is not None:
+            params["cut_height"] = cut_height
+        result = await call_unity("render_layout_topdown", params, timeout=60.0)
+        try:
+            data = json.loads(result)
+        except json.JSONDecodeError:
+            raise RuntimeError(result)
+        return [data["caption"], Image(data=base64.b64decode(data["image"]), format="jpeg")]
+
+    @mcp.tool()
+    async def query_level_catalog(
+        role: Annotated[list[Literal["blocker", "cover_half", "cover_full", "ground", "decor", "building", "unknown"]] | None, "Roles to keep. Omit for all."] = None,
+        cover: Annotated[Literal["None", "Half", "Full"] | None, "Cover the piece gives."] = None,
+        max_cells: Annotated[list[int] | None, Field(min_length=2, max_length=2), "Largest footprint [w, h] in cells; matches in either orientation."] = None,
+        min_cells: Annotated[list[int] | None, Field(min_length=2, max_length=2), "Smallest footprint [w, h] in cells; matches in either orientation."] = None,
+        name: Annotated[str | None, "Case-insensitive substring of the card id (pack/folder/prefab path), e.g. 'Sandbag'."] = None,
+        source: Annotated[Literal["auto", "catalog", "reviewed"], "'catalog': <Project>/AssetCatalog/level-catalog.json (Asset Preview). 'reviewed': the per-piece entries of AssetCatalog/LevelCatalogOverrides.json, carded from their prefabs (a game project such as NK: the pieces usable in a layout). 'auto': the catalog file when present, else reviewed."] = "auto",
+        cell_size: Annotated[float | None, "Cell size in meters for footprints. Omit for the game's (adapter), else 2."] = None,
+        limit: Annotated[int, "Rows per page (1-500)."] = 50,
+        offset: Annotated[int, "Rows to skip (paging)."] = 0,
+    ) -> str:
+        """Find level pieces for a layout. Returns which file was read, how many cards match, and one
+        TSV row per card sorted by id: guid, role (+walls for enterable buildings), cover, cells at
+        rot 0 (WxH), height in meters at placementScale, scale, id (and the prefab path for reviewed
+        pieces). Use the guid (or path) in layout pieces; describe_level_cards has full card details.
+        Read-only.
+        """
+        params: dict = {"source": source, "limit": limit, "offset": offset}
+        if role is not None:
+            params["role"] = role
+        if cover is not None:
+            params["cover"] = cover
+        if max_cells is not None:
+            params["max_cells"] = max_cells
+        if min_cells is not None:
+            params["min_cells"] = min_cells
+        if name is not None:
+            params["name"] = name
+        if cell_size is not None:
+            params["cell_size"] = cell_size
+        return await call_unity("query_level_catalog", params, timeout=60.0)
 
     @mcp.tool()
     async def find_asset_references(

@@ -2,7 +2,8 @@
 
 USB can turn a compact layout draft into scene objects (`LayoutApplier`), read
 any scene back into the same draft (`LayoutBaker`, the `bake_layout` MCP tool), and
-validate either (`LayoutValidator`, `LayoutSceneValidator`). USB
+validate either (`LayoutValidator`, `LayoutSceneValidator`); agents drive all of it through
+MCP tools ([below](#mcp-tools)). USB
 owns the generic parts. The game supplies its grid rules through one interface,
 `IGridRulesAdapter`. Nuclear Knights' `NkGridRules` is the first implementation.
 The JSON is the agent's working copy of a level; apply writes it into the scene and
@@ -36,6 +37,33 @@ Background and later phases are in the
   decor and enemies) and rotations outside 0–3 are errors, so a typo fails instead of
   applying a different level. Facing may be any number; the encounter validator
   checks it.
+
+## MCP tools
+
+Added in plan Phase 5. Layout files and scenes are named by project path, pieces by prefab GUID
+(a prefab path is accepted where a GUID goes and written as the GUID); no tool takes or returns
+instance IDs. Scenes must already be open: the tools never open, save, close or discard one.
+
+| Tool | Does | Changes |
+|---|---|---|
+| `create_layout_scene` | A new level from a template level scene: copies the scene and its level asset, repoints the copy to the new level, removes the template's `[Generated Layout]`, sets the board size (`IGridRulesAdapter.TryWriteBoardSize`) | the new scene and level asset only (saved; not opened, not in Build Settings) |
+| `query_level_catalog` | Finds pieces by `role`, `cover`, footprint (`max_cells`/`min_cells`, either orientation) and `name`; TSV rows with GUID, role, cover, cells, height, scale, id (and prefab path). Names the file it read ([level catalog](level-catalog.md#querying-the-catalog)) | nothing |
+| `get_layout` | A layout file's summary and canonical JSON, or its schema error | nothing |
+| `set_layout` | Schema-checks a layout and writes it in canonical form; by default the grid tier follows | that file only (nothing on a schema error) |
+| `validate_layout` | `tier: "grid"`: a draft (`path` or inline `layout`) alone, no open scene touched. `tier: "scene"`: an open scene, hand-made or applied, against the game's occupancy bake | nothing |
+| `apply_layout` | Builds a draft into an open scene, then the full report (grid tier plus physics tier) | `[Generated Layout]`, the level's deploy cells and spawns; one Undo group, not saved |
+| `bake_layout` | Reads a scene (`scene`, default active) back into layout JSON | with `path`, that file only |
+| `render_layout_topdown` | Orthographic JPEG straight down onto the board or a cell region, with the grid (every 5th line yellow, board edge red, cell 0,0 a cyan L) and deploy (blue) and enemy (red) cells outlined; `cut_height` clips roofs and upper floors to show interiors | nothing (temporary hidden camera) |
+
+**Grid tier without a scene.** `LayoutPieceResolver` gives each piece the footprint and cover apply
+would: card pieces from their card; pieces without a card (and card blockers whose card leaves cover to
+the game) on an instance in a hidden preview scene, configured by the piece hook and measured with
+`LayoutApplier.MeasureInstance`, the code apply uses, then destroyed. Collider fit (`FIT_*`) and the
+game's occupancy need the real placement, so they are apply and scene tier findings.
+
+**The loop** for an agent: `create_layout_scene` and `open_scene` for a new level, `query_level_catalog` for pieces, `set_layout` (grid report back), revise,
+`apply_layout` into the level's scene (full report), `render_layout_topdown` to look, and
+`bake_layout` to read back the owner's scene edits (the scene wins, D9).
 
 ## Who owns what
 
@@ -135,8 +163,9 @@ optional last argument and default to `LevelCardSource.ForProject()`:
       `footprintOverride` (claimed cells; the piece may overhang them).
    3. Position: the card's bounds centre goes to the footprint's centre, as below. The
       pivot stands at the floor + the card's **`lift`**, plus the adapter's
-      **`GroundLift`** for ground-role cards (NK: 0.25 m for the whole road kit, so road
-      and sidewalk tiles stay level and clear the terrain).
+      **`GroundLift`** for ground-role cards (NK: 0.25 m for the whole road kit, which
+      clears the sidewalks' kerb skirts and the terrain; NK's flat road tiles add a
+      −0.2 m card `lift`, so they sit at 0.05 m, a kerb step below the sidewalks).
    4. Blockers only, before the piece hook: every solid collider (enabled, not a
       trigger) that reaches past the footprint inset by 0.1 m is fitted. Axis-aligned
       boxes are shrunk as below. Other shapes (Synty's mesh colliders, rotated boxes) are
@@ -330,9 +359,6 @@ cell-addressed `OFFGRID_SCALE`, and a GridBattle report equals a recorded fixtur
 - Pieces without a reviewed card are still measured on the instance at their prefab
   scale (the Phase 2 path, `PieceGeometry`). A per-piece scale in the layout JSON (plan
   §3) is not in the schema yet.
-- `apply_layout` and `validate_layout` are not MCP tools yet (Phase 5); call `LayoutApplier.Apply`
-  from an Editor menu or script (NK: **Tools → Grid Combat → Apply CatalogTest
-  Layout**).
 - For pieces without a card only axis-aligned box colliders are fitted; others are
   reported (`FIT_UNSUPPORTED`). Card pieces replace them with a fitted box, which needs a
   root turned in quarter turns. The applier does not check that a
@@ -364,7 +390,15 @@ cell-addressed `OFFGRID_SCALE`, and a GridBattle report equals a recorded fixtur
   exact report line it must produce, plus corner-rule sealing, report capping and the
   map, and the consistency check. Run them through `TestProject`:
   `scripts/test-unity.sh -testFilter "Gamenami.UnitySemanticBridge.Editor.Tests.LayoutModelTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutValidatorTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutApplierCardTests|Gamenami.UnitySemanticBridge.Editor.Tests.LayoutScalePlausibilityTests"`.
-- `mcp-editor-bridge/tests/test_layout_tools.py`: `bake_layout` registration.
+- `Tests/Editor/LayoutToolsTests.cs`: the Phase 5 tools: the grid tier equals apply-then-validate on
+  the same draft (card and measured pieces, an overlap) without adding anything to the open scene,
+  missing prefabs, prefab paths for GUIDs, `set_layout`/`get_layout` (canonical file, nothing written on
+  a schema error), one draft and an open scene required, and the render's framing on whole cells.
+  `Tests/Editor/LevelCatalogQueryTests.cs`: `query_level_catalog` on reviewed pieces and on a catalog file.
+  `Tests/Editor/LayoutSceneCreatorTests.cs`: `create_layout_scene` copies the scene and its level, repoints
+  the copy, resizes it, leaves the template alone, and leaves nothing behind when it refuses.
+- `mcp-editor-bridge/tests/test_layout_tools.py`, `test_level_catalog_tools.py`: registration and
+  parameter forwarding of every layout and catalog tool.
 - Game side (NK): **Validate Layout Round Trip** compares the adapter's neighbour rule
   with `GridMap` and round-trips a fixture layout (pieces, deploy cells, enemy spawns)
   through apply and bake in a temporary scene, then a fixture of imported Synty pieces
