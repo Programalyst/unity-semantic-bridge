@@ -558,7 +558,22 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
       - **Validate Layout Round Trip** adds Half-cover blockers, windows and 1,000 sight pairs to its seeded maps, where `LayoutGrid.CanSee` must equal `GridMap.CanSee` (3,100 checks, was 2,100).
       - The other harnesses are unchanged.
     - **USB tests.** `GridSightTests` (4); `scripts/test-unity.sh` 275 passed, 7 skipped, 0 failed.
-- [ ] **S2 Fog and spotting (NK):** reveal, `CanSeeUnit`/`CanFactionSeeUnit`, contact, threat memory, illumination. Exit: Validate Fog Of War, Attack Alerts and Illumination pass with grid cases. In CatalogTest Play Mode, the raider inside the shop is revealed and spotted through a window, and Building_08 reveals the outside through its windows and door.
+- [x] **S2 Fog and spotting (NK):** reveal, `CanSeeUnit`/`CanFactionSeeUnit`, contact, threat memory, illumination. Exit: Validate Fog Of War, Attack Alerts and Illumination pass with grid cases. In CatalogTest Play Mode, the raider inside the shop is revealed and spotted through a window, and Building_08 reveals the outside through its windows and door.
+  - S2 results (2026-10-19; the Play Mode check is still to run):
+    - **`GridVisibility` gets a sight grid** (`ISightGrid`, `MapSight`: a `GridMap` with the world position of its cell (0, 0)). `GridManager.Awake` registers the board (cleared in `OnDestroy`). With a grid:
+      - `CanSeeUnit` is range, then `GridMap.CanSee` between the two units' cells; head and body rays are no longer used.
+      - `IlluminationSource.Illuminates` uses `HasClearSight`.
+      - Physics remains only as the fallback without a grid or off the board, and for line of fire until S3.
+    - **Fog reveal.** `GridManager.GetVisibleNodes` reveals by `GridMap.CanSee` from the observer's cell; `VisionCheckPosition` is used only for illumination positions now.
+    - **The shop's windows.** Now that the outline decides sight, the shop's windows are windows: front cells 0–2 and 5–7 (boarded) and rows 1–3 of both sides (glazed). They were found in its render mesh with the glass submesh left out (open at 1.5 and 2.3 m, a mullion at 1.9 m). The boarded front door stays wall. The NK overrides file and AP copy are updated.
+    - **Harnesses.**
+      - Validate Illumination registers a 30 × 21 test map; its walls are Full-cover cells, and two window cases (light and sight pass, a wall on the same side blocks) bring it to 22.
+      - Validate Layout Round Trip checks sight on the buildings fixture in both the layout's grid and the game's bake: the raider through the shop's window but not its corner wall, into the house through its window and door but not its wall. It now has 3,108 checks.
+      - Attack Alerts (23), Enemy Firing Positions (23), Bug Attack Range (22), Action Points (67), Hit Chance (151), Paths (2,956), Reports (77) and Baker (21) are unchanged; harnesses without a registered grid keep physics until S3.
+    - **CatalogTest** was reapplied with the shop's windows (clean report).
+    - **Play Mode check** (scratch copy of CatalogTest, since deleted, with a temporary probe):
+      - Cross walked into the house (16,5). Tiles through both windows ((16,1), (16,9)) and inside were revealed; (19,5) behind the solid wall stayed fogged.
+      - Reno walked to (12,12) outside the shop's right window. The raider's tile inside was revealed and the raider spotted ("Contact: Reno spotted Raider"), which started combat, and a tile across the shop through its other windows was revealed.
 - [ ] **S3 Line of fire and cover (NK):** `HasLineOfFire*`, bug spit, removing the waist ray, head aim. Exit: Ranged Accuracy, Enemy Firing Positions and Bug Attack Range pass with re-checked expectations. In Play Mode a unit inside the house shoots out of a window at a target it sees, and nothing behind a Full wall is targetable.
 - [ ] **S4 Validators and docs (USB + NK):** `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` downgraded or removed, the GridBattle report fixture regenerated, and `level-rules.md` (Line of sight, Cover), `combat-flows.md` (aiming, enemy turns) and `grid-layouts.md` updated.
 
