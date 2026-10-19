@@ -270,6 +270,63 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             StringAssert.Contains("+-+-+-+", report.Format(ascii: true), "the map draws the walls");
         }
 
+        [Test]
+        public void StructureReportsPiecesAcrossWallsAndDoorPointsOffTheirSide()
+        {
+            var house = "[\"house\",\"" + HouseGuid + "\",2,2,0]";
+            // A 1x1 block inside the house is fine; a 3x1 one reaching through its -x wall is not.
+            PieceSpec? Resolve3(LayoutPiece p) => p.LocalId == "long" ? new PieceSpec(3, 1, CoverLevel.Half) : Resolve(p);
+            var report = LayoutValidator.Validate(LayoutJson.Parse(Layout(house + ",[\"box\",\"" + BlockGuid + "\",3,3,0],[\"long\",\"" + BlockGuid + "\",0,2,0]")),
+                Resolve3, Walls);
+            CollectionAssert.AreEqual(new[] { "WALL_CROSSES_PIECE 1,2 long straddles the wall of house on its +x side; move it to one side of the wall" },
+                report.Issues.Where(i => i.Code.StartsWith("WALL")).Select(i => i.ToString()));
+
+            PieceSpec? FarDoor(LayoutPiece p) => p.PrefabGuid == HouseGuid
+                ? new PieceSpec(3, 3, CoverLevel.Full, WallOutline.FromLines(House, doorPoints: new[] { new DoorPoint(new Cell(2, 2), GridSide.PlusY, 1.2) }))
+                : Resolve(p);
+            report = LayoutValidator.Validate(LayoutJson.Parse(Layout(house)), FarDoor, Walls);
+            StringAssert.StartsWith("DOOR_POINT_RANGE 2,2 house: door point on 2,2 +y is 1.20 m", report.Issues.Single(i => i.Code == "DOOR_POINT_RANGE").ToString());
+        }
+
+        [Test]
+        public void DoorsReplaceTheFrontCheckForWalledBuildings()
+        {
+            var card = new LevelCard { Id = "Pack/SM_Bld_Building_08.prefab", Role = LevelRole.Building, Front = GridSide.PlusY, Walls = HouseOutline() };
+            LayoutGrid Grid(int rotation, params Cell[] blocked)
+            {
+                var grid = new LayoutGrid(8, 8, Walls);
+                foreach (var side in HouseOutline().Placed(new Cell(2, 2), rotation))
+                    grid.SetSide(side.Cell, side.Side, side.Kind, CoverLevel.Full, "house");
+                foreach (var cell in blocked) grid.Block(cell, "crate", CoverLevel.Half);
+                return grid;
+            }
+            PlacedCard Placed(int rotation, Cell anchor) =>
+                new PlacedCard { LocalId = "house", Card = card, Anchor = anchor, Size = new Cell(3, 3), Rotation = rotation, Blocking = true, Cover = CoverLevel.Full };
+
+            CollectionAssert.IsEmpty(LayoutValidator.Plausibility(Grid(0), new[] { Placed(0, new Cell(2, 2)) }), "door on +y of 4,4 opens onto 4,5");
+            CollectionAssert.AreEqual(new[]
+            {
+                "DOOR_BLOCKED 4,4 house: the door on +y of 4,4 opens onto crate at 4,5; keep that cell open",
+                "BUILDING_SEALED 2,2 house: none of its 1 door opens onto an open cell, so nobody can get in or out",
+            }, LayoutValidator.Plausibility(Grid(0, new Cell(4, 5)), new[] { Placed(0, new Cell(2, 2)) }).Select(i => i.ToString()));
+
+            // At 5,5 turned once the door is on +x of 7,5: off the 8x8 board.
+            var grid = new LayoutGrid(8, 8, Walls);
+            foreach (var side in HouseOutline().Placed(new Cell(5, 5), 1)) grid.SetSide(side.Cell, side.Side, side.Kind, CoverLevel.Full, "house");
+            CollectionAssert.AreEqual(new[]
+            {
+                "DOOR_OFF_BOARD 7,5 house: the door on +x of 7,5 opens off the board; turn or move the building",
+                "BUILDING_SEALED 5,5 house: none of its 1 door opens onto an open cell, so nobody can get in or out",
+            }, LayoutValidator.Plausibility(grid, new[] { Placed(1, new Cell(5, 5)) }).Select(i => i.ToString()));
+
+            var unwalled = new LevelCard { Id = card.Id, Role = LevelRole.Building, Front = GridSide.PlusY };
+            StringAssert.StartsWith("BUILDING_FRONT 5,5 house: its front (+x) faces the board edge",
+                LayoutValidator.Plausibility(new LayoutGrid(8, 8, Walls), new[] { new PlacedCard
+                {
+                    LocalId = "house", Card = unwalled, Anchor = new Cell(5, 5), Size = new Cell(3, 3), Rotation = 1, Blocking = true, Cover = CoverLevel.Full,
+                } }).Single().ToString(), "a building without walls keeps the front check");
+        }
+
         // ---- Overrides and cards ----
 
         [Test]

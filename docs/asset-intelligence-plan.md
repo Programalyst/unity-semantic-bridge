@@ -439,16 +439,48 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
     - **On AP's prefabs** (the owner's scales, the shop's `Door_01` off) it proposed exactly the plan's entries (above): walls within 0.12–0.25 m of the lines, Building_08's door point −0.45 m, the shop's −0.5 m, lifts −0.09 and −0.15, ceilings 2.60 and 5.17 m, no sight gaps. The output and cutaways are in the session notes folder (`walls-probe/wall-suggestions.txt`, `*-suggested-cut1.9.png`).
     - **Tests.** USB `WallOutlineTests` (16) and `WallOutlineSuggesterTests` (2); `scripts/test-unity.sh` 268 passed, 7 skipped, 0 failed (was 250).
     - **Docs.** `grid-layouts.md` and `level-catalog.md`.
-- [ ] **W3 Apply, bake and the owner check (USB + NK; needs W1 and W2).**
+- [x] **W3 Apply, bake and the owner check (USB + NK; needs W1 and W2).** Done 2026-10-18 except the owner check in CatalogTest (see the results).
   - Work:
     - Sync the owner's AP prefab changes (root scales, `Door_01` inactive) into NK's two prefabs, and the approved entries into both overrides files.
     - Adapter hooks; skip fitting and `GridObstacle` for walled pieces; door point children; NK `OccupancyBaker` walls.
     - Fixture `buildings.layout.json`: both buildings, one turned, a deploy outside and a raider inside the shop. Round Trip with random walls.
   - **Owner check** in CatalogTest (or a new BuildingTest scene): offsets, lifts, window cover, the door points.
   - Exit: apply then bake is identical including walls and door points, the game's occupancy and walls equal the layout, and Validate Layout Round Trip and Reports pass. In Play Mode a squad walks in through each door and takes wall cover inside and outside.
-- [ ] **W4 Validators (USB + NK).**
+  - W3 results (2026-10-18):
+    - **USB `IGridRulesAdapter`.** Two hooks with default implementations (no-op and false), so other games and test adapters are unchanged:
+      - `ConfigureWalls(instance, outline, frameCentre, layoutRotation)` writes the game's walls.
+      - `TryReadWalls(instance, out outline)` reads them back with door points.
+    - **USB apply.** Every card piece is placed at its `footprintOffset`. A walled building (a card with `walls`, `GridRules.SideWalls`) skips `ContainSolidColliders`, `ConfigurePiece` and `FitColliders`, so its mesh collider stays for sight and no `GridObstacle` is added. It gets `ConfigureWalls` instead and a `PieceSpec` with its outline.
+    - **USB bake.** It reads card pieces back with the offset, rebuilds walled specs, and reports `WALLS_MISSING` or `WALLS_DIFF` (outline, covers, door points within 5 cm) against the card.
+    - **NK `NkGridRules`.**
+      - `Classify` treats a `GridWalls` root as a piece.
+      - `ConfigureWalls` adds `GridWalls`, with `Door Point x,y side` children placed from the outline, and sections the building for the cutaway (W5).
+      - `TryReadWalls` reads the outline and door points back from `GridWalls`.
+      - `BakeOccupancy` adds every `GridWalls`'s sides to the game's grid, or `WALLS_UNPLACED`.
+    - **Owner's changes synced into NK.** Prefab root scales (Building_08 (1.15, 1, 1.15), shop (1.1, 1, 1.1)) and the shop's `Door_01` inactive were edited in NK's own prefab files; AP's serialize with a newer Unity, so they were not copied.
+    - **Overrides entries for both buildings** (NK canonical, AP copy identical): `placementScale`, `footprint` [6, 6] and [16, 8], `footprintOffset`, `lift` −0.09 and −0.15, `storeys` 2 and 1, and `walls` with door points; the shop also has `roofed` (porch row).
+    - **Fixture `buildings.layout.json`** (16 × 14): Building_08 turned twice, the shop with a sandbag wall and a raider inside.
+      - Validate Layout Round Trip checks each building's frame size and centre, the kept mesh collider with no `GridObstacle` or fitted box, and its walls placing on the board.
+      - It also checks door point positions to 1 cm, walls read back as the card's, the cutaway chunks, the frames walkable and claimed, and turned doors and windows on the right sides.
+      - Apply then bake is identical and the game's walls equal the layout's; editing a window in the scene gives `WALLS_DIFF` and `WALL_KIND`.
+      - Round Trip has 2,100 checks (was 2,075).
+    - **CatalogTest** (2026-10-19): both buildings applied from the layout, replacing the hand-configured test building; the apply gave a clean report.
+      - After the owner's first look the board grew to 20 × 20, and the house moved to 15,4 so it no longer crowds the shop at 4,11. The owner then turned it in the scene (rotation 3, door on −x of 15,6 facing the deploy cells), and the door kept working; a bake read the turn back with no issues, and the layout JSON was updated to match. The raider starts inside the shop.
+      - **Pointer fix** from the same look: the mouse could not target the raider inside the shop, because `AimView` takes the closest hit and that was the building's collider. While a building is cut away, the pointer now skips its colliders (`BuildingCutaway.IsSeeThrough`); sight, shots and cover still use them. Not yet checked with a real mouse.
+- [x] **W4 Validators (USB + NK).** Done 2026-10-18.
   - Work: `BUILDING_SEALED`, door checks, `DOOR_POINT_RANGE`, `WALL_CROSSES_PIECE`, claim `OVERLAP`, `WALL_SIGHT_GAP`, the door-collider check, the `SIGHT_NO_OBSTACLE` exemption, double-resolution ASCII; broken fixtures for each, and the 4d fixture's updated lines.
   - Exit: clean fixtures stay clean and each broken fixture reports exactly its lines.
+  - W4 results (2026-10-18):
+    - **Structural:** `WALL_CROSSES_PIECE` (a solid piece straddling a wall or window) and `DOOR_POINT_RANGE`, in `LayoutValidator.WallStructure`.
+    - **Plausibility:** for walled buildings, door checks replace `BUILDING_FRONT`: `DOOR_OFF_BOARD`, `DOOR_BLOCKED` and `BUILDING_SEALED` (no door opens onto an open cell), all warnings. Buildings without walls keep the front check.
+    - **Physics tier (`LayoutSceneValidator.WallSight`):**
+      - `WALL_SIGHT_GAP`: rays across each Full wall at 1.0 and 1.7 m, three points along it, must hit a sight collider.
+      - `DOOR_COLLIDER`: a ray at 1.0 m through a door's point must not.
+    - **Already in place:** claim `OVERLAP` and the double-resolution map (W2), and the `SIGHT_NO_OBSTACLE` exemption (walled buildings classify as pieces).
+    - **New fixture `walls-broken.layout.json`:** a house whose door opens off the board, a shop whose back door opens onto a jersey barrier, and sandbags straddling the shop's side wall. It reports exactly its eight lines: one `WALL_CROSSES_PIECE`, one `ENEMY_UNREACHABLE`, two `POCKET`s, a `DOOR_OFF_BOARD`, a `DOOR_BLOCKED` and two `BUILDING_SEALED`s.
+    - **The 4d `scale-plausibility` fixture** now reports the scrap block's off-board door (`DOOR_OFF_BOARD`, `BUILDING_SEALED`, its `POCKET`) instead of the two `BUILDING_FRONT` lines; its shop's back door is open.
+    - **`buildings.layout.json` gives a clean report**, wall-sight tier included, so neither building needs `sightFill` and neither doorway is obstructed.
+    - **Counts:** Validate Layout Reports 77 (was 56); the GridBattle report fixture is unchanged. USB tests: `WallOutlineTests` gains structure and door tests, and `LayoutApplierCardTests` a walled building through apply and bake; `scripts/test-unity.sh` 271 passed, 7 skipped, 0 failed (was 268).
 - [ ] **W5 Rendering (NK).** Spike started 2026-10-18; the approach changed after discussion with the owner:
   - **Mesh chunks instead of a height-cut shader.** An Editor tool (NK `BuildingSectioner`) splits the render mesh (no Blender) into Upper (above 2.4 m, clipped at the cut), one chunk per outer side of the `GridWalls` frame, and Base.
   - **On hover** (NK `BuildingCutaway`), Upper is hidden and the sides facing the camera are drawn faded: dithered (`NK/Building Dither`, an opaque screen-door fade, chosen over transparency, which already misbehaves with the fog on the crystal patch hologram) or a Fresnel ghost. Far walls stay as they are.
@@ -456,7 +488,11 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
   - **The walk camera is off** (`GridCamera` **Use Walk Camera**, code kept), so only the overhead view matters.
   - **Status:** set up on CatalogTest's walls test building (NK 7742e02a).
   - **Owner's choice** (2026-10-18): **dither**, visible fraction 0.3. Fresnel looked good but suits a pure cyberpunk theme better, and it is transparent. Hidden also works but drops the windows and doorways of near walls.
-  - **To finish W5:** dither only; section the shop; build the cutaway into the buildings rather than one scene instance; fog reveal for buildings.
+  - **Finished 2026-10-18** except the fog reveal:
+    - `BuildingCutaway` is dither only (the Fresnel copy was removed).
+    - `BuildingSectioner` moved out of `Editor/` (`#if UNITY_EDITOR`) so the apply hook can call it. It now splits every enabled mesh renderer under the building (the shop's boards, rooftop junk, ladder and overgrowth too) in the root's space, one submesh per distinct material, and rerunning rebuilds the same chunks.
+    - `NkGridRules.ConfigureWalls` sections each applied building into `Assets/Generated/Buildings/<prefab>/` (shared by its instances; cut at the outline's `cutHeight` or 2.4 m).
+  - **Fog reveal for buildings is not done:** a building has no `GridObstacle`, so `GridObstacle.Reveal`'s stencil material never reaches it. In the owner's Play Mode tests buildings looked right under fog, so whether that matters is still open.
   - Work: cutaway spike, then the hover-driven `GridWalls` cutaway; fog reveal.
   - Exit: owner Play Mode review (enter, fight from inside, see inside on hover).
 

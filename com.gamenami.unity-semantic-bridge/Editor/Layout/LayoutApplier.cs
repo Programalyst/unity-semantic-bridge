@@ -202,13 +202,27 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var footprint = LevelCards.Footprint(card, cellSize, blocking: blocker);
             var size = footprint.RotatedSize(piece.Rotation);
             var center = FootprintCenter(adapter, board, piece.Anchor, size);
-            var offset = frame * ToVector3(footprint.Center);
+            // The bounds centre sits at the footprint centre, plus the card's footprintOffset (e.g. a porch reaching out).
+            var offset = frame * (ToVector3(footprint.Center) - FootprintOffset(card));
             var lift = (float)card.Lift + (card.Role == LevelRole.Ground ? adapter.GroundLift : 0f);
             instance.transform.position = new Vector3(center.x - offset.x, board.FloorY + lift, center.z - offset.z);
             if (footprint.Approximate)
                 result.Notes.Add($"APPROXIMATE {piece.Anchor} {piece.LocalId}: the card's box overstates the piece (skewed parts or a tilted root); footprint {footprint}");
 
             var cover = CoverLevel.None;
+            if (blocker && card.Walls != null && adapter.Rules.SideWalls)
+            {
+                // A walled building: its cells stay walkable, its colliders stay as authored (sight), and the game
+                // gets its walls instead of the piece hook. No collider fitting, no blocking collider expected.
+                cover = card.Cover ?? CoverLevel.Full;
+                adapter.ConfigureWalls(instance, card.Walls, new Vector3(center.x, board.FloorY, center.z), piece.Rotation);
+                result.Cards.Add(new PlacedCard
+                {
+                    LocalId = piece.LocalId, Card = card, Anchor = piece.Anchor, Size = size, Rotation = piece.Rotation,
+                    Blocking = true, Cover = cover,
+                });
+                return new PieceSpec(footprint.Width, footprint.Depth, cover, card.Walls);
+            }
             if (blocker)
             {
                 ContainSolidColliders(instance, piece, center, size, cellSize, result);
@@ -260,6 +274,11 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             if (blocker) FitColliders(instance, piece, center, size, cellSize, adapter, result);
             return spec;
         }
+
+        /// <summary>The card's footprintOffset as a vector at layout rotation 0 (zero when it has none).</summary>
+        public static Vector3 FootprintOffset(LevelCard card) => card.FootprintOffset.HasValue
+            ? new Vector3((float)card.FootprintOffset.Value.X, 0f, (float)card.FootprintOffset.Value.Z)
+            : Vector3.zero;
 
         /// <summary>World centre (X/Z, floor height) of a footprint, origin-agnostic through the adapter.</summary>
         public static Vector3 FootprintCenter(IGridRulesAdapter adapter, GridBoard board, Cell anchor, Cell rotatedSize)

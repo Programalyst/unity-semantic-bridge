@@ -226,8 +226,26 @@ a wall or window and a diagonal past a corner where one meets (even without the 
 `CoverSides` takes the better of the neighbour's blocker and the side's own wall, and
 `DiffOccupancy` adds `WALL_MISSING`, `WALL_EXTRA`, `WALL_KIND` and `WALL_COVER`. An outline whose
 size differs from the footprint is `OUTLINE_SIZE`. Without `SideWalls` a walled card builds as a
-solid blocker. Reachability goes through doors with no extra code. Apply and bake writing the
-game's wall component, and the wall validators, come later (Phase W3/W4).
+solid blocker. Reachability goes through doors with no extra code.
+
+Apply and bake (Phase W3):
+- **Placement.** Every card piece is placed so its bounds centre sits `footprintOffset` from its
+  footprint centre.
+- **Apply.** A walled building skips collider fitting and `ConfigurePiece`: its collider stays as
+  authored for sight, and nothing blocks its cells. Instead the adapter's `ConfigureWalls(instance,
+  outline, frameCentre, layoutRotation)` writes the game's wall data.
+- **Bake.** It reads the walls back with `TryReadWalls` and reports `WALLS_MISSING` or `WALLS_DIFF`
+  (outline, covers, door points within 5 cm) against the card.
+- **Defaults.** Both hooks have default implementations (nothing), so adapters for games without side
+  walls need no change.
+
+Wall validators (Phase W4):
+- **Structural:** `WALL_CROSSES_PIECE` (a solid piece straddling a wall) and `DOOR_POINT_RANGE`.
+- **Plausibility:** for walled buildings, door checks replace `BUILDING_FRONT`: `DOOR_OFF_BOARD`,
+  `DOOR_BLOCKED` and `BUILDING_SEALED`.
+- **Physics tier** (`LayoutSceneValidator.WallSight`):
+  - `WALL_SIGHT_GAP`: rays across each Full wall at 1.0 and 1.7 m must hit a sight collider.
+  - `DOOR_COLLIDER`: a ray through a doorway at 1.0 m must not.
 
 | Check | Codes | Input |
 |---|---|---|
@@ -236,6 +254,7 @@ game's wall component, and the wall validators, come later (Phase W3/W4).
 | Reachability | `NO_DEPLOY`, `ENEMY_UNREACHABLE`, `POCKET` (warning, one per unreached region of open cells, at its lowest cell) | Breadth-first search from the open deploy cells with `LayoutGrid.CanStep` (the game's neighbour and corner rule) |
 | Consistency | `MISSING_BLOCK` (a layout blocker without a game collider), `EXTRA_BLOCK`, `COVER`, `SIGHT_NO_OBSTACLE` (warning) | Layout grid, the game's occupancy bake, sight colliders |
 | Scale | `OFFGRID_SCALE` (a card piece in a scene at another scale than its card's `placementScale`, on its cell, with its height at both scales), `HEIGHT_BAND` (a blocker's card height outside the game's band for the cover it gives, with a suggested Y scale; a **note** when its role and scale are both owner-approved overrides) | Placed card pieces (`PlacedCard`), the adapter's `GridRules.CoverHeights` |
+| Walls (Phase W) | `WALL_CROSSES_PIECE`, `DOOR_POINT_RANGE` (errors); `DOOR_OFF_BOARD`, `DOOR_BLOCKED`, `BUILDING_SEALED` (warnings, replacing `BUILDING_FRONT` for walled buildings); physics tier `WALL_SIGHT_GAP`, `DOOR_COLLIDER` (warnings); apply/bake `OUTLINE_SIZE`, `WALLS_MISSING`, `WALLS_DIFF`, and `WALL_MISSING`/`WALL_EXTRA`/`WALL_KIND`/`WALL_COVER` in the occupancy diff | Walled cards, the layout grid's sides, sight colliders |
 | Plausibility (warnings) | `ROLE_LAYER` (a ground/decor card in `pieces`, or a blocking role in `decor`), `GROUND_RUN` (a 4-connected run of ground cells reaching no board edge), `GROUND_OVERLAP` (two ground pieces on one cell z-fight), `BUILDING_FRONT` (front faces the board edge or only blocked cells), `BUILDING_NO_FRONT` (note: no front known) | Placed card pieces, occupancy grid |
 
 Pieces must sit on whole cells (plan decision D10). Relaxing that for decor or

@@ -182,11 +182,62 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
 
         // A small game: 2 m cells on a 6 x 6 board at the origin. The piece hook marks every solid collider
         // as blocking (no game components needed), and the occupancy bake is an overlap box per cell.
+        [Test]
+        public void WalledBuildingKeepsItsCollidersAndGetsItsWalls()
+        {
+            // A 3.6 m square building whose card frames it as 2 x 2 cells, its bounds centre 0.5 m towards +x of the
+            // frame centre (rotation 0), with a door on +y of (1,1). Placed at 2,2 turned once (clockwise).
+            var guid = MakeMeshProp("SM_Bld_Test_House", new Vector3(3.6f, 3f, 3.6f));
+            var cards = Cards($"\"{guid}\":{{\"role\":\"building\",\"placementScale\":[1,1,1],\"footprint\":[4,4],\"footprintOffset\":[0.5,0]," +
+                              "\"walls\":{\"outline\":[\"+-+D+\",\"|   |\",\"+ + +\",\"|   |\",\"+-+-+\"]}}");
+            var document = Doc($"[\"house\",\"{guid}\",2,2,1]");
+            adapter.Rules.SideWalls = true;
+
+            var result = LayoutApplier.Apply(document, scene, adapter, cards);
+            Assert.AreEqual(0, result.Issues.Count, string.Join("; ", result.Issues));
+            var spec = result.Specs["house"];
+            Assert.IsNotNull(spec.Outline);
+            Assert.AreEqual((2, 2), (spec.Width, spec.Depth));
+            Assert.IsFalse(result.Expected.IsBlocked(new Cell(2, 2)) || result.Expected.IsBlocked(new Cell(3, 3)), "the frame stays walkable");
+            Assert.AreEqual(SideKind.Door, result.Expected.SideAt(new Cell(3, 2), GridSide.PlusX).Kind, "turned once, the door is on +x of 3,2");
+            Assert.AreEqual(SideKind.Wall, result.Expected.SideAt(new Cell(3, 3), GridSide.PlusX).Kind);
+
+            var house = Piece(result, "house");
+            Assert.AreEqual(new Vector3(6f, 0f, 5.5f), house.position, "bounds centre = frame centre (6, 6) + the offset turned once (0, -0.5)");
+            Assert.IsTrue(house.GetComponentInChildren<MeshCollider>().enabled && house.Find(LayoutApplier.FootprintColliderName) == null,
+                "a walled building keeps its collider as authored (sight), with no fitted box");
+            CollectionAssert.IsEmpty(adapter.Blocking, "no piece hook, so nothing blocks cells");
+            var walls = adapter.Walls[house.gameObject];
+            Assert.AreEqual(new Vector3(6f, 0f, 6f), walls.frameCentre);
+            Assert.AreEqual(1, walls.rotation);
+
+            var bake = LayoutBaker.Bake(scene, adapter, cards);
+            Assert.AreEqual(0, bake.Issues.Count, string.Join("; ", bake.Issues));
+            CollectionAssert.IsEmpty(LayoutDocument.Diff(document, bake.Document));
+            CollectionAssert.IsEmpty(result.Expected.DiffOccupancy(bake.Physics), "the game's walls equal the layout's");
+
+            adapter.Walls[house.gameObject] = (WallOutline.FromLines(new[] { "+-+-+", "|   |", "+ + +", "|   |", "+-+-+" }), walls.frameCentre, walls.rotation);
+            var edited = LayoutBaker.Bake(scene, adapter, cards);
+            StringAssert.StartsWith("WALLS_DIFF 2,2 house: outline", edited.Issues.Single(i => i.StartsWith("WALLS_")));
+            CollectionAssert.Contains(edited.OccupancyDiff, "WALL_KIND 3,2 +x expected Door from house, got Wall from house");
+        }
+
         private sealed class TestAdapter : IGridRulesAdapter
         {
             public const float Lift = 0.25f;
             public readonly HashSet<Collider> Blocking = new HashSet<Collider>();
             public readonly Dictionary<GameObject, CoverLevel> Covers = new Dictionary<GameObject, CoverLevel>();
+            public readonly Dictionary<GameObject, (WallOutline outline, Vector3 frameCentre, int rotation)> Walls =
+                new Dictionary<GameObject, (WallOutline, Vector3, int)>();
+
+            public void ConfigureWalls(GameObject instance, WallOutline outline, Vector3 frameCentre, int layoutRotation) =>
+                Walls[instance] = (outline, frameCentre, layoutRotation);
+
+            public bool TryReadWalls(GameObject instance, out WallOutline outline)
+            {
+                outline = Walls.TryGetValue(instance, out var walls) ? walls.outline : null;
+                return outline != null;
+            }
 
             public GridRules Rules { get; } = new GridRules { CellSize = 2f };
             public float GroundLift => Lift;
@@ -206,7 +257,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
                 collider != null && collider.enabled && collider.gameObject.activeInHierarchy && Blocking.Contains(collider);
 
             public PieceRole Classify(GameObject root) =>
-                root.GetComponentsInChildren<Collider>(true).Any(IsBlockingCollider) ? PieceRole.Blocker : PieceRole.Decor;
+                root.GetComponentsInChildren<Collider>(true).Any(IsBlockingCollider) || Walls.ContainsKey(root) ? PieceRole.Blocker : PieceRole.Decor;
 
             public CoverLevel DescribeCover(GameObject root) => Covers.TryGetValue(root, out var cover) ? cover : CoverLevel.Full;
 
@@ -231,6 +282,14 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
                         while (!Covers.ContainsKey(root.gameObject) && root.parent != null) root = root.parent;
                         grid.Block(new Cell(x, y), root.name, DescribeCover(root.gameObject));
                     }
+                // Walls where ConfigureWalls put them: the frame's min cell from its centre and turned size.
+                foreach (var pair in Walls)
+                {
+                    var turned = pair.Value.outline.Rotate(pair.Value.rotation);
+                    var anchor = WorldToCell(pair.Value.frameCentre - new Vector3(turned.Width - 1, 0f, turned.Height - 1));
+                    foreach (var side in turned.Placed(anchor, 0))
+                        grid.SetSide(side.Cell, side.Side, side.Kind, turned.CoverFor(side.Kind), pair.Key.name);
+                }
                 return grid;
             }
 

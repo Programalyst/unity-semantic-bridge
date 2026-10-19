@@ -153,11 +153,50 @@ namespace Gamenami.UnitySemanticBridge.Layout
             grid = LayoutGrid.Build(document, resolve, rules, built);
             // Build also checks deploy cells; the encounter check owns those.
             var issues = built.Where(i => !i.Code.StartsWith("DEPLOY_")).ToList();
+            issues.AddRange(WallStructure(document, resolve, rules, grid));
             foreach (var decor in document.Decor)
                 if (!grid.Contains(decor.Anchor))
                     issues.Add(new LayoutIssue("DECOR_OUT_OF_BOUNDS", decor.Anchor,
                         $"{decor.LocalId} is anchored off the {grid.Width}x{grid.Height} board", IssueSeverity.Warning));
             return issues;
+        }
+
+        /// <summary>
+        /// Walls on cell sides: a solid piece may not straddle a wall (WALL_CROSSES_PIECE: the wall would cut
+        /// through it and the game could never enter half of it), and a walled building's door points stay
+        /// on their side, within the two cells it separates (DOOR_POINT_RANGE).
+        /// </summary>
+        public static List<LayoutIssue> WallStructure(LayoutDocument document, Func<LayoutPiece, PieceSpec?> resolve, GridRules rules,
+            LayoutGrid grid)
+        {
+            var issues = new List<LayoutIssue>();
+            if (!grid.HasWalls) return issues;
+            foreach (var piece in document.Pieces)
+            {
+                var spec = resolve(piece);
+                if (!spec.HasValue) continue;
+                if (spec.Value.Outline != null)
+                {
+                    foreach (var problem in spec.Value.Outline.CheckDoorPoints(rules.CellSize))
+                        issues.Add(new LayoutIssue("DOOR_POINT_RANGE", piece.Anchor, $"{piece.LocalId}: {problem}"));
+                    continue;
+                }
+                var cells = new HashSet<Cell>(LayoutGrid.Footprint(piece, spec.Value));
+                if (CrossedWall(grid, cells) is (Cell cell, GridSide side))
+                    issues.Add(new LayoutIssue("WALL_CROSSES_PIECE", cell,
+                        $"{piece.LocalId} straddles the wall of {grid.SideAt(cell, side).Owner} on its {GridSides.Name(side)} side; move it to one side of the wall"));
+            }
+            return issues;
+        }
+
+        // The first wall or window between two cells of one footprint, or null.
+        private static (Cell, GridSide)? CrossedWall(LayoutGrid grid, HashSet<Cell> cells)
+        {
+            foreach (var cell in cells.OrderBy(c => c.Y).ThenBy(c => c.X))
+                foreach (var side in new[] { GridSide.PlusX, GridSide.PlusY })
+                    if (cells.Contains(cell + GridSides.Step(side)) && grid.IsWalled(cell, side))
+                        return (cell, side);
+            return null;
         }
 
         /// <summary>
@@ -326,8 +365,13 @@ namespace Gamenami.UnitySemanticBridge.Layout
             }
             issues.AddRange(GroundRuns(grid, placed.Where(p => p.Card.Role == LevelRole.Ground).ToList()));
             foreach (var building in placed.Where(p => p.Card.Role == LevelRole.Building))
-                if (BuildingFront(grid, building) is LayoutIssue issue)
+            {
+                // A walled building is entered through its doors, so its doors matter, not its model's front.
+                if (building.Blocking && building.Card.Walls != null && grid.Rules.SideWalls && grid.HasWalls)
+                    issues.AddRange(Doors(grid, building));
+                else if (BuildingFront(grid, building) is LayoutIssue issue)
                     issues.Add(issue);
+            }
             return issues;
         }
 
@@ -399,6 +443,31 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     IssueSeverity.Warning);
             }
             return null;
+        }
+
+        // A walled building's outer doors: each must open onto an open board cell (DOOR_OFF_BOARD,
+        // DOOR_BLOCKED), and at least one must (BUILDING_SEALED: nothing can get in or out).
+        private static IEnumerable<LayoutIssue> Doors(LayoutGrid grid, PlacedCard building)
+        {
+            var outline = building.Card.Walls.Rotate(building.Rotation);
+            var doors = outline.Sides.Where(s => s.Kind == SideKind.Door && !outline.Contains(s.Cell + GridSides.Step(s.Side))).ToList();
+            var usable = 0;
+            foreach (var door in doors)
+            {
+                var inside = building.Anchor + door.Cell;
+                var outside = inside + GridSides.Step(door.Side);
+                var where = $"{building.LocalId}: the door on {GridSides.Name(door.Side)} of {inside}";
+                if (!grid.Contains(outside))
+                    yield return new LayoutIssue("DOOR_OFF_BOARD", inside, $"{where} opens off the board; turn or move the building", IssueSeverity.Warning);
+                else if (grid.IsBlocked(outside))
+                    yield return new LayoutIssue("DOOR_BLOCKED", inside, $"{where} opens onto {grid[outside].Occupant} at {outside}; keep that cell open", IssueSeverity.Warning);
+                else
+                    usable++;
+            }
+            if (usable == 0)
+                yield return new LayoutIssue("BUILDING_SEALED", building.Anchor,
+                    $"{building.LocalId}: none of its {doors.Count} door{(doors.Count == 1 ? "" : "s")} opens onto an open cell, so nobody can get in or out",
+                    IssueSeverity.Warning);
         }
 
         // The row of cells just outside a footprint on one side.

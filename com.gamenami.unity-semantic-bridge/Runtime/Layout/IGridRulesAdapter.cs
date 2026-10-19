@@ -97,5 +97,25 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// an asset of the type the game expects. The caller records Undo on GridBoard.LevelOwner.
         /// </summary>
         void WriteEnemySpawns(Scene scene, IReadOnlyList<LayoutEnemySpawn> spawns);
+
+        /// <summary>
+        /// Walls on cell sides (plan Phase W; GridRules.SideWalls): called by the applier on a walled building
+        /// (a card with a walls outline) instead of ConfigurePiece, after it is scaled and placed. Write the
+        /// game's wall data: <paramref name="outline"/> at layout rotation 0, its frame centred at
+        /// <paramref name="frameCentre"/> (world, floor height), turned by <paramref name="layoutRotation"/>
+        /// clockwise quarter turns. Its colliders are left as authored (no fitting), so sight keeps them;
+        /// they must not block cells. Games without side walls need not implement it.
+        /// </summary>
+        void ConfigureWalls(GameObject instance, WallOutline outline, Vector3 frameCentre, int layoutRotation) { }
+
+        /// <summary>
+        /// The walls a placed building carries in the scene (what ConfigureWalls wrote, or a hand-made
+        /// equivalent), at layout rotation 0 with door points; false when it has none.
+        /// </summary>
+        bool TryReadWalls(GameObject instance, out WallOutline outline)
+        {
+            outline = null;
+            return false;
+        }
     }
 }

@@ -38,6 +38,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var physics = adapter.BakeOccupancy(scene, physicsIssues);
             report.Issues.AddRange(physicsIssues.Select(line => LayoutIssue.FromLine(line)));
             report.Issues.AddRange(LayoutValidator.Consistency(applied.Expected, physics, GatherSight(scene, board, adapter)));
+            report.Issues.AddRange(WallSight(applied.Cards, board, adapter));
             return report;
         }
 
@@ -63,6 +64,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             report.Issues.AddRange(LayoutValidator.Plausibility(bake.Physics, bake.Cards.Where(c => !c.Scale.HasValue)));
             report.Issues.AddRange(bake.PhysicsIssues.Select(line => LayoutIssue.FromLine(line)));
             report.Issues.AddRange(LayoutValidator.Consistency(bake.Derived, bake.Physics, GatherSight(scene, board, adapter)));
+            report.Issues.AddRange(WallSight(bake.Cards.Where(c => !c.Scale.HasValue), board, adapter));
             return report;
         }
 
@@ -104,6 +106,67 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 .Select(pair => new SightCollider(HierarchyPath(pair.Key.owner.transform), pair.Key.obstacle,
                     pair.Value.Select(c => new Cell(c.x, c.y))))
                 .ToList();
+        }
+
+        /// <summary>Heights above the floor, meters, at which a Full-cover wall must stop sight, and a door must not.</summary>
+        public static readonly float[] WallProbeHeights = { 1.0f, 1.7f };
+        /// <summary>Probe positions along a side from its midpoint, meters.</summary>
+        public static readonly float[] WallProbeOffsets = { -0.5f, 0f, 0.5f };
+
+        /// <summary>
+        /// Walls on cell sides against the game's sight colliders: rays across each Full-cover wall side of a
+        /// walled building (at 1.0 and 1.7 m, three points along it) must hit something the sight test does not
+        /// ignore, or the wall gives cover that sight passes through (WALL_SIGHT_GAP: add a sightFill side, or
+        /// check the model's collision mesh); a ray at 1.0 m through a door's point (or midpoint) must not
+        /// (DOOR_COLLIDER: a closed door or boards in the doorway, which units would walk through). Warnings.
+        /// </summary>
+        public static List<LayoutIssue> WallSight(IEnumerable<PlacedCard> cards, GridBoard board, IGridRulesAdapter adapter)
+        {
+            var issues = new List<LayoutIssue>();
+            if (!adapter.Rules.SideWalls) return issues;
+            Physics.SyncTransforms();
+            var cellSize = adapter.Rules.CellSize;
+            foreach (var building in cards)
+            {
+                if (!building.Blocking || building.Card?.Walls == null) continue;
+                var outline = building.Card.Walls.Rotate(building.Rotation);
+                foreach (var side in outline.Sides)
+                {
+                    var cell = building.Anchor + side.Cell;
+                    var step = GridSides.Step(side.Side);
+                    var normal = new Vector3(step.X, 0f, step.Y);
+                    var along = new Vector3(Mathf.Abs(step.Y), 0f, Mathf.Abs(step.X));
+                    var midpoint = adapter.CellToWorld(cell, board) + normal * (cellSize * 0.5f);
+                    var where = $"{building.LocalId}: {GridSides.Name(side.Side)} of {cell}";
+                    if (side.Kind == SideKind.Wall && outline.WallCover == CoverLevel.Full)
+                    {
+                        var gaps = WallProbeHeights.Where(h => WallProbeOffsets.Any(a =>
+                            !BlocksSight(midpoint + along * a + Vector3.up * h, normal, adapter))).ToList();
+                        if (gaps.Count > 0)
+                            issues.Add(new LayoutIssue("WALL_SIGHT_GAP", cell,
+                                $"{where} is a Full-cover wall, but sight passes it at {string.Join(" and ", gaps.Select(h => h.ToString("0.0") + " m"))}; " +
+                                "add the side to the card's sightFill or check the collision mesh", IssueSeverity.Warning));
+                    }
+                    else if (side.Kind == SideKind.Door)
+                    {
+                        var offset = outline.DoorPoints.Where(p => p.Cell.Equals(side.Cell) && p.Side == side.Side)
+                            .Select(p => (float)p.Offset).DefaultIfEmpty(0f).First();
+                        if (BlocksSight(midpoint + along * offset + Vector3.up * WallProbeHeights[0], normal, adapter))
+                            issues.Add(new LayoutIssue("DOOR_COLLIDER", cell,
+                                $"{where} is a door, but a collider fills the doorway at 1.0 m (a closed door or boards?); units would walk through it",
+                                IssueSeverity.Warning));
+                    }
+                }
+            }
+            return issues;
+        }
+
+        // A segment across a side (0.6 m each way) hits a collider the game's sight test does not ignore.
+        private static bool BlocksSight(Vector3 point, Vector3 normal, IGridRulesAdapter adapter)
+        {
+            const float reach = 0.6f;
+            return Physics.RaycastAll(point - normal * reach, normal, reach * 2f, adapter.SightLayers, QueryTriggerInteraction.Ignore)
+                .Any(hit => !adapter.IgnoredBySight(hit.collider));
         }
 
         private static GridBoard RequireBoard(Scene scene, IGridRulesAdapter adapter)

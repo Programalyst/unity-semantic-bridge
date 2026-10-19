@@ -158,12 +158,14 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
 
             int width, depth;
             Vector3 boundsCenter;
+            var walled = card?.Walls != null && adapter.Rules.SideWalls && role == PieceRole.Blocker;
             if (card != null)
             {
-                // The card's footprint (claimed cells for an overridden one), as apply placed it.
+                // The card's footprint (claimed cells for an overridden one), as apply placed it: the footprint
+                // centre sits footprintOffset away from the bounds centre.
                 var footprint = LevelCards.Footprint(card, cellSize, blocking: role == PieceRole.Blocker);
                 (width, depth) = (footprint.Width, footprint.Depth);
-                boundsCenter = LayoutApplier.ToVector3(footprint.Center);
+                boundsCenter = LayoutApplier.ToVector3(footprint.Center) - LayoutApplier.FootprintOffset(card);
             }
             else
             {
@@ -180,8 +182,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 boundsCenter = bounds.Value.Center;
             }
 
-            var cover = role == PieceRole.Blocker ? adapter.DescribeCover(instance) : CoverLevel.None;
-            var spec = new PieceSpec(width, depth, cover);
+            var cover = walled ? card.Cover ?? CoverLevel.Full
+                : role == PieceRole.Blocker ? adapter.DescribeCover(instance) : CoverLevel.None;
+            var spec = new PieceSpec(width, depth, cover, walled ? card.Walls : null);
             var size = spec.RotatedSize(turns.Value);
             var center = instance.transform.position + frame * boundsCenter;
             var anchor = AnchorOf(instance, frame, boundsCenter, size, cellSize, adapter);
@@ -206,6 +209,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
 
             var localId = UniqueId(name, ids);
             var piece = new LayoutPiece(localId, guid, anchor, turns.Value);
+            if (walled) CheckWalls(instance, card, anchor, name, adapter, result);
             if (role == PieceRole.Blocker)
             {
                 result.Document.Pieces.Add(piece);
@@ -221,6 +225,38 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                     LocalId = localId, Card = card, Anchor = anchor, Size = size, Rotation = turns.Value,
                     Blocking = role == PieceRole.Blocker, Cover = cover,
                 });
+        }
+
+        /// <summary>How far a door point may sit from its card's, meters.</summary>
+        public const double DoorPointTolerance = 0.05;
+
+        // A walled building's walls in the scene must be its card's: same sides and kinds, same door points.
+        private static void CheckWalls(GameObject instance, LevelCard card, Cell anchor, string name, IGridRulesAdapter adapter,
+            LayoutBakeResult result)
+        {
+            if (!adapter.TryReadWalls(instance, out var walls))
+            {
+                result.Issues.Add($"WALLS_MISSING {anchor} {name}: its card has walls, the building in the scene has none; reapply the layout");
+                return;
+            }
+            var expected = card.Walls;
+            var differences = new List<string>();
+            if (!expected.ToLines().SequenceEqual(walls.ToLines()))
+                differences.Add($"outline [{string.Join(" / ", walls.ToLines())}], card [{string.Join(" / ", expected.ToLines())}]");
+            else
+            {
+                if (walls.WallCover != expected.WallCover || walls.WindowCover != expected.WindowCover)
+                    differences.Add($"cover wall {walls.WallCover} window {walls.WindowCover}, card wall {expected.WallCover} window {expected.WindowCover}");
+                foreach (var side in expected.Sides.Where(s => s.Kind == SideKind.Door))
+                {
+                    var want = expected.DoorPoints.Where(p => p.Cell.Equals(side.Cell) && p.Side == side.Side).Select(p => p.Offset).DefaultIfEmpty(0).First();
+                    var got = walls.DoorPoints.Where(p => p.Cell.Equals(side.Cell) && p.Side == side.Side).Select(p => p.Offset).DefaultIfEmpty(0).First();
+                    if (System.Math.Abs(want - got) > DoorPointTolerance)
+                        differences.Add($"door point on {side.Cell} {GridSides.Name(side.Side)} at {got:0.00} m, card {want:0.00} m");
+                }
+            }
+            if (differences.Count > 0)
+                result.Issues.Add($"WALLS_DIFF {anchor} {name}: {string.Join("; ", differences)}");
         }
 
         // The min-corner cell of a footprint whose bounds centre sits at boundsCenter in the piece's frame.
