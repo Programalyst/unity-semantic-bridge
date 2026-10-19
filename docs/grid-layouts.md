@@ -164,8 +164,8 @@ optional last argument and default to `LevelCardSource.ForProject()`:
    3. Position: the card's bounds centre goes to the footprint's centre, as below. The
       pivot stands at the floor + the card's **`lift`**, plus the adapter's
       **`GroundLift`** for ground-role cards (NK: 0.25 m for the whole road kit, which
-      clears the sidewalks' kerb skirts and the terrain; NK's flat road tiles add a
-      −0.2 m card `lift`, so they sit at 0.05 m, a kerb step below the sidewalks).
+      clears the kerb skirts and the terrain; NK's card `lift`s then put road tiles at
+      0.05 m (−0.2) and sidewalk tiles at 0.1 m (−0.15)).
    4. Blockers only, before the piece hook: every solid collider (enabled, not a
       trigger) that reaches past the footprint inset by 0.1 m is fitted. Axis-aligned
       boxes are shrunk as below. Other shapes (Synty's mesh colliders, rotated boxes) are
