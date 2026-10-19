@@ -52,11 +52,15 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// </summary>
         float GroundLift { get; }
 
-        /// <summary>Layers whose colliders the game's line-of-sight test hits.</summary>
-        LayerMask SightLayers { get; }
+        /// <summary>
+        /// Layers whose colliders the game's line-of-sight test hits. Only for a game whose sight is physics
+        /// (Rules.GridSight false): the physics-tier sight checks (SIGHT_NO_OBSTACLE, WALL_SIGHT_GAP,
+        /// DOOR_COLLIDER) probe them. A grid-sight game need not implement it.
+        /// </summary>
+        LayerMask SightLayers => Physics.DefaultRaycastLayers;
 
-        /// <summary>True for a collider on a sight layer that the game's LOS test still ignores (units, low cover).</summary>
-        bool IgnoredBySight(Collider collider);
+        /// <summary>True for a collider on a sight layer that the game's LOS test still ignores (units, low cover). Physics sight only, as SightLayers.</summary>
+        bool IgnoredBySight(Collider collider) => false;
 
         /// <summary>Whether this collider makes the game treat the cells it overlaps as blocked.</summary>
         bool IsBlockingCollider(Collider collider);

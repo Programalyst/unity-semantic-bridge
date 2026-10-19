@@ -9,8 +9,10 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
 {
     /// <summary>
     /// Runs the layout validators against a scene: the grid tier (LayoutValidator) plus the
-    /// physics tier, which compares the layout with the game's own occupancy bake and with the
-    /// colliders its line-of-sight test hits (IGridRulesAdapter.SightLayers, IgnoredBySight). Pieces with a
+    /// physics tier, which compares the layout with the game's own occupancy bake and, for a game whose sight is
+    /// physics (GridRules.GridSight false), with the colliders its line-of-sight test hits
+    /// (IGridRulesAdapter.SightLayers, IgnoredBySight). With grid sight, colliders decide no sight, so those
+    /// checks (SIGHT_NO_OBSTACLE, WALL_SIGHT_GAP, DOOR_COLLIDER) do not run. Pieces with a
     /// level catalog card also get the scale and plausibility checks (heights against the game's
     /// GridRules.CoverHeights, ground runs, building fronts).
     /// </summary>
@@ -72,10 +74,11 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         /// Colliders the game's sight test would hit over each board cell (an overlap box per cell
         /// across the sight band, on the adapter's sight layers, triggers and IgnoredBySight
         /// colliders excluded), grouped by the prefab instance (or GameObject) that owns them.
-        /// Non-convex mesh colliders are found where their surface crosses a cell.
+        /// Non-convex mesh colliders are found where their surface crosses a cell. None with grid sight.
         /// </summary>
         public static List<SightCollider> GatherSight(Scene scene, GridBoard board, IGridRulesAdapter adapter)
         {
+            if (adapter.Rules.GridSight) return new List<SightCollider>();
             Physics.SyncTransforms();
             var cellSize = adapter.Rules.CellSize;
             var halfExtents = new Vector3(cellSize * 0.5f - 0.001f, (SightBandTop - SightBandBottom) * 0.5f, cellSize * 0.5f - 0.001f);
@@ -119,11 +122,12 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         /// ignore, or the wall gives cover that sight passes through (WALL_SIGHT_GAP: add a sightFill side, or
         /// check the model's collision mesh); a ray at 1.0 m through a door's point (or midpoint) must not
         /// (DOOR_COLLIDER: a closed door or boards in the doorway, which units would walk through). Warnings.
+        /// Physics sight only: with grid sight the outline decides sight, so there is nothing to compare.
         /// </summary>
         public static List<LayoutIssue> WallSight(IEnumerable<PlacedCard> cards, GridBoard board, IGridRulesAdapter adapter)
         {
             var issues = new List<LayoutIssue>();
-            if (!adapter.Rules.SideWalls) return issues;
+            if (!adapter.Rules.SideWalls || adapter.Rules.GridSight) return issues;
             Physics.SyncTransforms();
             var cellSize = adapter.Rules.CellSize;
             foreach (var building in cards)

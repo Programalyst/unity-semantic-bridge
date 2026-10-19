@@ -222,6 +222,26 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             CollectionAssert.Contains(edited.OccupancyDiff, "WALL_KIND 3,2 +x expected Door from house, got Wall from house");
         }
 
+        // Sight checks against colliders (SIGHT_NO_OBSTACLE, WALL_SIGHT_GAP, DOOR_COLLIDER) run only for a game whose
+        // sight is physics; with grid sight (plan Phase S, D13) colliders decide no sight. The adapter's default
+        // IgnoredBySight is used here.
+        [Test]
+        public void SightCollidersAreGatheredOnlyWithPhysicsSight()
+        {
+            var rock = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            rock.name = "rock";
+            rock.transform.position = new Vector3(5f, 1f, 5f);
+            var board = new GridBoard { Width = 6, Height = 6, FloorY = 0f };
+            var sight = LayoutSceneValidator.GatherSight(scene, board, adapter);
+            Assert.AreEqual(1, sight.Count, "physics sight: the rock is a sight collider");
+            Assert.IsFalse(sight[0].IsObstacle);
+            Assert.AreEqual(1, LayoutValidator.Consistency(new LayoutGrid(6, 6, adapter.Rules), new LayoutGrid(6, 6, adapter.Rules), sight)
+                .Count(i => i.Code == "SIGHT_NO_OBSTACLE"));
+            adapter.Rules.GridSight = true;
+            Assert.IsEmpty(LayoutSceneValidator.GatherSight(scene, board, adapter), "grid sight: no sight colliders");
+            Assert.IsEmpty(LayoutSceneValidator.WallSight(Array.Empty<PlacedCard>(), board, adapter));
+        }
+
         private sealed class TestAdapter : IGridRulesAdapter
         {
             public const float Lift = 0.25f;
@@ -252,7 +272,6 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
 
             public Vector3 CellToWorld(Cell cell, GridBoard board) => new Vector3(cell.X * 2f + 1f, board.FloorY, cell.Y * 2f + 1f);
             public Cell WorldToCell(Vector3 position) => new Cell(Mathf.FloorToInt(position.x / 2f), Mathf.FloorToInt(position.z / 2f));
-            public bool IgnoredBySight(Collider collider) => false;
             public bool IsBlockingCollider(Collider collider) =>
                 collider != null && collider.enabled && collider.gameObject.activeInHierarchy && Blocking.Contains(collider);
 

@@ -49,7 +49,7 @@ Background and later phases are in the
 | Reading scenes | `LayoutBaker`: pieces, decor, off-grid reports, occupancy diff | `Classify` (blocker, decor, ignore), `BakeOccupancy` |
 | Level data | Writes/reads deploy cells and enemy spawns through the adapter | `ReadDeployCells`, `WriteDeployCells`, `ReadEnemySpawns`, `WriteEnemySpawns` (resolves GUIDs to the game's asset types) |
 | Validators | `LayoutValidator` (pure: structural, encounter, reachability, consistency), `LayoutReport`; `LayoutSceneValidator` (Editor: physics tier) | Nothing new: rules, occupancy bake and sight rules above |
-| Sight | Consistency check: sight colliders without obstacles | `SightLayers`, `IgnoredBySight` |
+| Sight | `LayoutGrid.CanSee` (grid sight); for a physics-sight game, the consistency and wall checks against sight colliders | `GridRules.GridSight`; physics sight only: `SightLayers`, `IgnoredBySight` (default implementations, so a grid-sight game such as NK skips them) |
 
 `Runtime/Layout/` uses no UnityEngine types except `IGridRulesAdapter.cs`. The
 runtime assembly is auto-referenced, so a game without asmdefs implements the
@@ -80,7 +80,7 @@ flowchart TB
         level["Level Info<br/>WriteDeployCells"]
         occ["Occupancy bake<br/>Classify, OccupancyBaker"]
         runtime["Runtime triggers<br/>GridTile, Play Mode"]
-        sight["Sight rule<br/>SightLayers, IgnoredBySight"]
+        sight["Sight rule<br/>GridSight, or SightLayers + IgnoredBySight"]
     end
     json --> parse
     parse <--> board
@@ -249,7 +249,8 @@ Wall validators (Phase W4):
 - **Structural:** `WALL_CROSSES_PIECE` (a solid piece straddling a wall) and `DOOR_POINT_RANGE`.
 - **Plausibility:** for walled buildings, door checks replace `BUILDING_FRONT`: `DOOR_OFF_BOARD`,
   `DOOR_BLOCKED` and `BUILDING_SEALED`.
-- **Physics tier** (`LayoutSceneValidator.WallSight`):
+- **Physics tier** (`LayoutSceneValidator.WallSight`), only for a game whose sight is physics
+  (`GridRules.GridSight` false; with grid sight the outline itself decides sight):
   - `WALL_SIGHT_GAP`: rays across each Full wall at 1.0 and 1.7 m must hit a sight collider.
   - `DOOR_COLLIDER`: a ray through a doorway at 1.0 m must not.
 
@@ -258,9 +259,9 @@ Wall validators (Phase W4):
 | Structural | `OUT_OF_BOUNDS`, `OVERLAP` (one blocker per cell), `UNKNOWN_PIECE`, `DECOR_OUT_OF_BOUNDS` (warning); for scenes also the bake's `OFFGRID_*`, `OFF_BOARD`, `NOT_PREFAB` and the apply's `FIT_*`, `NO_BLOCKING_COLLIDER` | Document + footprints |
 | Encounter | `DEPLOY_`/`ENEMY_OUT_OF_BOUNDS`, `DEPLOY_`/`ENEMY_BLOCKED`, `CELL_SHARED`, `FACING_RANGE` (outside 0–359), `FACING_OFF_AXIS` (warning: not one of the eight grid directions) | Occupancy grid, deploy, spawns |
 | Reachability | `NO_DEPLOY`, `ENEMY_UNREACHABLE`, `POCKET` (warning, one per unreached region of open cells, at its lowest cell) | Breadth-first search from the open deploy cells with `LayoutGrid.CanStep` (the game's neighbour and corner rule) |
-| Consistency | `MISSING_BLOCK` (a layout blocker without a game collider), `EXTRA_BLOCK`, `COVER`, `SIGHT_NO_OBSTACLE` (warning) | Layout grid, the game's occupancy bake, sight colliders |
+| Consistency | `MISSING_BLOCK` (a layout blocker without a game collider), `EXTRA_BLOCK`, `COVER`, `SIGHT_NO_OBSTACLE` (warning; physics sight only) | Layout grid, the game's occupancy bake, sight colliders |
 | Scale | `OFFGRID_SCALE` (a card piece in a scene at another scale than its card's `placementScale`, on its cell, with its height at both scales), `HEIGHT_BAND` (a blocker's card height outside the game's band for the cover it gives, with a suggested Y scale; a **note** when its role and scale are both owner-approved overrides) | Placed card pieces (`PlacedCard`), the adapter's `GridRules.CoverHeights` |
-| Walls (Phase W) | `WALL_CROSSES_PIECE`, `DOOR_POINT_RANGE` (errors); `DOOR_OFF_BOARD`, `DOOR_BLOCKED`, `BUILDING_SEALED` (warnings, replacing `BUILDING_FRONT` for walled buildings); physics tier `WALL_SIGHT_GAP`, `DOOR_COLLIDER` (warnings); apply/bake `OUTLINE_SIZE`, `WALLS_MISSING`, `WALLS_DIFF`, and `WALL_MISSING`/`WALL_EXTRA`/`WALL_KIND`/`WALL_COVER` in the occupancy diff | Walled cards, the layout grid's sides, sight colliders |
+| Walls (Phase W) | `WALL_CROSSES_PIECE`, `DOOR_POINT_RANGE` (errors); `DOOR_OFF_BOARD`, `DOOR_BLOCKED`, `BUILDING_SEALED` (warnings, replacing `BUILDING_FRONT` for walled buildings); physics tier `WALL_SIGHT_GAP`, `DOOR_COLLIDER` (warnings; physics sight only); apply/bake `OUTLINE_SIZE`, `WALLS_MISSING`, `WALLS_DIFF`, and `WALL_MISSING`/`WALL_EXTRA`/`WALL_KIND`/`WALL_COVER` in the occupancy diff | Walled cards, the layout grid's sides, sight colliders |
 | Plausibility (warnings) | `ROLE_LAYER` (a ground/decor card in `pieces`, or a blocking role in `decor`), `GROUND_RUN` (a 4-connected run of ground cells reaching no board edge), `GROUND_OVERLAP` (two ground pieces on one cell z-fight), `BUILDING_FRONT` (front faces the board edge or only blocked cells), `BUILDING_NO_FRONT` (note: no front known) | Placed card pieces, occupancy grid |
 
 Pieces must sit on whole cells (plan decision D10). Relaxing that for decor or
@@ -308,11 +309,13 @@ overhanging blockers comes later.
   structural tier (card pieces' `OFFGRID_SCALE` replaced by the scale check's); encounter and
   reachability run on the game's own occupancy bake, because pieces the layout cannot express
   still block at runtime; scale and plausibility run on the baked card pieces.
-- `GatherSight`: for each board cell, an overlap box across the sight band (0.5–2.5 m
-  above the floor) on `SightLayers`, triggers and `IgnoredBySight` colliders excluded.
+- `GatherSight` (physics sight only; empty when `GridRules.GridSight` is set): for each board cell, an
+  overlap box across the sight band (0.5–2.5 m above the floor) on `SightLayers`, triggers and
+  `IgnoredBySight` colliders excluded.
   Colliders are grouped by their outermost prefab instance (or GameObject); a group
   is an obstacle when a collider is a blocking collider or the instance classifies as
-  a blocker. Others become `SIGHT_NO_OBSTACLE`, e.g. NK GridBattle's sandy rock sets.
+  a blocker. Others become `SIGHT_NO_OBSTACLE` (NK GridBattle's sandy rock sets were, before NK
+  switched to grid sight).
   Non-convex mesh colliders are found only where their surface crosses a cell.
 
 NK's checks against real content are in **Tools → Grid Combat → Validate Layout

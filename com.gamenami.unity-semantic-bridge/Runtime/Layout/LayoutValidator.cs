@@ -273,7 +273,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>
         /// Physics tier, after apply: the game's occupancy must equal the layout's (every
         /// blocking cell has a collider: MISSING_BLOCK, EXTRA_BLOCK, COVER), and every sight
-        /// collider on the board must belong to a blocker or is reported as SIGHT_NO_OBSTACLE.
+        /// collider on the board must belong to a blocker or is reported as SIGHT_NO_OBSTACLE (physics sight only:
+        /// with GridRules.GridSight there are no sight colliders to pass).
         /// </summary>
         public static List<LayoutIssue> Consistency(LayoutGrid layout, LayoutGrid physics, IEnumerable<SightCollider> sight)
         {

@@ -505,7 +505,7 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
 - **Via points must not count as tiles.** The Action Points harness guards it.
 - **Placement in the plausibility fixture.** Buildings already placed as solid blockers (the 4d fixture) become enterable when their cards get walls.
 
-**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner and approved the same day; S1–S3 done. Decision D13 (§6).
+**Phase S: Grid sight (one sight rule for fog, spotting and fire).** Planned 2026-10-19 with the owner and approved the same day; done the same day (S1–S4). Decision D13 (§6).
 
 *Why.* After Phase W the owner found that windows don't work.
 - **Fog reveal is tile-to-tile at a fixed height.** `GridManager.GetVisibleNodes` reveals a tile when a physics ray between two tiles' `VisionCheckPosition`s is clear. That point is the Grid Manager's height, 2.0 m in GridBattle and CatalogTest, an arbitrary number.
@@ -591,7 +591,12 @@ Shop_Medium_02, at (1.1, 1, 1.1): `"footprint": [16, 8], "footprintOffset": [-0.
       - Reno walked to (12,12), spotted the raider and combat started. Reno's minigun preview at the raider was eligible (60%, no cover) and stayed so over 120 frames (no flips, the jitter's cause). The raider's line of fire back at Reno was clear too.
       - The probe ran before the physics fallback was removed; in a battle it was never reached, so the result stands.
       - Not checked by the probe: the enemy's own turn (whether it now shoots in clear sight); that is for the owner's playtest, as is a GridBattle spot-check.
-- [ ] **S4 Validators and docs (USB + NK):** `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` downgraded or removed, the GridBattle report fixture regenerated, and `level-rules.md` (Line of sight, Cover), `combat-flows.md` (aiming, enemy turns) and `grid-layouts.md` updated.
+- [x] **S4 Validators and docs (USB + NK):** `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` downgraded or removed, the GridBattle report fixture regenerated, and `level-rules.md` (Line of sight, Cover), `combat-flows.md` (aiming, enemy turns) and `grid-layouts.md` updated.
+  - S4 results (2026-10-19):
+    - **Gated, not removed.** USB's physics sight checks run only for a game whose sight is physics (`GridRules.GridSight` false): `LayoutSceneValidator.GatherSight` returns nothing and `WallSight` skips with grid sight, so `SIGHT_NO_OBSTACLE`, `WALL_SIGHT_GAP` and `DOOR_COLLIDER` no longer appear for NK. A game still using physics sight keeps them.
+    - **Adapter.** `IGridRulesAdapter.SightLayers` and `IgnoredBySight` have default implementations; NK's `NkGridRules` drops both. The card field `sightFill` only matters for physics sight.
+    - **Tests.** USB `LayoutApplierCardTests.SightCollidersAreGatheredOnlyWithPhysicsSight`. NK: the GridBattle report fixture regenerated (only its two rock-set `SIGHT_NO_OBSTACLE` warnings gone); `sight-blocker.layout.json` now reports nothing; Validate Layout Reports 75 and Round Trip 3,107 (each lost its sight-collider checks); Baker 21.
+    - **Remaining harnesses.** Validate Attack Alerts registers a sight grid: its hearing wall is a Full-cover cell, so "a wall does not block a captured-position alert" and "threat memory does not grant visibility of a shooter behind a wall" are real again, with a clear-sight control (24 checks). Validate Fog of War, run in CatalogTest Play Mode, passes (400 tiles, 90 revealed; texture, fog objects and shader agree). It checks consistency, not the reveal rule; the reveal rule is Validate Grid Sight's and the S2 Play Mode probe's.
 
 *Risks.*
 - **Gameplay change everywhere.** Fights in GridBattle change where sight relied on heights: thin Full walls block their whole cells, and heads no longer show over low cover on their own. Spot-check GridBattle in Play Mode after S3.
