@@ -172,11 +172,56 @@ namespace Gamenami.UnitySemanticBridge.Layout
         }
 
         /// <summary>
-        /// Grid sight (plan Phase S, D13): the supercover line between the two cell centres meets no Full-cover
-        /// cell (start and end excepted) and crosses no Full-cover wall. Where the line passes exactly through a
-        /// cell corner it is blocked if either way round the corner is. Symmetric; range is the caller's.
+        /// Grid sight (plan Phase S, D13): HasClearLine, or with Rules.StepOut (S5) a clear line between any viewpoint
+        /// of each cell (Viewpoints). Symmetric; range is the caller's. Units are not part of the layout, so only
+        /// blockers and walls refuse a step-out here.
         /// </summary>
         public bool CanSee(Cell from, Cell to)
+        {
+            if (HasClearLine(from, to)) return true;
+            if (!Rules.StepOut) return false;
+            var toViews = Viewpoints(to);
+            foreach (var a in Viewpoints(from))
+                foreach (var b in toViews)
+                    if ((a != from || b != to) && HasClearLine(a, b)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// A cell and its step-out cells (plan S5, mirrors NK's GridMap.GetViewpoints). For each side with Full sight
+        /// cover (a Full blocker beside it, or a Full wall on that side), each sideways cell is a step-out when it is on
+        /// the board, not blocked, not walled off from the cell (wall or window), and has no Full cover on that same
+        /// side itself, so only the end of a cover gives one. A blocked cell has none. Without Rules.StepOut, the cell alone.
+        /// </summary>
+        public List<Cell> Viewpoints(Cell cell)
+        {
+            var result = new List<Cell> { cell };
+            if (!Rules.StepOut || !Contains(cell) || IsBlocked(cell)) return result;
+            foreach (var side in new[] { GridSide.PlusY, GridSide.MinusY, GridSide.MinusX, GridSide.PlusX })
+            {
+                if (!HasFullSightCover(cell, side)) continue;
+                var sideways = side == GridSide.PlusY || side == GridSide.MinusY
+                    ? new[] { GridSide.MinusX, GridSide.PlusX } : new[] { GridSide.MinusY, GridSide.PlusY };
+                foreach (var across in sideways)
+                {
+                    var step = cell + GridSides.Step(across);
+                    if (!Contains(step) || IsBlocked(step) || IsWalled(cell, across) || HasFullSightCover(step, side) ||
+                        result.Contains(step)) continue;
+                    result.Add(step);
+                }
+            }
+            return result;
+        }
+
+        private bool HasFullSightCover(Cell cell, GridSide side) =>
+            IsSideSightBlocked(cell, side) || BlocksSight(cell + GridSides.Step(side));
+
+        /// <summary>
+        /// The grid sight line (plan Phase S, D13): the supercover line between the two cell centres meets no Full-cover
+        /// cell (start and end excepted) and crosses no Full-cover wall. Where the line passes exactly through a
+        /// cell corner it is blocked if either way round the corner is. Symmetric; no step-out (CanSee adds it).
+        /// </summary>
+        public bool HasClearLine(Cell from, Cell to)
         {
             int dx = to.X - from.X, dy = to.Y - from.Y;
             int nx = Math.Abs(dx), ny = Math.Abs(dy);

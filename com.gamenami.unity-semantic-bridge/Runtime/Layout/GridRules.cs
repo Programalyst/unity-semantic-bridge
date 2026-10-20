@@ -28,6 +28,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// supercover line between cell centres, blocked by Full-cover cells and walls) rather than physics rays.
         /// </summary>
         public bool GridSight;
+        /// <summary>
+        /// Step-out (plan S5, XCOM): with GridSight, a cell with Full cover on a side may also look from the sideways
+        /// cell where that cover ends (LayoutGrid.Viewpoints), and CanSee is true when any viewpoint pair has a clear line.
+        /// </summary>
+        public bool StepOut;
         /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
         public CoverHeightBands CoverHeights = new CoverHeightBands();
     }
