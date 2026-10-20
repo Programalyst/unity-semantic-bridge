@@ -88,7 +88,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 throw new BridgeToolException("Exit Play Mode before validating a scene; the check reads the authored scene.");
             var scene = ResolveScene(mcpMessage);
             var report = LayoutSceneValidator.ValidateScene(scene);
-            return $"Scene tier for {SceneName(scene)} (the game's occupancy bake of the scene):\n{FormatReport(report, mcpMessage)}";
+            return $"Scene tier for {SceneName(scene)} (the game's occupancy bake of the scene):\n{FormatWithMetrics(report, mcpMessage)}";
         }
 
         /// <summary>
@@ -120,7 +120,28 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         {
             var report = LayoutPieceResolver.ValidateDraft(document);
             return "Grid tier (the draft alone; collider fit and the game's occupancy need apply_layout or tier='scene'):\n"
-                   + FormatReport(report, mcpMessage);
+                   + FormatWithMetrics(report, mcpMessage);
+        }
+
+        // The report, and with "metrics" the level metrics on the same grid (plan Phase 6); "metrics_only" drops the
+        // report's issue lines but keeps its header, so errors still show.
+        public static string FormatWithMetrics(LayoutReport report, JObject mcpMessage)
+        {
+            var metricsOnly = mcpMessage?["metrics_only"]?.Value<bool?>() ?? false;
+            var metrics = metricsOnly || (mcpMessage?["metrics"]?.Value<bool?>() ?? false);
+            var text = metricsOnly ? report.Format(1, false).Split('\n')[0] : FormatReport(report, mcpMessage);
+            if (!metrics) return text;
+            var measured = LayoutMetrics.Measure(report.Grid, report.Deploy, report.Enemies, null, Region(mcpMessage));
+            return text + "\n" + measured.Format(MaxLines(mcpMessage));
+        }
+
+        private static (Cell, Cell)? Region(JObject mcpMessage)
+        {
+            var region = mcpMessage?["region"];
+            if (region == null || region.Type == JTokenType.Null) return null;
+            if (!(region is JArray a) || a.Count != 4)
+                throw new BridgeToolException("region must be [x0, y0, x1, y1] (cells, inclusive).");
+            return (new Cell(a[0].Value<int>(), a[1].Value<int>()), new Cell(a[2].Value<int>(), a[3].Value<int>()));
         }
 
         private static string FormatReport(LayoutReport report, JObject mcpMessage) =>

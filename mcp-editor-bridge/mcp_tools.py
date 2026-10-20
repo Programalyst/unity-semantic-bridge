@@ -314,6 +314,7 @@ def register_unity_tools(mcp):
         validate: Annotated[bool, "Run the grid tier (validate_layout tier='grid') on the written layout and append its report."] = True,
         max_lines: Annotated[int, "Report issue lines to show (0 = all)."] = 40,
         ascii: Annotated[bool, "Append the report's ASCII map of the layout."] = False,
+        metrics: Annotated[bool, "With validate: also append the level metrics (see validate_layout)."] = False,
     ) -> str:
         """Schema-check a layout and write it to a file in canonical form (one piece per line), then
         import it. A schema error writes nothing. Replaces an existing file. Touches no scene;
@@ -321,6 +322,7 @@ def register_unity_tools(mcp):
         """
         return await call_unity("set_layout", {
             "path": path, "layout": layout, "validate": validate, "max_lines": max_lines, "ascii": ascii,
+            "metrics": metrics,
         }, timeout=60.0, retry_connect=False)
 
     @mcp.tool()
@@ -330,15 +332,21 @@ def register_unity_tools(mcp):
         tier: Annotated[Literal["grid", "scene"], "'grid': the draft alone, without touching any open scene (pieces without a catalog card are measured on a hidden preview instance). 'scene': an open scene, hand-made or applied, against the game's own occupancy bake (Edit Mode)."] = "grid",
         scene: Annotated[str | None, "tier 'scene' only: project path of an open scene. Omit for the active scene."] = None,
         ascii: Annotated[bool, "Append an ASCII map (# full, h half, o blocked, . open, A deploy, E enemy, - unreachable)."] = False,
-        max_lines: Annotated[int, "Issue lines to show (0 = all)."] = 40,
+        max_lines: Annotated[int, "Issue lines to show (0 = all); also caps the metrics lines."] = 40,
+        metrics: Annotated[bool, "Append level metrics (LAYOUT_METRICS): per enemy DISTANCE (turns), COVER_NEAR, ROUTES, OPEN_GROUND; COVER_NEAR_DEPLOY; SIGHTLINES over the engagement region. Judgement, not errors."] = False,
+        metrics_only: Annotated[bool, "Metrics plus only the report's header line (implies metrics)."] = False,
+        region: Annotated[list[int] | None, Field(min_length=4, max_length=4), "Metrics region [x0, y0, x1, y1] in cells, inclusive. Omit for the deploy cells and spawns plus a margin."] = None,
     ) -> str:
         """Validate a level layout. Report: LAYOUT_REPORT header, then 'CODE x,y message' lines,
         errors first, then warnings and notes. The grid tier covers structure (bounds, overlap,
         walls), encounter (deploy/enemy cells, facing), reachability, scale against the game's
         cover heights and plausibility (ground runs, building fronts and doors). Collider fit and
-        the game's occupancy need apply_layout or tier='scene'.
+        the game's occupancy need apply_layout or tier='scene'. With metrics, a LAYOUT_METRICS
+        section follows on the same grid (values outside the game's targets listed first).
         """
-        params: dict = {"tier": tier, "ascii": ascii, "max_lines": max_lines}
+        params: dict = {"tier": tier, "ascii": ascii, "max_lines": max_lines, "metrics": metrics, "metrics_only": metrics_only}
+        if region is not None:
+            params["region"] = region
         if path is not None:
             params["path"] = path
         if layout is not None:

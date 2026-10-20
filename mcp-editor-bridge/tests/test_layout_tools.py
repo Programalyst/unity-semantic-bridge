@@ -42,6 +42,7 @@ class LayoutToolTests(unittest.IsolatedAsyncioTestCase):
             await tool.fn("Assets/a.layout.json", layout)
             call.assert_awaited_once_with("set_layout", {
                 "path": "Assets/a.layout.json", "layout": layout, "validate": True, "max_lines": 40, "ascii": False,
+                "metrics": False,
             }, timeout=60.0, retry_connect=False)
 
     async def test_validate_layout_defaults_to_the_grid_tier(self):
@@ -50,11 +51,21 @@ class LayoutToolTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(mcp_tools, "call_unity", new_callable=AsyncMock) as call:
             await tool.fn(path="Assets/a.layout.json")
             call.assert_awaited_once_with("validate_layout", {
-                "tier": "grid", "ascii": False, "max_lines": 40, "path": "Assets/a.layout.json"}, timeout=60.0)
+                "tier": "grid", "ascii": False, "max_lines": 40, "metrics": False, "metrics_only": False,
+                "path": "Assets/a.layout.json"}, timeout=60.0)
         with patch.object(mcp_tools, "call_unity", new_callable=AsyncMock) as call:
             await tool.fn(tier="scene", scene="Assets/Scenes/A.unity", ascii=True, max_lines=0)
             call.assert_awaited_once_with("validate_layout", {
-                "tier": "scene", "ascii": True, "max_lines": 0, "scene": "Assets/Scenes/A.unity"}, timeout=60.0)
+                "tier": "scene", "ascii": True, "max_lines": 0, "metrics": False, "metrics_only": False,
+                "scene": "Assets/Scenes/A.unity"}, timeout=60.0)
+
+    async def test_validate_layout_forwards_metrics_and_region(self):
+        tool = await self.tool("validate_layout")
+        with patch.object(mcp_tools, "call_unity", new_callable=AsyncMock) as call:
+            await tool.fn(path="Assets/a.layout.json", metrics=True, region=[0, 0, 9, 9])
+            call.assert_awaited_once_with("validate_layout", {
+                "tier": "grid", "ascii": False, "max_lines": 40, "metrics": True, "metrics_only": False,
+                "region": [0, 0, 9, 9], "path": "Assets/a.layout.json"}, timeout=60.0)
 
     async def test_apply_layout_forwards_and_never_retries(self):
         tool = await self.tool("apply_layout")

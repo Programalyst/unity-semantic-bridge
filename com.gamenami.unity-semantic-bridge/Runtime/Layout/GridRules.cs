@@ -35,6 +35,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public bool StepOut;
         /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
         public CoverHeightBands CoverHeights = new CoverHeightBands();
+        /// <summary>Numbers and targets for the level metrics (plan Phase 6, LayoutMetrics).</summary>
+        public MetricSettings Metrics = new MetricSettings();
     }
 
     /// <summary>

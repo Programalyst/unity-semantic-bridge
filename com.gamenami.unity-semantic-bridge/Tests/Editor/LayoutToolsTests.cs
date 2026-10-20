@@ -91,6 +91,24 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         }
 
         [Test]
+        public void MetricsFollowTheReportOnlyWhenAsked()
+        {
+            var document = LayoutJson.Parse("{\"v\":1,\"size\":[6,6],\"pieces\":[],\"deploy\":[[0,0]]," +
+                "\"enemies\":[[\"r\",\"0123456789abcdef0123456789abcdef\",\"0123456789abcdef0123456789abcdee\",5,5,180]]}");
+            var report = LayoutValidator.Validate(document, p => null, adapter.Rules);
+            var plain = LayoutTools.FormatWithMetrics(report, new JObject());
+            StringAssert.DoesNotContain("LAYOUT_METRICS", plain);
+
+            var both = LayoutTools.FormatWithMetrics(report, new JObject { ["metrics"] = true, ["region"] = new JArray(0, 0, 5, 5) });
+            StringAssert.StartsWith(plain + "\nLAYOUT_METRICS region 0,0-5,5 (36 cells, 36 open)", both);
+            StringAssert.Contains("DISTANCE 5,5 r: 5 steps from deploy #1", both);
+
+            var only = LayoutTools.FormatWithMetrics(report, new JObject { ["metrics_only"] = true });
+            StringAssert.StartsWith("LAYOUT_REPORT 0 errors, 0 warnings\nLAYOUT_METRICS", only);
+            Assert.Throws<BridgeToolException>(() => LayoutTools.FormatWithMetrics(report, new JObject { ["metrics"] = true, ["region"] = new JArray(1, 2) }));
+        }
+
+        [Test]
         public void GridTierReportsMissingPrefabs()
         {
             var document = Doc("[\"ghost\",\"0123456789abcdef0123456789abcdef\",0,0,0]");

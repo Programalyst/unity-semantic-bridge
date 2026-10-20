@@ -354,6 +354,35 @@ one facing only blockers, one without a front, a mid-board road run with an over
 a card piece without an approved scale is a `HEIGHT_BAND` error, a rescaled card piece gives the
 cell-addressed `OFFGRID_SCALE`, and a GridBattle report equals a recorded fixture.
 
+## Metrics
+
+Plan Phase 6. `LayoutMetrics.Measure` (`Runtime/Layout/LayoutMetrics.cs`, pure) judges a level rather than checking it, so
+metrics never make a report fail. It runs on a `LayoutGrid` with the game's rules in it: the grid tier's draft, or the
+game's occupancy bake of a scene (scene tier), so hand-made scenes like NK's GridBattle measure too. Paths use `CanStep`
+(a diagonal is one step), cover `CoverOn`, sight `CanSee` (with step-out when `GridRules.StepOut` is set).
+
+| Code | Per | Value | What it says |
+|---|---|---|---|
+| `DISTANCE` | enemy | turns | Path steps from the nearest deploy cell, in turns (steps / move per turn), and the straight distance. `unreachable` when no path. |
+| `COVER_NEAR` | enemy | share | Open cells within `NearSteps` of the enemy with Half or Full cover facing the squad (the game's side rule: dominant axis towards the deploy cells' centroid, ties to x). |
+| `COVER_NEAR_DEPLOY` | squad | share | The same around the deploy cells, facing the enemies' centroid. |
+| `ROUTES` | enemy | count | Greedy separated routes: the shortest path, then each next shortest that shares no cell with the earlier ones and doesn't touch them (8-neighbours), within `RouteStretch` (1.5) times the first, at most `MaxRoutes`. Cells within 2 of the enemy or a deploy cell stay usable, since every route starts and ends there, so a door 2 cells from an enemy can be shared. |
+| `OPEN_GROUND` | enemy | steps | A cell is exposed when that enemy sees it within range and it has no cover facing the enemy. The smallest possible longest run of exposed steps over all routes, and the exposed steps on one shortest route; more than one move is called out. |
+| `SIGHTLINES` | region | cells | Pairs of open, reachable cells in the region within twice the vision range: the share that see each other per 3-tile band, and the median number of cells a cell sees within the vision range. |
+
+- **Region.** Board-wide numbers use the engagement region: the deploy cells and spawns plus `RegionMargin` (4), clipped
+  to the board, or a `region` the caller gives. Paths use the whole board.
+- **Numbers and targets.** `GridRules.Metrics` (`MetricSettings`): vision range, move per turn, near steps, margin, route
+  stretch, and `Targets` per code (`MetricTarget` min/max). Values outside a target are listed first under *Outside targets*,
+  as `[target ...]`; USB sets no targets (a game's taste; NK's come from calibration, plan 6c).
+- **Report.** `LAYOUT_METRICS region x0,y0-x1,y1 (cells, open); vision, move, near`, then `CODE x,y message` lines like
+  `LayoutReport`'s, capped by `max_lines`.
+- **Tools.** `validate_layout(metrics=true)` appends the metrics to either tier's report on the same grid;
+  `metrics_only=true` keeps only the report's header line; `region=[x0, y0, x1, y1]`. `set_layout(metrics=true)` adds them to its
+  grid report. A 40 × 40 map with six enemies measures in well under a second.
+- **Not modelled.** Units (they don't block paths or sight in the layout), several enemies covering one cell (`OPEN_GROUND` is
+  per enemy), per-profile vision ranges (one range for both sides), height and the narrowest gap of a route (`CHOKE`, planned).
+
 ## Current limits
 
 - Pieces without a reviewed card are still measured on the instance at their prefab

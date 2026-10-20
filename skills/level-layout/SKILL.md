@@ -97,7 +97,13 @@ error. Every warning left must be one you intend and can explain. The ones that 
 | `HEIGHT_BAND` (error) | a piece's height is outside its cover band | use another piece, or raise it with the owner (card override) |
 | `FACING_OFF_AXIS` | facing between grid directions | use a multiple of 45 |
 
-Notes are for the record (owner-approved content outside a rule); leave them. Revise with
+Notes are for the record (owner-approved content outside a rule); leave them.
+
+Then judge the fight with `validate_layout(path=..., metrics_only=true)`: per enemy the distance in turns
+(`DISTANCE`), cover near it facing the squad (`COVER_NEAR`), separate ways to reach it (`ROUTES`) and the longest
+dash through open ground it can see (`OPEN_GROUND`); cover near the deploy cells; how far sight carries across the
+map (`SIGHTLINES`). If the game sets targets, lines outside them come first: revise for those. Without targets, say
+in your report what the numbers mean for the fight (e.g. "one route to the shop raider, through its back door"). Revise with
 `set_layout` again, or `validate_layout(path=...)` after editing the file yourself.
 
 ## 5. Build the level scene and apply
