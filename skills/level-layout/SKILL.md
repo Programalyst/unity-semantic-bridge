@@ -167,4 +167,9 @@ uncertain. Keep it short; the render and the map carry most of it.
   one lane running along its own +Z, so a two-lane road is two rows of tiles turned 180° apart, and
   sidewalk tiles face the road with their +Z. A single row of road tiles is half a road; copying a
   recipe is the safest way to get junctions and parking right.
+- **Big layouts: build them in a script.** Hand-writing hundreds of tiles drifts. `scripts/layout_stamp.py`
+  (beside this file) stamps recipe blocks or code-built tiles into a layout, turning a block by quarter
+  turns with each tile's own rotation and anchor kept right, and refuses two ground tiles on one cell.
+  Write the file into the project (`Assets/...layout.json`), then `refresh_assets` and `validate_layout(path=...)`
+  instead of passing a large layout inline.
 - A layout whose size differs from the level's board is refused by apply.
