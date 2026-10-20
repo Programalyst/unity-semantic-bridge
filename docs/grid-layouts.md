@@ -63,7 +63,7 @@ game's occupancy need the real placement, so they are apply and scene tier findi
 
 **The loop** for an agent: `create_layout_scene` and `open_scene` for a new level, `query_level_catalog` for pieces, `set_layout` (grid report back), revise,
 `apply_layout` into the level's scene (full report), `render_layout_topdown` to look, and
-`bake_layout` to read back the owner's scene edits (the scene wins, D9).
+`bake_layout` to read back the owner's scene edits (the scene wins, D9). The step-by-step playbook for agents is [skills/level-layout/SKILL.md](../skills/level-layout/SKILL.md).
 
 ## Who owns what
 
