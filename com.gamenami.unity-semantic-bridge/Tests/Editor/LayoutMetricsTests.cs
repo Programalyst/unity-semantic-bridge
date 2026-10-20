@@ -129,6 +129,39 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         }
 
         [Test]
+        public void CoverSpacingCountsCoverWhetherOrNotTheEnemySees()
+        {
+            // Vision 4: OPEN_GROUND sees only the last cells, COVER_SPACING the whole way.
+            var bare = Board(13, 3, Rules(new MetricSettings { VisionRange = 4 }));
+            var report = Measure(bare, new Cell(0, 1), 12, 1);
+            Assert.AreEqual(12, One(report, "COVER_SPACING").Value, One(report, "COVER_SPACING").Message);
+            Assert.Less(One(report, "OPEN_GROUND").Value, 12);
+
+            var covered = Board(13, 3, Rules(new MetricSettings { VisionRange = 4 }));
+            covered.Block(new Cell(6, 0), "crate", CoverLevel.Half);
+            covered.Block(new Cell(6, 2), "crate", CoverLevel.Half);
+            var line = One(Measure(covered, new Cell(0, 1), 12, 1), "COVER_SPACING");
+            Assert.Less(line.Value, 12, line.Message);
+            StringAssert.Contains("moves)", line.Message);
+        }
+
+        [Test]
+        public void DeadSpaceIsWhatNoReasonableRouteCrosses()
+        {
+            // A lane along the bottom of an open field: the far side of the field is off every route.
+            var field = Board(12, 12);
+            var whole = (new Cell(0, 0), new Cell(11, 11));
+            var open = LayoutMetrics.Measure(field, new List<Cell> { new Cell(0, 0) }, Enemy(11, 0), null, whole);
+            Assert.Greater(One(open, "DEAD_SPACE").Value, 0.2, One(open, "DEAD_SPACE").Message);
+
+            var corridor = Board(11, 3);
+            Wall(corridor, 1, 0, 9, 0);
+            Wall(corridor, 1, 2, 9, 2);
+            var line = One(Measure(corridor, new Cell(0, 1), 10, 1), "DEAD_SPACE");
+            Assert.Less(line.Value, 0.2, line.Message);
+        }
+
+        [Test]
         public void SightlinesAreAllVisibleOnAnOpenFieldAndCutByAWall()
         {
             var field = One(Measure(Board(9, 9), new Cell(0, 0), 8, 8), "SIGHTLINES");
@@ -179,7 +212,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             var b = Measure(grid, new Cell(1, 1), 12, 13).Format(0);
             Assert.AreEqual(a, b);
             StringAssert.DoesNotContain("Outside targets", a);
-            StringAssert.Contains("Values (6):", a);
+            StringAssert.Contains("Values (8):", a);
         }
 
         [Test]

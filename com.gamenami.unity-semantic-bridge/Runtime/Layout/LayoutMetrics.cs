@@ -43,7 +43,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public double RouteStretch = 1.5;
         /// <summary>Most routes counted per enemy.</summary>
         public int MaxRoutes = 5;
-        /// <summary>Target bands by metric code (DISTANCE, COVER_NEAR, COVER_NEAR_DEPLOY, ROUTES, OPEN_GROUND, SIGHTLINES).</summary>
+        /// <summary>Target bands by metric code (DISTANCE, COVER_NEAR, COVER_NEAR_DEPLOY, ROUTES, OPEN_GROUND, COVER_SPACING, DEAD_SPACE, SIGHTLINES).</summary>
         public Dictionary<string, MetricTarget> Targets = new Dictionary<string, MetricTarget>();
     }
 
@@ -109,7 +109,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
     /// (a draft's or the game's occupancy bake of a scene) with the game's rules already in it: CanStep for paths (a
     /// diagonal is one step), CoverOn for cover, CanSee for sight (with step-out when the rules have it).
     /// Per enemy: DISTANCE, COVER_NEAR, ROUTES, OPEN_GROUND; for the squad COVER_NEAR_DEPLOY; over the engagement
-    /// region SIGHTLINES.
+    /// region DEAD_SPACE and SIGHTLINES; per enemy also COVER_SPACING.
     /// </summary>
     public static class LayoutMetrics
     {
@@ -161,7 +161,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 report.Lines.Add(Routes(grid, settings, starts, enemy));
             foreach (var enemy in foes.Where(e => fromDeploy.ContainsKey(e.Cell)))
                 report.Lines.Add(OpenGround(grid, settings, starts, enemy));
-            report.Lines.Add(Sightlines(grid, settings, inRegion.Where(c => fromDeploy.ContainsKey(c)).ToList()));
+            foreach (var enemy in foes.Where(e => fromDeploy.ContainsKey(e.Cell)))
+                report.Lines.Add(CoverSpacing(grid, settings, starts, enemy));
+            var reachable = inRegion.Where(c => fromDeploy.ContainsKey(c)).ToList();
+            report.Lines.Add(DeadSpace(grid, settings, fromDeploy, foes.Where(e => fromDeploy.ContainsKey(e.Cell)).ToList(), reachable));
+            report.Lines.Add(Sightlines(grid, settings, reachable));
             return report;
         }
 
@@ -243,6 +247,45 @@ namespace Gamenami.UnitySemanticBridge.Layout
             var note = lo > s.MovePerTurn ? $" (more than one move of {s.MovePerTurn})" : "";
             return Line(s, "OPEN_GROUND", target, lo,
                 $"{enemy.LocalId}: longest exposed run {lo} steps on the best route{note}; shortest route {shortest.Count - 1} steps, {onShortest} exposed");
+        }
+
+        // Cover along the way, seen or not: the smallest possible longest run of steps without cover facing the enemy
+        // over all routes (a cell with Half or Full cover on its side towards the enemy breaks the run).
+        private static MetricLine CoverSpacing(LayoutGrid grid, MetricSettings s, List<Cell> starts, LayoutEnemySpawn enemy)
+        {
+            var target = enemy.Cell;
+            var towards = ((double)target.X, (double)target.Y);
+            bool Bare(Cell c)
+            {
+                if (c == target) return false;
+                var side = SideFacing(c, towards);
+                return !side.HasValue || grid.CoverOn(c, side.Value) == CoverLevel.None;
+            }
+            var shortest = ShortestPath(grid, starts, target, null);
+            int lo = 0, hi = shortest.Count;
+            while (lo < hi)
+            {
+                var mid = (lo + hi) / 2;
+                if (Reaches(grid, starts, target, mid, Bare)) hi = mid;
+                else lo = mid + 1;
+            }
+            return Line(s, "COVER_SPACING", target, lo,
+                $"{enemy.LocalId}: at most {lo} steps between cover facing it on the best route ({N(lo / (double)s.MovePerTurn)} moves)");
+        }
+
+        // Region cells off every reasonable route: a reachable cell is dead when, for every enemy, going through it is
+        // more than RouteStretch times that enemy's shortest route. Dead ends and empty corners score; corridors don't.
+        private static MetricLine DeadSpace(LayoutGrid grid, MetricSettings s, Dictionary<Cell, int> fromDeploy,
+            List<LayoutEnemySpawn> enemies, List<Cell> reachable)
+        {
+            if (enemies.Count == 0 || reachable.Count == 0)
+                return Line(s, "DEAD_SPACE", null, 0, "no reachable enemy; not measured");
+            var toEnemy = enemies.Select(e => Distances(grid, new List<Cell> { e.Cell }, out _)).ToList();
+            var dead = reachable.Count(c => enemies.Select((e, i) => (e, i)).All(t =>
+                !toEnemy[t.i].TryGetValue(c, out var back) || fromDeploy[c] + back > s.RouteStretch * fromDeploy[t.e.Cell] + 1e-9));
+            var share = dead / (double)reachable.Count;
+            return Line(s, "DEAD_SPACE", null, share,
+                $"{dead} of {reachable.Count} reachable region cells ({Pct(share)}) are off every route within {N(s.RouteStretch)}x an enemy's shortest");
         }
 
         // Pairs of open, reachable region cells within twice the vision range: the share that see each other per

@@ -99,9 +99,13 @@ error. Every warning left must be one you intend and can explain. The ones that 
 
 Notes are for the record (owner-approved content outside a rule); leave them.
 
+Before the numbers, check the level has a reason to exist: a theme the enemies belong to (a building
+they hold, a compound, a road), with the enemies in and around it, some cover where the squad deploys, and
+no closed-off area the squad must walk into to find nothing. Owners grade empty maps down even when they play.
+
 Then judge the fight with `validate_layout(path=..., metrics_only=true)`: per enemy the distance in turns
-(`DISTANCE`), cover near it facing the squad (`COVER_NEAR`), separate ways to reach it (`ROUTES`) and the longest
-dash through open ground it can see (`OPEN_GROUND`); cover near the deploy cells; how far sight carries across the
+(`DISTANCE`), cover near it facing the squad (`COVER_NEAR`), separate ways to reach it (`ROUTES`), the longest
+dash through open ground it can see (`OPEN_GROUND`) and the longest stretch without cover on the way (`COVER_SPACING`); cover near the deploy cells; how far sight carries across the
 map (`SIGHTLINES`). If the game sets targets, lines outside them come first: revise for those. Without targets, say
 in your report what the numbers mean for the fight (e.g. "one route to the shop raider, through its back door"). Revise with
 `set_layout` again, or `validate_layout(path=...)` after editing the file yourself.
