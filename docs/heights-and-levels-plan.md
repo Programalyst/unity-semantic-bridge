@@ -178,9 +178,10 @@ Builds on the H2 outline (D6-D8) and on H1. **H2a (the model), H2b (authoring) a
 | # | Decision |
 |---|---|
 | D10 | A ladder costs the AP of **2 tiles** (4 AP for a soldier). |
-| D11 | A shooter on a higher level than the target gets **+20 aim and +3 vision range** (D6: never within a level). |
+| D11 | A shooter on a higher level than the target gets **+20 aim and +6 vision range** (D6: never within a level). The vision bonus is per observer and target, like the lit-target widening, and applies to the fog reveal too (owner, 2026-10-21; first +3). |
 | D12 | **Sight and cover between levels follow the ordinary ground rules**: no seeing over Half cover from above. Kept simple because a target inside a building may be hidden by the floor or roof above. |
 | D13 | **Overwatch fires only at the ladder ends** (the bottom and top cells), never mid-climb. |
+| D14 | A shooter on a **lower level than its target gets -10 aim per level** it is below; cover rules stay the same (owner, 2026-10-21). |
 
 The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 (`Assets/Animations/Humanoid/Characters@Climbing.fbx`, `Characters@Climbing Ladder.fbx`,
@@ -247,8 +248,9 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 
 ### Rules
 
-- **Height bonus (D6, D11).** Only when the shooter's level is above the target's: +20 aim, and
-  +3 vision range for the observer on the higher level.
+- **Height bonus (D6, D11, D14).** Only when the shooter's level is above the target's: +20 aim, and +6 vision
+  range for the observer on the higher level (per observer and target). Shooting up at a higher level: -10 aim per
+  level below.
 - **Sight between levels (D12).** The ordinary grid sight and cover rules, on the 2D line between the
   two cells, whatever their levels. One addition, so floors and roofs hide what is under them: a
   cell inside a building's frame on a lower level and a cell on that building's upper level (or
@@ -400,8 +402,6 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 - **H1:** the exact overlay offset above the floor (outlines use 0.13 m).
 - **H1:** whether the grenade's arc, which starts from Y = 0 today, should start
   and land on floor heights or only land on them.
-- **H2d:** the owner will add rules for firing from low to high ground (2026-10-21), beside D11's bonus
-  for the higher shooter.
 - **H2:** how the three climb clips make a climb up and down (H2c). Also whether some
   power armor (not the EVA suit) may climb, which would move the ladder rule onto
   the armor item.
