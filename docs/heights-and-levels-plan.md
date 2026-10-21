@@ -172,8 +172,8 @@ the 0.5 m step, about 0.6 m) so it never meets a roof first.
 
 ## H2: grid levels (draft plan, 2026-10-21)
 
-Builds on the H2 outline (D6-D8) and on H1. **H2a (the model), H2b (authoring) and H2c
-(presentation) are built (2026-10-21); H2d and H2e are not.** Owner decisions of 2026-10-21:
+Builds on the H2 outline (D6-D8) and on H1. **H2a (the model), H2b (authoring), H2c
+(presentation) and H2d (rules) are built (2026-10-21); H2e is not.** Owner decisions of 2026-10-21:
 
 | # | Decision |
 |---|---|
@@ -384,6 +384,46 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
   spotted Elena mid-climb and combat started, but she could not target it; the owner will try to reproduce it.
 - **Known gaps for H2d:** enemy approach
   (`GetClosestWalkableGrid`) returns a cell without its level; the HUD is built in code, not yet part of the overlay.
+
+### H2d as built (2026-10-21)
+
+- **A unit's level** comes from its height, as for sight: `ISightGrid.LevelAt` (`MapSight`: the level whose floor is
+  nearest under the position) and `GridVisibility.LevelsAbove(from, to)`. So a planned AI position counts at its own
+  level, and a unit mid-climb at whichever floor it is nearer.
+- **Aim (D11, D14).** `RangedAccuracy.HeightModifier(levelsAbove)`: +20 from any higher level, -10 per level from below,
+  0 on one level. `CalculateChance` adds it with the other terms before the clamp (cover unchanged, focus still adds to a
+  0% shot); `Preview` passes `LevelsAbove(shooter position, target)`, so the selector row, aim view, eligibility, overwatch
+  and the AI forecasts agree.
+- **Vision (D11).** `GridVisibility.HigherLevelVisionBonus` = 6 tiles, added in `CanSeeUnit` per observer and target after
+  the lit-target widening (spotting, targeting, contact, overwatch). The fog reveal moved into
+  `GridManager.CollectVisibleNodes` (static over a `GridMap`, so the harness runs it): each cell on each level is in range
+  with the bonus when the observer's level is above the cell's; the scanned square grows by 6 from an upper level.
+- **Overwatch (D13).** `GridMovement.IsOnLadder` is true from the first climb clip to the last (not the walk to the ladder
+  or off it), and `GridVisibility.CanReactTo` refuses a target on a ladder. `TargetDetector` keeps polling the mover, so a
+  shot comes at the bottom cell before the climb or the top cell after it. `OnTileReached` fires only at cell centres,
+  which are the ladder ends, so the AI's stop-and-shoot is unchanged.
+- **AI.** `GridManager.GetClosestWalkableGrid` (a `Vector2Int`) became `GetClosestWalkableNode` (the `PathNode`, level
+  included); `EnemyManager` moves with its level and stays put when the node is its own. The firing planners weigh each
+  reachable node at its own floor (`GridManager.GetWorldPosition(PathNode)`; they used `(x, y)` on the ground before,
+  so a roof cell was judged as the cell under it). Reach and approach already took `GridUnit.CanUseLadder` (H2a).
+- **Saves.** No mid-battle save stores a unit's cell (`PlayerData` is the roster and gear), so there is no level to add.
+- **Verification.** Harnesses: *Validate Hit Chance* 189 (the modifier at +1, +2, -1, -2 levels, with cover, clamps and
+  focus; previews from a roof, from two levels up and from below; a planned position on the roof; +6 vision from above,
+  none upwards or on one roof; a 0.45 m kerb is no level; overwatch refused while on a ladder and allowed at its end),
+  *Validate Grid Levels* 76 (the fog reveal with the bonus, as a 6-tile circle, never the room under the roof, none
+  upwards or within the roof, none from a slab; `LevelAt`; the approach keeps the roof's level), *Validate Enemy Firing
+  Positions* 31 (a climbing enemy takes the roof cell for 70% over 50% on the ground; one that can't climb stays down).
+  Paths 2956, Action Points 80, Grid Sight 7715, Floor Heights 450, Attack Alerts 24, Illumination 22 and Bug Attack Range
+  24 unchanged. **CatalogTest Play Mode** (in memory, nothing saved): Elena climbed to the shop roof (10,11@1); a raider
+  placed 10 tiles off on open ground (2,5): she saw it (day vision 8, +6), it did not see her, combat started; her shot
+  95% (75% on one level), its shot ineligible ("Not visible to squad"; it would be 30% - 10). Reversed, Elena on the
+  ground (10,7) and the raider on the roof (9,11@1), 4.1 tiles: hers 65% (75 - 10), its 80% (60 + 20).
+- **View level removed (owner, 2026-10-21).** With picking on the nearest floor and the climb button, the view level was
+  no longer needed: `GridViewLevelHud`, its E / Q and Page Up / Page Down keys, `GridManager.ViewLevel` / `SetViewLevel`
+  and the reset on selecting a unit are gone. The cutaway is now decided only by the cursor, a known unit inside and no
+  unit on the roof.
+- **Not done.** The AI does not yet value height for its own sake (a roof wins only through the hit chance), and the
+  overwatch rule was checked in the harness, not by a live reaction shot at a ladder.
 
 ### Phases
 
