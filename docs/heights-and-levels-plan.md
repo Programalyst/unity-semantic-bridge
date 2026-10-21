@@ -172,8 +172,8 @@ the 0.5 m step, about 0.6 m) so it never meets a roof first.
 
 ## H2: grid levels (draft plan, 2026-10-21)
 
-Builds on the H2 outline (D6-D8) and on H1. **H2a (the model) and H2b (authoring) are built
-(2026-10-21); the rest is not.** Owner decisions of 2026-10-21:
+Builds on the H2 outline (D6-D8) and on H1. **H2a (the model), H2b (authoring) and H2c
+(presentation) are built (2026-10-21); H2d and H2e are not.** Owner decisions of 2026-10-21:
 
 | # | Decision |
 |---|---|
@@ -325,6 +325,64 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 - **Scenes.** CatalogTest and RoadNetwork need the layout reapplied (or the shop replaced) before their shop has
   a roof: `ApplyFloors` builds floor boxes but does not rewrite `GridWalls`.
 
+### H2c as built (2026-10-21)
+
+- **Owner decisions:** the climb loops *Climbing Ladder* while the unit rises, then plays *Climbing To Top*;
+  going down plays both backwards. The shop's ladder is its own `SM_Bld_Shop_Medium_02_Ladder_01` (so the card's
+  ladder moved to `[6, -1, 0, 6, 0, 1, 0.51]`). Roofs are picked with an XCOM-style **view level** (E / Q, Page Up /
+  Page Down, or the Up / Down buttons of a small HUD at the top right, below End Turn that `GridManager` builds when the board has upper
+  levels, `GridViewLevelHud`; selecting a unit sets it to the unit's level).
+- **Ladder offsets.** A ladder's optional 7th value is its offset along the side between its ends (towards +x on a
+  ±y side, +y on a ±x side), turned like a door point (`LadderLink.Offset`, `Side`; NK `WallLadder.offset`,
+  `GridWalls.FrameSidePoint`, `GridMap.SetLadderPoint`/`TryGetLadderPoint`).
+- **Tiles.** `GridManager` spawns a tile per upper cell at its own floor (`GridTile.Level`, `Node`), so its trigger
+  holds the units on that roof and its overlays sit on the roof; upper tiles draw no fog and reveal with the board
+  cell under them (fog per level is H2d). Occupancy and obstacles are per level (`SetNodeOccupied`,
+  `RemoveNodeOccupied`, `SetNodeObstacle` take a level); `GetGridTile(node)` and `GetNode(x, y, level)`.
+- **Picking and the cutaway.** At view level 0 the pointer rays the click plane and a hovered building is cut away,
+  as before; at 1 and up the pointer rays the `Walkable` floors (roof floor boxes included) and no building is cut.
+  A building whose roof holds a unit is never cut (`GridManager.AnyUnitAbove`). Nodes come from positions by X/Z
+  and the level whose floor is nearest the Y.
+- **Outlines.** `ShowWalkableTiles(PathNode, ...)` draws one region per level the move reaches, each on its own
+  floor (`GridOutline.MoveTiers(..., level)`, the renderer keyed by layer and level). The path preview breaks at a
+  ladder and draws each level's piece at its own height. `GridMoveToCursor` and `GridCursor` sit on the tile's floor.
+- **Moves.** `MoveAction` and `GridMovement.MoveToGrid` take a level; the player's clicks and the enemy planner pass
+  it. `GridMovement` walks the node path; a ladder step runs `Climb`: walk to `ladderStandOff` (0.8 m by default: the shop's ladder stands 0.43 m out from the wall line) off the wall, face the wall,
+  loop the climb rising at 0.47 m/s × `climbPace` (2.5 by default, after the owner found 1 and 1.75 too slow) to
+  1.39 m below the floor above, then *Climbing To Top* while the root follows that clip's own root motion (1.39 m
+  up, 1.06 m forward, sampled at tenths through the Animator): root motion is off on our units, so the clips play in
+  place and the code moves the root. The owner set both clips' Root Transform Position (Y) to based upon the feet, so
+  the feet stay on the root in both and the body matches at the switch (earlier imports needed a 1.05 m start offset
+  and a 0.77 m step at the switch; re-measure if the imports change). Then a walk to the cell centre, where the ladder's 2 tiles are charged. The Humanoid controller has *Climb Ladder* and *Climb To Top* states with a `ClimbSpeed` speed
+  parameter; the weapon is put away while climbing (`ClimbLoop`, `ClimbTop`, `EndClimb`).
+- **Verification.** Harnesses: Grid Levels (the shop's ladder point on its ladder model, per-level outline regions
+  from the roof), Paths, Action Points, Grid Outlines, Floor Heights, Firing Positions; USB tests for ladder
+  offsets. **CatalogTest Play Mode** (layout reapplied in memory, not saved): Elena walked to the shop, climbed to
+  the roof (about 12 s on the ladder and the top clip) and on to the next roof cell; her tile was the roof's; her
+  movement outline covered roof and ground; she climbed back down (16 s) and walked off; Reno (power armor) got
+  no path. Not seen: the climb on screen (the probe's camera did not follow), AP for a climb in combat (the moves
+  ran while exploring). A second probe clicked like a player (select Elena, raise the view, click a roof cell through
+  `ScreenToWorldClick`) and she climbed onto the roof.
+- **Owner's first try (2026-10-21) and fixes.** The HUD moved below the End Turn button. The climb is faster by
+  default (`climbPace` 2.5). The climb ends on the **ledge** at the ladder (the shop's parapet, about 0.9 m above its
+  roof floor, found by a ray down at the wall line against scenery, at most 1.5 m above the floor) instead of the roof
+  floor, so *Climbing To Top* no longer starts low and carries the unit into the wall; the walk on drops onto the
+  roof. **Sight between levels** (D12, built here rather than in H2d because the raider inside the shop shot Elena on
+  its roof): a cell under a floor or roof and a cell on that level or higher never see each other; on a line from a
+  higher level, walls and obstacles under that level's cells don't block (it is above them); sight, step-outs, tile
+  cover and fog reveal look up cells on the unit's level (`GridMap.GetNodeAtHeight`, `MapSight.NodeAt`).
+- **Picking, revised (owner, 2026-10-21).** A building is cut away on hover only while an ally stands on its ground
+  floor (so the cutaway no longer shows enemies inside), and the pointer always picks the nearest floor on the
+  `Walkable` layer, skipping a cut building's floors, else the click plane: a roof is reached by clicking it. The
+  view level (E / Q, Page Up / Page Down, the HUD's Up / Down) remains for a building with an ally inside. Fog: an
+  observer reveals the cells it sees on every level, so a roof clears from the roof while the room under it stays
+  hidden (the board tile's fog block under a revealed roof cell is lifted).
+- **Next (owner's idea, not built):** a contextual climb button at the ladder (move to the ladder, then climb up or
+  down), for a unit inside a building that needs to switch between the roof and the floor. **Seen once:** an enemy
+  spotted Elena mid-climb and combat started, but she could not target it; the owner will try to reproduce it.
+- **Known gaps for H2d:** enemy approach
+  (`GetClosestWalkableGrid`) returns a cell without its level; the HUD is built in code, not yet part of the overlay.
+
 ### Phases
 
 1. **H2a, model:** `PathNode.Level`, sparse upper levels, ladder edges with cost and the
@@ -342,6 +400,8 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 - **H1:** the exact overlay offset above the floor (outlines use 0.13 m).
 - **H1:** whether the grenade's arc, which starts from Y = 0 today, should start
   and land on floor heights or only land on them.
+- **H2d:** the owner will add rules for firing from low to high ground (2026-10-21), beside D11's bonus
+  for the higher shooter.
 - **H2:** how the three climb clips make a climb up and down (H2c). Also whether some
   power armor (not the EVA suit) may climb, which would move the ladder rule onto
   the armor item.

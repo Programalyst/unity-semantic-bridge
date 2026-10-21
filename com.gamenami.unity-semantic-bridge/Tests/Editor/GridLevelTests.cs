@@ -113,6 +113,24 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         }
 
         [Test]
+        public void LadderOffsetsRoundTripAndTurnLikeDoorPoints()
+        {
+            var walls = WallOutline.FromJson(JToken.Parse(RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]").Replace("[[2,2,0,2,1,1]]", "[[2,2,0,2,1,1,0.4]]")));
+            var ladder = walls.Ladders.Single();
+            Assert.AreEqual(0.4, ladder.Offset);
+            Assert.AreEqual(GridSide.MinusY, ladder.Side, "from (2,2) down to (2,1)");
+            Assert.AreEqual(7, ((JArray)walls.ToJson()["ladders"][0]).Count, "an offset ladder writes its offset");
+            // On a -y side the offset runs towards +x. Turned clockwise, the old +x points -y (once), -x (twice), +y (three
+            // times), while the turned side's offset runs towards +y, +x, +y: so the sign flips, flips, and comes back.
+            Assert.AreEqual(-0.4, walls.Rotate(1).Ladders.Single().Offset);
+            Assert.AreEqual(-0.4, walls.Rotate(2).Ladders.Single().Offset);
+            Assert.AreEqual(0.4, walls.Rotate(3).Ladders.Single().Offset);
+            Assert.AreEqual(ladder, walls.Rotate(2).Rotate(2).Ladders.Single());
+            Assert.AreEqual(6, ((JArray)WallOutline.FromJson(JToken.Parse(RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]"))).ToJson()["ladders"][0]).Count,
+                "no offset, six values");
+        }
+
+        [Test]
         public void BuildPutsALevelAndItsLadderOnTheGrid()
         {
             var walls = WallOutline.FromJson(JToken.Parse(RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]")));

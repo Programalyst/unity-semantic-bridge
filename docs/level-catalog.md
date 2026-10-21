@@ -236,8 +236,10 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
       the base with the lift applied, "cells": [[x0, y0, x1, y1]]}` (inclusive rectangles inside the frame). Measure
       the height with `describe_level_cards`' `measuredRoof` (the highest surface over each frame cell) and leave out
       cells with clutter on them.
-    - `ladders`: `[[x, y, level, x, y, level]]`, the two ends in frame coordinates (a ground end may be outside the
-      frame); the ends are the same cell or straight neighbours, and an upper end is a cell of its level.
+    - `ladders`: `[[x, y, level, x, y, level]]` or `[[x, y, level, x, y, level, offset]]`, the two ends in frame
+      coordinates (a ground end may be outside the frame); the ends are the same cell or straight neighbours, and an
+      upper end is a cell of its level. The offset (meters, like a door point's) puts the climb on the building's
+      own ladder model when it is off the side's midpoint.
     Example, SM_Bld_Building_08 at (1.15, 1, 1.15): `"footprint": [6, 6], "lift": -0.09, "walls": {"outline":
     ["+-+-+D+", "|     |", "+ + + +", "w     w", "+ + + +", "|     |", "+-+-+-+"], "doorPoints": [[2, 2, "+y", -0.45]]}`.
     Editor helper `WallOutlineSuggester.Suggest(prefabPath, cellSize)` proposes the entry (frame, offset,

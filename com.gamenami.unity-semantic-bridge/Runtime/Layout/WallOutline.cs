@@ -82,7 +82,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
     /// <summary>
     /// A ladder between two levels of a walled building (plan H2): its ends in frame coordinates with their levels
-    /// (0 = the ground, which may be outside the frame). The ends are the same cell or straight neighbours.
+    /// (0 = the ground, which may be outside the frame). The ends are the same cell or straight neighbours; for
+    /// neighbours the ladder stands on the side between them, <see cref="Offset"/> meters along it from its midpoint
+    /// (towards +x on a ±y side, towards +y on a ±x side, like a door point).
     /// </summary>
     public readonly struct LadderLink : IEquatable<LadderLink>
     {
@@ -90,20 +92,35 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public readonly int FromLevel;
         public readonly Cell ToCell;
         public readonly int ToLevel;
+        public readonly double Offset;
 
-        public LadderLink(Cell fromCell, int fromLevel, Cell toCell, int toLevel)
+        public LadderLink(Cell fromCell, int fromLevel, Cell toCell, int toLevel, double offset = 0)
         {
             FromCell = fromCell;
             FromLevel = fromLevel;
             ToCell = toCell;
             ToLevel = toLevel;
+            Offset = Math.Round(offset, 3);
+        }
+
+        /// <summary>The side of FromCell the ladder stands on; null when its ends are the same cell.</summary>
+        public GridSide? Side
+        {
+            get
+            {
+                var dx = ToCell.X - FromCell.X;
+                var dy = ToCell.Y - FromCell.Y;
+                if (dx == 0 && dy == 0) return null;
+                return dx > 0 ? GridSide.PlusX : dx < 0 ? GridSide.MinusX : dy > 0 ? GridSide.PlusY : GridSide.MinusY;
+            }
         }
 
         public bool Equals(LadderLink other) => FromCell.Equals(other.FromCell) && FromLevel == other.FromLevel &&
-                                                ToCell.Equals(other.ToCell) && ToLevel == other.ToLevel;
+                                                ToCell.Equals(other.ToCell) && ToLevel == other.ToLevel && Offset.Equals(other.Offset);
         public override bool Equals(object obj) => obj is LadderLink other && Equals(other);
         public override int GetHashCode() => unchecked((FromCell.GetHashCode() * 31 + FromLevel) * 31 + ToCell.GetHashCode() * 7 + ToLevel);
-        public override string ToString() => $"{new LevelCell(FromCell, FromLevel)} - {new LevelCell(ToCell, ToLevel)}";
+        public override string ToString() =>
+            $"{new LevelCell(FromCell, FromLevel)} - {new LevelCell(ToCell, ToLevel)}" + (Offset != 0 ? $" at {Offset:0.00} m" : "");
     }
 
     /// <summary>
@@ -313,7 +330,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     DoorPoints.Select(MapPoint), SightFill.Select(f => (Map(f.cell), GridSides.Rotate(f.side, turns))),
                     CutHeight, Roofed.Select(MapRect))
                 .WithLevels(Levels.Select(l => new UpperLevel(l.Height, l.Rects.Select(MapRect))),
-                    Ladders.Select(l => new LadderLink(MapAny(l.FromCell), l.FromLevel, MapAny(l.ToCell), l.ToLevel)));
+                    Ladders.Select(l => new LadderLink(MapAny(l.FromCell), l.FromLevel, MapAny(l.ToCell), l.ToLevel,
+                        l.Side.HasValue ? l.Offset * AlongSign(l.Side.Value, turns) : l.Offset)));
+        }
+
+        // +1 when a quarter-turned side's "along" direction (towards +x on a ±y side, +y on a ±x side) still points that
+        // way after the turn, -1 when it flips; door points and ladder offsets turn with it.
+        private static int AlongSign(GridSide side, int turns)
+        {
+            var alongBefore = side == GridSide.PlusX || side == GridSide.MinusX ? GridSide.PlusY : GridSide.PlusX;
+            var alongAfter = GridSides.Rotate(alongBefore, turns);
+            return alongAfter == GridSide.PlusX || alongAfter == GridSide.PlusY ? 1 : -1;
         }
 
         /// <summary>The non-open sides on the board for a piece anchored (min corner) at <paramref name="anchor"/>.</summary>
@@ -504,8 +531,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
             if (json["ladders"] is JArray ladderArray)
                 foreach (var l in ladderArray)
                 {
-                    if (!(l is JArray a) || a.Count != 6) throw new FormatException("each ladder is [x, y, level, x, y, level]");
-                    ladders.Add(new LadderLink(new Cell((int)a[0], (int)a[1]), (int)a[2], new Cell((int)a[3], (int)a[4]), (int)a[5]));
+                    if (!(l is JArray a) || (a.Count != 6 && a.Count != 7))
+                        throw new FormatException("each ladder is [x, y, level, x, y, level] or [x, y, level, x, y, level, offset meters]");
+                    var offset = a.Count == 7 ? (double)a[6] : 0;
+                    if (double.IsNaN(offset) || Math.Abs(offset) > 1e6) throw new FormatException("ladder offset must be finite");
+                    ladders.Add(new LadderLink(new Cell((int)a[0], (int)a[1]), (int)a[2], new Cell((int)a[3], (int)a[4]), (int)a[5], offset));
                 }
             else if (json["ladders"] != null) throw new FormatException("ladders must be an array");
             var walls = FromLines(lines, wallCover, windowCover, doorPoints, fill, cut, roofed);
@@ -531,7 +561,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     ["cells"] = new JArray(l.Rects.Select(r => new JArray(r.min.X, r.min.Y, r.max.X, r.max.Y))),
                 }));
             if (Ladders.Count > 0)
-                json["ladders"] = new JArray(Ladders.Select(l => new JArray(l.FromCell.X, l.FromCell.Y, l.FromLevel, l.ToCell.X, l.ToCell.Y, l.ToLevel)));
+                json["ladders"] = new JArray(Ladders.Select(l => l.Offset != 0
+                    ? new JArray(l.FromCell.X, l.FromCell.Y, l.FromLevel, l.ToCell.X, l.ToCell.Y, l.ToLevel, l.Offset)
+                    : new JArray(l.FromCell.X, l.FromCell.Y, l.FromLevel, l.ToCell.X, l.ToCell.Y, l.ToLevel)));
             return json;
         }
 
