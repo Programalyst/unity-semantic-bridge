@@ -169,9 +169,93 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     ["approximate"] = footprint.Approximate,
                     ["overridden"] = footprint.Overridden,
                 };
+                if (card.Walls != null) json["measuredFloor"] = MeasureFloor(path, card, cellSize);
                 result[path] = json;
             }
             return result.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        /// <summary>Start of the floor probe above the placed base, meters: below a storey's ceiling, above any floor a unit can step onto.</summary>
+        public const float FloorProbeStart = 1.0f;
+        /// <summary>Lowest floor the probe looks for below the base, meters.</summary>
+        public const float FloorProbeDepth = 0.5f;
+
+        /// <summary>
+        /// Floor heights (plan H1a): a walled building placed as a layout would (placementScale, lift, footprint
+        /// centre on the origin, rotation 0) and probed straight down at each interior cell centre of its walls outline
+        /// from FloorProbeStart above the base against its visible meshes. Returns the median, range and per-cell
+        /// heights (meters above the base), for the card's floorHeight override.
+        /// </summary>
+        public static JObject MeasureFloor(string path, LevelCard card, double cellSize)
+        {
+            var contents = PrefabUtility.LoadPrefabContents(path);
+            try
+            {
+                var root = contents.transform;
+                root.localScale = LayoutApplier.ToVector3(card.PlacementScale);
+                var centre = LevelCards.Footprint(card, cellSize).Center;
+                var offset = LayoutApplier.FootprintOffset(card);
+                root.position = new Vector3(-((float)centre.X - offset.x), (float)card.Lift, -((float)centre.Z - offset.z));
+
+                var triangles = new List<(Vector3 a, Vector3 b, Vector3 c)>();
+                foreach (var filter in contents.GetComponentsInChildren<MeshFilter>(false))
+                {
+                    if (filter.sharedMesh == null || !filter.TryGetComponent(out MeshRenderer renderer) || !renderer.enabled) continue;
+                    var mesh = filter.sharedMesh;
+                    var toWorld = filter.transform.localToWorldMatrix;
+                    var vertices = mesh.vertices;
+                    var indices = mesh.triangles;
+                    for (var i = 0; i + 2 < indices.Length; i += 3)
+                        triangles.Add((toWorld.MultiplyPoint3x4(vertices[indices[i]]), toWorld.MultiplyPoint3x4(vertices[indices[i + 1]]),
+                            toWorld.MultiplyPoint3x4(vertices[indices[i + 2]])));
+                }
+
+                var outline = card.Walls;
+                var cells = new JArray();
+                var heights = new List<float>();
+                var misses = 0;
+                foreach (var cell in outline.InteriorCells())
+                {
+                    var x = (float)((cell.X - (outline.Width - 1) * 0.5) * cellSize);
+                    var z = (float)((cell.Y - (outline.Height - 1) * 0.5) * cellSize);
+                    var floor = ProbeDown(triangles, x, z, FloorProbeStart, -FloorProbeDepth);
+                    cells.Add(new JArray(cell.X, cell.Y, floor.HasValue ? Math.Round(floor.Value, 3) : (double?)null));
+                    if (floor.HasValue) heights.Add(floor.Value); else misses++;
+                }
+                heights.Sort();
+                return new JObject
+                {
+                    ["median"] = heights.Count > 0 ? Math.Round(heights[heights.Count / 2], 3) : (double?)null,
+                    ["min"] = heights.Count > 0 ? Math.Round(heights[0], 3) : (double?)null,
+                    ["max"] = heights.Count > 0 ? Math.Round(heights[heights.Count - 1], 3) : (double?)null,
+                    ["misses"] = misses,
+                    ["cells"] = cells,
+                    ["card"] = card.FloorHeight,
+                };
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(contents);
+            }
+        }
+
+        // The highest triangle surface on the vertical line at (x, z) between top and bottom, or null.
+        private static float? ProbeDown(List<(Vector3 a, Vector3 b, Vector3 c)> triangles, float x, float z, float top, float bottom)
+        {
+            float? best = null;
+            foreach (var (a, b, c) in triangles)
+            {
+                // Barycentric coordinates of (x, z) in the triangle's XZ projection.
+                var d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+                if (Mathf.Abs(d) < 1e-8f) continue; // vertical face
+                var u = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / d;
+                var v = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / d;
+                if (u < 0f || v < 0f || u + v > 1f) continue;
+                var y = u * a.y + v * b.y + (1f - u - v) * c.y;
+                if (y > top || y < bottom) continue;
+                if (!best.HasValue || y > best.Value) best = y;
+            }
+            return best;
         }
 
         private static (Box3? visual, Box3? colliders, bool skewed) Measure(GameObject root)

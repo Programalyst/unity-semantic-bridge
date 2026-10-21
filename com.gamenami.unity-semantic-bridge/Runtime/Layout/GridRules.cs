@@ -33,6 +33,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// cell where that cover ends (LayoutGrid.Viewpoints), and CanSee is true when any viewpoint pair has a clear line.
         /// </summary>
         public bool StepOut;
+        /// <summary>
+        /// Floor heights (plan H1, D3): the most two neighbouring cells' floors may differ, meters, for a unit to step
+        /// between them; a higher step closes that side to movement like a wall (sight is unchanged). Only applies to a
+        /// LayoutGrid that has floor heights (LayoutGrid.SetFloors). 0 for no step rule.
+        /// </summary>
+        public float MaxStepHeight;
         /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
         public CoverHeightBands CoverHeights = new CoverHeightBands();
         /// <summary>Numbers and targets for the level metrics (plan Phase 6, LayoutMetrics).</summary>

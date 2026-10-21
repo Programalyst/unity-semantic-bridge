@@ -121,22 +121,31 @@ namespace Gamenami.UnitySemanticBridge.Layout
     /// </summary>
     public static class LayoutValidator
     {
-        /// <summary>Structural, encounter and reachability checks of a draft.</summary>
-        public static LayoutReport Validate(LayoutDocument document, Func<LayoutPiece, PieceSpec?> resolve, GridRules rules)
+        /// <summary>
+        /// Structural, encounter and reachability checks of a draft. <paramref name="floors"/> are per-cell floor
+        /// heights (IGridRulesAdapter.FloorHeights of the applied scene), for the step rule and STEP_TOO_HIGH; null for none.
+        /// </summary>
+        public static LayoutReport Validate(LayoutDocument document, Func<LayoutPiece, PieceSpec?> resolve, GridRules rules,
+            float[,] floors = null)
         {
             var issues = Structural(document, resolve, rules, out var grid);
+            if (floors != null) grid.SetFloors(floors);
             var report = ForGrid(grid, document.Deploy, document.Enemies);
             report.Issues.InsertRange(0, issues);
             return report;
         }
 
-        /// <summary>Encounter and reachability checks on an occupancy grid (e.g. the game's own bake of a scene).</summary>
+        /// <summary>
+        /// Encounter, step and reachability checks on an occupancy grid (e.g. the game's own bake of a scene); the
+        /// step check runs only when the grid has floor heights.
+        /// </summary>
         public static LayoutReport ForGrid(LayoutGrid grid, IReadOnlyList<Cell> deploy, IReadOnlyList<LayoutEnemySpawn> enemies)
         {
             var report = new LayoutReport { Grid = grid };
             report.Deploy.AddRange(deploy);
             report.Enemies.AddRange(enemies);
             report.Issues.AddRange(Encounter(grid, deploy, enemies));
+            report.Issues.AddRange(Steps(grid));
             report.Issues.AddRange(Reachability(grid, deploy, enemies, report.Unreachable));
             return report;
         }
@@ -233,6 +242,34 @@ namespace Gamenami.UnitySemanticBridge.Layout
             }
             return issues;
         }
+
+        /// <summary>
+        /// Floor heights (plan H1, D3): two open neighbours whose floors differ by more than GridRules.MaxStepHeight with
+        /// no wall or window between them (STEP_TOO_HIGH, an error, at the lower cell). Units cannot cross there, so it
+        /// is a kerb or slab too tall for the kit, or a building whose floorHeight is off. One line per pair of cells,
+        /// straight neighbours only. Nothing without floor heights or a step rule.
+        /// </summary>
+        public static List<LayoutIssue> Steps(LayoutGrid grid)
+        {
+            var issues = new List<LayoutIssue>();
+            if (!grid.HasFloors || grid.Rules.MaxStepHeight <= 0f) return issues;
+            foreach (var cell in grid.AllCells())
+            {
+                if (grid.IsBlocked(cell)) continue;
+                foreach (var side in new[] { GridSide.PlusX, GridSide.PlusY })
+                {
+                    var neighbour = cell + GridSides.Step(side);
+                    if (!grid.Contains(neighbour) || grid.IsBlocked(neighbour) || grid.IsWalled(cell, side) || !grid.IsStepClosed(cell, side)) continue;
+                    var (low, high) = grid.FloorAt(cell) <= grid.FloorAt(neighbour) ? (cell, neighbour) : (neighbour, cell);
+                    issues.Add(new LayoutIssue("STEP_TOO_HIGH", low,
+                        $"floor {Meters(grid.FloorAt(low))} m, {high} next to it {Meters(grid.FloorAt(high))} m: a " +
+                        $"{Meters(grid.StepAcross(cell, side))} m step, more than {Meters(grid.Rules.MaxStepHeight)} m, with no wall between; units cannot cross"));
+                }
+            }
+            return issues;
+        }
+
+        private static string Meters(float value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
         /// <summary>
         /// Breadth-first search from the open deploy cells with the game's step rule

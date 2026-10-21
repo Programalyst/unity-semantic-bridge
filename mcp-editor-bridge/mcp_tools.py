@@ -856,6 +856,9 @@ def register_unity_tools(mcp):
         check of what generate_asset_catalog(catalog='level') would write), plus the
         footprint computed for cell_size at the card's placementScale: cells at
         rotation 0 ([x, y]), meters, fitError (cells minus meters per axis), height.
+        A walled building also gets measuredFloor: its floor probed straight down at
+        each interior cell centre, meters above its base at the card's lift (median,
+        min, max, per-cell), to fill in its floorHeight override.
         Returns {path: card | reason it is not a level piece}.
         """
         return await call_unity("describe_level_cards", {"paths": paths, "cell_size": cell_size})

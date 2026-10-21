@@ -15,6 +15,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public int? Storeys;
         /// <summary>Pivot height above the floor when placed (meters), for pieces modelled below their pivot.</summary>
         public double? Lift;
+        /// <summary>
+        /// Walled buildings: the top of the walkable floor inside the walls, meters above the floor the piece is placed on
+        /// (measured once per building, e.g. with describe_level_cards); the applier builds a floor box at this height.
+        /// </summary>
+        public double? FloorHeight;
         /// <summary>Horizontal size in meters the piece claims on the grid (rotation 0), instead of its bounds.</summary>
         public FootprintSize? Footprint;
         /// <summary>Buildings: the side the front faces at layout rotation 0, when it is not the model's forward (+Z).</summary>
@@ -36,6 +41,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             PlacementScale = other.PlacementScale ?? PlacementScale;
             Storeys = other.Storeys ?? Storeys;
             Lift = other.Lift ?? Lift;
+            FloorHeight = other.FloorHeight ?? FloorHeight;
             Footprint = other.Footprint ?? Footprint;
             Front = other.Front ?? Front;
             Walls = other.Walls ?? Walls;
@@ -66,7 +72,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         private static readonly HashSet<string> EntryKeys = new HashSet<string>(StringComparer.Ordinal)
         {
-            "role", "cover", "placementScale", "storeys", "lift", "footprint", "front", "walls", "footprintOffset", "exclude", "note",
+            "role", "cover", "placementScale", "storeys", "lift", "floorHeight", "footprint", "front", "walls", "footprintOffset", "exclude", "note",
         };
 
         public static LevelCatalogOverrides Parse(string text)
@@ -138,7 +144,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             {
                 if (property.Name == extraKey) continue;
                 if (!EntryKeys.Contains(property.Name))
-                    throw new FormatException($"{FileName}: {where} has unknown key '{property.Name}' (role, cover, placementScale, storeys, lift, footprint, front, walls, footprintOffset, exclude, note).");
+                    throw new FormatException($"{FileName}: {where} has unknown key '{property.Name}' (role, cover, placementScale, storeys, lift, floorHeight, footprint, front, walls, footprintOffset, exclude, note).");
                 try
                 {
                     switch (property.Name)
@@ -161,6 +167,13 @@ namespace Gamenami.UnitySemanticBridge.Layout
                             var lift = (double)property.Value;
                             if (double.IsNaN(lift) || double.IsInfinity(lift)) throw new FormatException("lift must be finite");
                             entry.Lift = lift;
+                            break;
+                        case "floorHeight":
+                            if (property.Value.Type != JTokenType.Float && property.Value.Type != JTokenType.Integer)
+                                throw new FormatException("floorHeight must be a number of meters");
+                            var floorHeight = (double)property.Value;
+                            if (double.IsNaN(floorHeight) || double.IsInfinity(floorHeight)) throw new FormatException("floorHeight must be finite");
+                            entry.FloorHeight = floorHeight;
                             break;
                         case "footprint": entry.Footprint = LevelCards.ParseFootprint(property.Value); break;
                         case "front": entry.Front = GridSides.Parse((string)property.Value); break;

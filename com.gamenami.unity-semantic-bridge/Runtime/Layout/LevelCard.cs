@@ -79,6 +79,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
         // Clockwise seen from above, the way layout quarter turns go: +y, +x, -y, -x.
         private static readonly GridSide[] Clockwise = { GridSide.PlusY, GridSide.PlusX, GridSide.MinusY, GridSide.MinusX };
 
+        /// <summary>The four sides, clockwise from +y.</summary>
+        public static IReadOnlyList<GridSide> All => Clockwise;
+
         /// <summary>The side after <paramref name="quarterTurns"/> clockwise layout rotations.</summary>
         public static GridSide Rotate(GridSide side, int quarterTurns) =>
             Clockwise[(((Array.IndexOf(Clockwise, side) + quarterTurns) % 4) + 4) % 4];
@@ -178,6 +181,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// solid building. Its frame is the footprint, which stays walkable when the game supports side walls.
         /// </summary>
         public WallOutline Walls;
+        /// <summary>
+        /// Walled buildings only: the top of the walkable floor inside the walls, meters above the floor the piece is
+        /// placed on (lift included), from the overrides file; null when not measured yet. The applier builds the
+        /// building's floor box at this height (plan H1a).
+        /// </summary>
+        public double? FloorHeight;
         /// <summary>
         /// The footprint bounds' centre relative to the footprint centre (meters, X along grid x and Z along grid y at
         /// layout rotation 0); null for centred. Lets a building's walls sit on cell lines while porches overhang.
@@ -523,9 +532,11 @@ namespace Gamenami.UnitySemanticBridge.Layout
             card.Front = null;
             card.FrontSource = null;
             card.Walls = null;
+            card.FloorHeight = null;
             if (card.Role == LevelRole.Building)
             {
                 card.Walls = entry?.Walls;
+                if (card.Walls != null) card.FloorHeight = entry?.FloorHeight;
                 card.Front = entry?.Front ?? ForwardSide(card.RootRotation);
                 if (card.Front.HasValue) card.FrontSource = entry?.Front != null ? "override" : "forward";
             }
@@ -593,6 +604,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             if (card.FootprintOffset.HasValue)
                 json["footprintOffset"] = new JArray(Mm(card.FootprintOffset.Value.X), Mm(card.FootprintOffset.Value.Z));
             if (card.Walls != null) json["walls"] = card.Walls.ToJson();
+            if (card.FloorHeight.HasValue) json["floorHeight"] = Mm(card.FloorHeight.Value);
             if (card.Thumbnail != null) json["thumbnail"] = card.Thumbnail;
             return json;
         }
@@ -623,6 +635,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 FrontSource = (string)json["frontSource"],
                 Walls = json["walls"] == null || json["walls"].Type == JTokenType.Null ? null : WallOutline.FromJson(json["walls"]),
                 FootprintOffset = ParseOffset(json["footprintOffset"]),
+                FloorHeight = (double?)json["floorHeight"],
                 Skewed = (bool?)json["skewed"] ?? false,
                 PlacementScale = ParseVec(json["placementScale"]),
                 ScaleSource = (string)json["scaleSource"] ?? "prefab",

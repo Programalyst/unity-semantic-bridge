@@ -27,6 +27,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         /// card's (Scale set; their OFFGRID_SCALE line is in OffScaleIssues), for the scale and plausibility validators.
         /// </summary>
         public readonly List<PlacedCard> Cards = new List<PlacedCard>();
+        /// <summary>The scene instance of each baked card piece in Cards (not those left out for their scale).</summary>
+        public readonly Dictionary<PlacedCard, GameObject> CardInstances = new Dictionary<PlacedCard, GameObject>();
         /// <summary>The OFFGRID_SCALE lines of card pieces (also in Issues); the scale validator reports them cell-addressed.</summary>
         public readonly List<string> OffScaleIssues = new List<string>();
         /// <summary>Cells where Derived and Physics disagree.</summary>
@@ -220,11 +222,15 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 result.Document.Decor.Add(piece);
             }
             if (card != null)
-                result.Cards.Add(new PlacedCard
+            {
+                var placed = new PlacedCard
                 {
                     LocalId = localId, Card = card, Anchor = anchor, Size = size, Rotation = turns.Value,
                     Blocking = role == PieceRole.Blocker, Cover = cover,
-                });
+                };
+                result.Cards.Add(placed);
+                result.CardInstances[placed] = instance;
+            }
         }
 
         /// <summary>How far a door point may sit from its card's, meters.</summary>

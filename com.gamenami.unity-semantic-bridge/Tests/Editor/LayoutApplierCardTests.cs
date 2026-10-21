@@ -222,6 +222,97 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             CollectionAssert.Contains(edited.OccupancyDiff, "WALL_KIND 3,2 +x expected Door from house, got Wall from house");
         }
 
+        // Floor heights (plan H1a): ground pieces go on the walkable layer and a walled building gets a floor box over
+        // its interior at the card's floorHeight; ApplyFloors does the same to a scene applied before.
+        [Test]
+        public void GroundGoesOnTheWalkableLayerAndBuildingsGetAFloorBox()
+        {
+            const int walkable = 4; // any existing layer
+            adapter.WalkableLayer = walkable;
+            adapter.Rules.SideWalls = true;
+            var road = MakeMeshProp("SM_Test_Road", new Vector3(4f, 0.05f, 4f));
+            var house = MakeMeshProp("SM_Bld_Test_House", new Vector3(3.6f, 3f, 5.6f));
+            // A 2 x 3 frame turned once (3 x 2 on the board) at 2,2, lifted 0.1 m, its floor 0.3 m up; the top-right
+            // cell (1,2) is outside behind an open side, so 5 interior cells.
+            var cards = Cards($"\"{road}\":{{\"role\":\"ground\"}}," +
+                              $"\"{house}\":{{\"role\":\"building\",\"placementScale\":[1,1,1],\"footprint\":[4,6],\"lift\":0.1,\"floorHeight\":0.3," +
+                              "\"walls\":{\"outline\":[\"+-+-+\",\"| |  \",\"+ +-+\",\"|   |\",\"+ + +\",\"|   |\",\"+-+D+\"]}}");
+            var document = Doc($"[\"house\",\"{house}\",2,2,1]", $"[\"road\",\"{road}\",0,0,0]");
+
+            var result = LayoutApplier.Apply(document, scene, adapter, cards);
+            Assert.AreEqual(0, result.Issues.Count, string.Join("; ", result.Issues));
+            var roadPiece = Piece(result, "road", LayoutApplier.DecorName);
+            Assert.IsTrue(roadPiece.GetComponentsInChildren<Transform>().All(t => t.gameObject.layer == walkable), "the whole road is on the walkable layer");
+            var housePiece = Piece(result, "house");
+            Assert.AreEqual(0, housePiece.gameObject.layer, "the building keeps its layer");
+            var floor = housePiece.Find(LayoutApplier.FloorColliderName);
+            Assert.AreEqual(walkable, floor.gameObject.layer);
+            Physics.SyncTransforms();
+            var boxes = floor.GetComponents<BoxCollider>();
+            Assert.AreEqual(5 * 4f, boxes.Sum(b => b.bounds.size.x * b.bounds.size.z), 1e-3f, "five 2 m cells");
+            foreach (var box in boxes)
+            {
+                Assert.AreEqual(0.3f, box.bounds.max.y, 1e-4f, "top at the floorHeight above the board floor");
+                Assert.AreEqual(LayoutApplier.FloorBoxThickness, box.bounds.size.y, 1e-4f);
+            }
+            // Turned once, frame cell (1,2) (the outside one) lands on board cell 2 + 2, 2 + 2 - 1 - 1 = (4, 2).
+            Assert.IsFalse(boxes.Any(b => b.bounds.Contains(new Vector3(9f, 0.28f, 5f))), "no floor on the outside cell");
+            Assert.IsTrue(boxes.Any(b => b.bounds.Contains(new Vector3(5f, 0.28f, 5f))), "floor on an interior cell");
+            StringAssert.StartsWith("FLOOR_BOX 2,2 house: 5 interior cells", result.Notes.Single(n => n.StartsWith("FLOOR_BOX")));
+
+            // A scene applied before floor heights: ApplyFloors moves the ground and rebuilds the floor box in place,
+            // following the building where it stands (here 0.2 m above its lifted placement).
+            foreach (var t in roadPiece.GetComponentsInChildren<Transform>()) t.gameObject.layer = 0;
+            Object.DestroyImmediate(floor.gameObject);
+            housePiece.position += Vector3.up * 0.2f;
+            var notes = LayoutApplier.ApplyFloors(scene, adapter, cards);
+            StringAssert.StartsWith("1 ground pieces on layer", notes);
+            Assert.IsTrue(roadPiece.GetComponentsInChildren<Transform>().All(t => t.gameObject.layer == walkable));
+            Physics.SyncTransforms();
+            var rebuilt = housePiece.Find(LayoutApplier.FloorColliderName).GetComponents<BoxCollider>();
+            Assert.AreEqual(0.5f, rebuilt.Max(b => b.bounds.max.y), 1e-4f);
+            Assert.AreEqual(1, housePiece.Cast<Transform>().Count(t => t.name == LayoutApplier.FloorColliderName), "rebuilt, not doubled");
+            LayoutApplier.ApplyFloors(scene, adapter, cards);
+            Assert.AreEqual(1, housePiece.Cast<Transform>().Count(t => t.name == LayoutApplier.FloorColliderName), "idempotent");
+        }
+
+        [Test]
+        public void NoWalkableLayerOrFloorHeightBuildsNoFloor()
+        {
+            adapter.Rules.SideWalls = true;
+            var road = MakeMeshProp("SM_Test_Road", new Vector3(4f, 0.05f, 4f));
+            var house = MakeMeshProp("SM_Bld_Test_House", new Vector3(3.6f, 3f, 3.6f));
+            var cards = Cards($"\"{road}\":{{\"role\":\"ground\"}}," +
+                              $"\"{house}\":{{\"role\":\"building\",\"placementScale\":[1,1,1],\"footprint\":[4,4]," +
+                              "\"walls\":{\"outline\":[\"+-+D+\",\"|   |\",\"+ + +\",\"|   |\",\"+-+-+\"]}}");
+            var document = Doc($"[\"house\",\"{house}\",2,2,0]", $"[\"road\",\"{road}\",0,0,0]");
+
+            var result = LayoutApplier.Apply(document, scene, adapter, cards);
+            Assert.AreEqual(0, Piece(result, "road", LayoutApplier.DecorName).gameObject.layer, "WalkableLayer -1 leaves layers alone");
+            Assert.IsNull(Piece(result, "house").Find(LayoutApplier.FloorColliderName));
+            CollectionAssert.IsEmpty(result.Notes.Where(n => n.StartsWith("NO_FLOOR_HEIGHT")));
+
+            adapter.WalkableLayer = 4;
+            result = LayoutApplier.Apply(document, scene, adapter, cards);
+            Assert.IsNull(Piece(result, "house").Find(LayoutApplier.FloorColliderName));
+            StringAssert.StartsWith("NO_FLOOR_HEIGHT 2,2 house", result.Notes.Single(n => n.StartsWith("NO_FLOOR_HEIGHT")));
+        }
+
+        [Test]
+        public void SceneValidationPutsTheAdapterFloorsOnTheGrid()
+        {
+            adapter.Floors = new float[6, 6];
+            adapter.Floors[3, 3] = 0.8f;
+            adapter.Rules.MaxStepHeight = 0.5f;
+            var document = Doc("");
+            var result = LayoutApplier.Apply(document, scene, adapter, Cards(""));
+            var applied = LayoutSceneValidator.ValidateApplied(document, result, scene, adapter);
+            Assert.AreEqual(4, applied.WithCode("STEP_TOO_HIGH").Count(), applied.Format());
+            var report = LayoutSceneValidator.ValidateScene(scene, adapter);
+            Assert.AreEqual(4, report.WithCode("STEP_TOO_HIGH").Count(), report.Format());
+            Assert.AreEqual(0.8f, report.Grid.FloorAt(new Cell(3, 3)));
+        }
+
         // Sight checks against colliders (SIGHT_NO_OBSTACLE, WALL_SIGHT_GAP, DOOR_COLLIDER) run only for a game whose
         // sight is physics; with grid sight (plan Phase S, D13) colliders decide no sight. The adapter's default
         // IgnoredBySight is used here.
@@ -261,6 +352,9 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
 
             public GridRules Rules { get; } = new GridRules { CellSize = 2f };
             public float GroundLift => Lift;
+            public int WalkableLayer { get; set; } = -1;
+            public float[,] Floors;
+            public float[,] FloorHeights(Scene scene, GridBoard board) => Floors;
             public LayerMask SightLayers => ~0;
 
             // Scene-level mode (create_layout_scene tests): the level is the material of a root renderer named

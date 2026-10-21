@@ -108,6 +108,7 @@ resolve in the game.
 | `storeys` | Buildings only: `height / 3 m`, rounded, at least 1; an override can set it. |
 | `front`, `frontSource` | Buildings only: the side the front faces on the grid at layout rotation 0, root rotation applied: `+x`, `-x`, `+y` or `-y` (y = world Z). From the overrides file (`"override"`), else the **model's forward, +Z**, turned by `rootRotation` (`"forward"`; +y for an unrotated root). Synty models their buildings facing +Z (owner check of the 4b gallery, 2026-10-18: Shop_Medium_02, Warehouse_Brick_01 and AutoRepair_01 have their front at +Z). Door children are no guide: Shop_Medium_02 and Warehouse_Brick_01 have doors front and back. `null` only for a root tilted so forward points up or down. The plausibility validator checks what a front faces ([grid layouts](grid-layouts.md#validators)). |
 | `walls` | Buildings only, and only when the overrides file sets them (plan Phase W): walls on cell sides, the same object as the overrides field below. Absent from other cards. |
+| `floorHeight` | Walled buildings only, when the overrides file sets it (plan [H1](heights-and-levels-plan.md)): the top of the walkable floor inside the walls, meters above the base the piece stands on (`lift` included). Apply builds the building's floor box there. Absent from other cards. |
 | `footprintOffset` | `[x, z]` meters: the footprint bounds' centre relative to the footprint centre at layout rotation 0, when the overrides file sets it (absent otherwise). Lets a building's walls sit on cell lines while porches overhang. |
 | `skewed` | A measured child is rotated off 90° steps (by more than about 0.8°), so the boxes overstate the size. |
 | `levelRole` | `blocker`, `cover_half`, `cover_full`, `ground`, `decor`, `building` or `unknown` (see below). |
@@ -236,6 +237,12 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
     Editor helper `WallOutlineSuggester.Suggest(prefabPath, cellSize)` proposes the entry (frame, offset,
     outline, door points, sight gaps, floor lift) from the prefab's colliders, and `RenderTopDown` draws a
     cutaway with the frame; the owner approves the result into the file.
+  - `floorHeight` (meters, walled buildings only; plan [H1](heights-and-levels-plan.md)): the top of the floor
+    units stand on inside the walls, above the base the piece stands on with its `lift` applied. Measure it
+    with `describe_level_cards`, whose `measuredFloor` probes straight down at each interior cell centre from
+    1 m above the base against the building's visible meshes (median, min, max, per cell), then approve it
+    here. Apply puts a 5 cm floor box on the game's walkable layer with its top there
+    ([grid layouts](grid-layouts.md#validators)); NK's house and shop measure about 0 at their lifts.
   - `footprintOffset` (`[x, z]` meters, any sign): where the footprint bounds' centre sits relative to the
     footprint centre at layout rotation 0, e.g. a building whose porch reaches further out at the front.
   - `exclude: true` leaves the prefab out of the catalog.

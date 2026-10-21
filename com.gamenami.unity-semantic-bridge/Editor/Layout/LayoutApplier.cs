@@ -64,6 +64,10 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public const float ColliderInset = 0.1f;
         /// <summary>Name of the child holding the box a card piece's oversized colliders are replaced by.</summary>
         public const string FootprintColliderName = "Footprint Collider";
+        /// <summary>Name of the child holding a walled building's floor boxes (plan H1a, D4).</summary>
+        public const string FloorColliderName = "Floor Collider";
+        /// <summary>Thickness of a building's floor box, meters; its top is the card's floorHeight.</summary>
+        public const float FloorBoxThickness = 0.05f;
         // Rounding slack when checking a collider against its footprint, meters.
         private const float FitEpsilon = 1e-4f;
 
@@ -206,6 +210,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             var offset = frame * (ToVector3(footprint.Center) - FootprintOffset(card));
             var lift = (float)card.Lift + (card.Role == LevelRole.Ground ? adapter.GroundLift : 0f);
             instance.transform.position = new Vector3(center.x - offset.x, board.FloorY + lift, center.z - offset.z);
+            // Floor heights (plan H1a): ground pieces are what units stand on, so they go on the walkable layer.
+            if (card.Role == LevelRole.Ground && adapter.WalkableLayer >= 0) SetLayer(instance, adapter.WalkableLayer);
             if (footprint.Approximate)
                 result.Notes.Add($"APPROXIMATE {piece.Anchor} {piece.LocalId}: the card's box overstates the piece (skewed parts or a tilted root); footprint {footprint}");
 
@@ -216,6 +222,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 // gets its walls instead of the piece hook. No collider fitting, no blocking collider expected.
                 cover = card.Cover ?? CoverLevel.Full;
                 adapter.ConfigureWalls(instance, card.Walls, new Vector3(center.x, board.FloorY, center.z), piece.Rotation);
+                AddFloorBox(instance, piece.Anchor, piece.Rotation, piece.LocalId, card, board, adapter, result);
                 result.Cards.Add(new PlacedCard
                 {
                     LocalId = piece.LocalId, Card = card, Anchor = piece.Anchor, Size = size, Rotation = piece.Rotation,
@@ -239,6 +246,118 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 Blocking = blocker, Cover = cover,
             });
             return footprint.ToSpec(cover);
+        }
+
+        /// <summary>
+        /// A walled building's floor (plan H1a, D4): boxes on a "Floor Collider" child, on the adapter's walkable layer,
+        /// over the interior cells of the walls outline (whole cells, one box per run of cells in a row), FloorBoxThickness
+        /// thick with their top at the card's floorHeight above the base the piece stands on (its root less the card's
+        /// lift: the board floor when applied). The building's own colliders keep their
+        /// layer. Nothing when the game has no walkable layer; a NO_FLOOR_HEIGHT note when the card has no floorHeight.
+        /// </summary>
+        private static GameObject AddFloorBox(GameObject instance, Cell anchor, int rotation, string localId, LevelCard card,
+            GridBoard board, IGridRulesAdapter adapter, LayoutApplyResult result)
+        {
+            if (adapter.WalkableLayer < 0) return null;
+            var where = $"{anchor} {localId}";
+            if (!card.FloorHeight.HasValue)
+            {
+                result.Notes.Add($"NO_FLOOR_HEIGHT {where}: the card has no floorHeight, so no floor box; units inside stand on whatever is under the building");
+                return null;
+            }
+            var interior = card.Walls.Rotate(rotation).InteriorCells();
+            if (interior.Count == 0) return null;
+
+            var holder = new GameObject(FloorColliderName);
+            holder.layer = adapter.WalkableLayer;
+            holder.transform.SetParent(instance.transform, false);
+            if (!IsAxisAligned(holder.transform))
+            {
+                Object.DestroyImmediate(holder);
+                result.AddPlacementIssue($"FIT_UNSUPPORTED {where}: the piece's root is not turned in quarter turns, so no floor box could be built");
+                return null;
+            }
+            var cellSize = adapter.Rules.CellSize;
+            // Above the base the piece stands on: its root less the card's lift (the board floor when the applier placed
+            // it; a hand-placed building may sit off its lift, and its floor moves with it).
+            var top = instance.transform.position.y - (float)card.Lift + (float)card.FloorHeight.Value;
+            var boxes = 0;
+            foreach (var (first, last) in Runs(interior))
+            {
+                var min = adapter.CellToWorld(anchor + first, board) - new Vector3(cellSize, 0f, cellSize) * 0.5f;
+                var max = adapter.CellToWorld(anchor + last, board) + new Vector3(cellSize, 0f, cellSize) * 0.5f;
+                min.y = top - FloorBoxThickness;
+                max.y = top;
+                var box = holder.AddComponent<BoxCollider>();
+                var (localMin, localMax) = WorldBox(PieceGeometry.BoxCorners(holder.transform.worldToLocalMatrix, (min + max) * 0.5f, max - min));
+                box.center = (localMin + localMax) * 0.5f;
+                box.size = localMax - localMin;
+                boxes++;
+            }
+            result.Notes.Add($"FLOOR_BOX {where}: {interior.Count} interior cells in {boxes} box{(boxes == 1 ? "" : "es")}, top {top:0.00} m");
+            return holder;
+        }
+
+        /// <summary>
+        /// Floor heights (plan H1) for a scene applied before them, without reapplying: every card piece the baker
+        /// reads is updated in place, ground pieces onto the adapter's walkable layer and each walled building's Floor
+        /// Collider (re)built from its card. One Undo group; the scene is marked dirty, not saved. Returns the notes.
+        /// </summary>
+        public static string ApplyFloors(Scene scene, IGridRulesAdapter adapter = null, LevelCardSource cards = null)
+        {
+            adapter ??= LayoutAdapters.Find();
+            if (EditorApplication.isPlayingOrWillChangePlaymode) throw new BridgeToolException("Exit Play Mode before updating floors.");
+            if (adapter.WalkableLayer < 0) throw new BridgeToolException("The game's IGridRulesAdapter has no WalkableLayer.");
+            var bake = LayoutBaker.Bake(scene, adapter, cards);
+            if (!adapter.TryGetBoard(scene, out var board, out var boardError)) throw new BridgeToolException(boardError);
+
+            Undo.IncrementCurrentGroup();
+            var undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Apply Floors");
+            var result = new LayoutApplyResult();
+            var ground = 0;
+            foreach (var placed in bake.Cards)
+            {
+                if (!bake.CardInstances.TryGetValue(placed, out var instance)) continue;
+                if (placed.Card.Role == LevelRole.Ground)
+                {
+                    var objects = instance.GetComponentsInChildren<Transform>(true).Select(t => (Object)t.gameObject).ToArray();
+                    Undo.RecordObjects(objects, "Apply Floors");
+                    SetLayer(instance, adapter.WalkableLayer);
+                    ground++;
+                }
+                else if (placed.Blocking && placed.Card.Walls != null && adapter.Rules.SideWalls)
+                {
+                    foreach (var old in instance.transform.Cast<Transform>().Where(t => t.name == FloorColliderName).ToList())
+                        Undo.DestroyObjectImmediate(old.gameObject);
+                    var holder = AddFloorBox(instance, placed.Anchor, placed.Rotation, placed.LocalId, placed.Card, board, adapter, result);
+                    if (holder != null) Undo.RegisterCreatedObjectUndo(holder, "Apply Floors");
+                }
+            }
+            Undo.CollapseUndoOperations(undoGroup);
+            EditorSceneManager.MarkSceneDirty(scene);
+            Physics.SyncTransforms();
+            var lines = new List<string> { $"{ground} ground pieces on layer {LayerMask.LayerToName(adapter.WalkableLayer)}." };
+            lines.AddRange(result.Notes.Where(n => n.StartsWith("FLOOR_BOX") || n.StartsWith("NO_FLOOR_HEIGHT")));
+            lines.AddRange(result.Issues);
+            return string.Join("\n", lines);
+        }
+
+        // Interior cells (rows from y = 0, each from x = 0) as runs of neighbours along x: (first, last) per run.
+        private static IEnumerable<(Cell first, Cell last)> Runs(List<Cell> cells)
+        {
+            for (var i = 0; i < cells.Count;)
+            {
+                var j = i;
+                while (j + 1 < cells.Count && cells[j + 1].Y == cells[i].Y && cells[j + 1].X == cells[j].X + 1) j++;
+                yield return (cells[i], cells[j]);
+                i = j + 1;
+            }
+        }
+
+        private static void SetLayer(GameObject root, int layer)
+        {
+            foreach (var transform in root.GetComponentsInChildren<Transform>(true)) transform.gameObject.layer = layer;
         }
 
         // A piece without a card: measured on the instance at its prefab scale (the Phase 2 path).

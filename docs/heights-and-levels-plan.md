@@ -3,7 +3,8 @@
 Drafted October 20, 2026 with the owner, after the road kit made the flat board
 visible: units stand at Y = 0, so their feet sink into roads (0.05 m) and
 sidewalks (0.10 m), and the tile overlays (Cover Ground Quad at 0.02 m, Tile
-Highlight at 0.04 m) hide under both. Nothing here is built yet.
+Highlight at 0.04 m) hide under both. **H1 is built (2026-10-20, uncommitted until the owner's
+review); see [H1 as built](#h1-as-built-2026-10-20).** H2 is not.
 
 Two phases:
 
@@ -135,6 +136,39 @@ the 0.5 m step, about 0.6 m) so it never meets a roof first.
 - RoadNetwork Play Mode: units on desert, road, sidewalk and inside the shop;
   a move across a kerb and through the shop door; cover icons and highlight
   visible on every surface; GridBattle unchanged.
+
+## H1 as built (2026-10-20)
+
+- **Layer check first.** `ScreenToWorldClick` and `BuildingCutaway` ray the click plane only;
+  `AimView`'s pointer mask was Units, RagDoll, Player, Default, Stencil, and now has `Walkable` too, so
+  the ground still stops the pointer; `TargetDetector`'s and `GridSniperRifle`'s Default masks are
+  declared but unused; bullets are physical and meet the ground through the collision matrix
+  (Projectile and RagDoll collide with Default). So `Walkable` (NK slot 17; 15 carries stale collision
+  bits) collides like Default except Grid Tiles (tile triggers and the occupancy baker never see floors).
+- **Not in the plan: rendering.** No free slot was in both the URP renderer's opaque mask and the main
+  camera's culling mask, so a renderer moved to a new layer vanished. NK's renderer masks and each
+  battle scene's main camera now include `Walkable` (NK menu *Set Up Walkable Layer*, *Set Up Floor
+  Heights In Open Scene*). GridBattle was updated on disk; RoadNetwork in memory only (not saved);
+  CatalogTest and the two calibration scenes still need the scene menu.
+- **USB:** `IGridRulesAdapter.WalkableLayer` and `FloorHeights(scene, board)`, `GridRules.MaxStepHeight`,
+  `LayoutGrid.SetFloors`/`FloorAt`/`IsStepClosed` (the step rule in `CanStep`), `LayoutValidator.Steps`
+  (`STEP_TOO_HIGH`), `WallOutline.InteriorCells`, the card's `floorHeight`, the applier's ground layer and
+  `Floor Collider`, `LayoutApplier.ApplyFloors` for scenes applied before, and `describe_level_cards`'s
+  `measuredFloor`. The floor box's top is the instance's root less the card's lift plus `floorHeight`, so
+  it follows a building placed off its lift (RoadNetwork's shop and house roots sit at 0, not at their lifts).
+- **Floor heights measured:** at their lifts the house's floor is 0.000 m and the shop's −0.004 m
+  (median); the brief's "floors above 0" was RoadNetwork's unlifted placement (0.09 and 0.146 m there).
+  Both are in NK's overrides, pending the owner's approval.
+- **Open questions answered:** the overlays keep the offsets they were tuned at over the desert (no extra
+  offset: Canvas 0.04 m, Cover Ground Quad 0.05 m above the floor). Throws (grenade, Molotov, bug spit)
+  land on the target cell's floor; their arc starts from the thrower's hand as before.
+- **Verification:** NK *Validate Floor Heights* 450 checks; Paths, Grid Outlines, Grid Sight, Layout Round
+  Trip (4110), Layout (21), Layout Reports (95), Enemy Firing Positions (28) and Illumination (22) pass;
+  USB EditMode 318 passed, 0 failed. RoadNetwork Play Mode: raiders on the shop (0.146), house (0.09) and
+  road (0.05) floors, the squad on desert (0); Reno desert → road → across the kerb (0.05 → 0.10) and
+  through the shop door (0 → 0.146) with feet on the floor every frame; sidewalk tile Canvas at 0.14,
+  cursor 0.10; all 840 outline vertices at least 0.13 m above their floor. GridBattle's Play Mode check
+  was not run (it would close RoadNetwork).
 
 ## H2: grid levels (outline, needs its own plan)
 

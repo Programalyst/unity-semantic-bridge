@@ -72,11 +72,12 @@ game's occupancy need the real placement, so they are apply and scene tier findi
 | Data | `Cell`, `LayoutDocument`, `LayoutJson` (`Runtime/Layout/`) | |
 | Rules | `GridRules` as data; `LayoutGrid` applies them (neighbours, corner rule, orthogonal cover, diffs, ASCII map) | Supplies the values: cell size, 8-way, no corner-cutting, orthogonal cover |
 | Board | | `TryGetBoard`, `CellToWorld`, `WorldToCell` (size from Level Info, origin, floor height) |
-| Pieces | `LayoutApplier`: instantiate, rotate, scale and size from the catalog card (or measure), place, fit colliders, one Undo step | `DescribeCover`, `ConfigurePiece` (piece hook), `IsBlockingCollider`, `GroundLift` |
+| Pieces | `LayoutApplier`: instantiate, rotate, scale and size from the catalog card (or measure), place, fit colliders, ground pieces onto the walkable layer and building floor boxes, one Undo step | `DescribeCover`, `ConfigurePiece` (piece hook), `IsBlockingCollider`, `GroundLift`, `WalkableLayer` |
 | Cards | `LevelCardSource`: a reviewed piece's level catalog card, built on demand from the prefab and `AssetCatalog/LevelCatalogOverrides.json` | Commits the overrides file |
 | Reading scenes | `LayoutBaker`: pieces, decor, off-grid reports, occupancy diff | `Classify` (blocker, decor, ignore), `BakeOccupancy` |
 | Level data | Writes/reads deploy cells and enemy spawns through the adapter | `ReadDeployCells`, `WriteDeployCells`, `ReadEnemySpawns`, `WriteEnemySpawns` (resolves GUIDs to the game's asset types) |
 | Validators | `LayoutValidator` (pure: structural, encounter, reachability, consistency), `LayoutReport`; `LayoutSceneValidator` (Editor: physics tier) | Nothing new: rules, occupancy bake and sight rules above |
+| Floor heights | `LayoutGrid.SetFloors`, the step rule in `CanStep`, `STEP_TOO_HIGH`; `LayoutApplier.ApplyFloors` for scenes applied before | `GridRules.MaxStepHeight`, `WalkableLayer`, `FloorHeights(scene, board)` (default: none) |
 | Sight | `LayoutGrid.CanSee` (grid sight); for a physics-sight game, the consistency and wall checks against sight colliders | `GridRules.GridSight`; physics sight only: `SightLayers`, `IgnoredBySight` (default implementations, so a grid-sight game such as NK skips them) |
 
 `Runtime/Layout/` uses no UnityEngine types except `IGridRulesAdapter.cs`. The
@@ -165,7 +166,9 @@ optional last argument and default to `LevelCardSource.ForProject()`:
       pivot stands at the floor + the card's **`lift`**, plus the adapter's
       **`GroundLift`** for ground-role cards (NK: 0.25 m for the whole road kit, which
       clears the kerb skirts and the terrain; NK's card `lift`s then put road tiles at
-      0.05 m (−0.2) and sidewalk tiles at 0.1 m (−0.15)).
+      0.05 m (−0.2) and sidewalk tiles at 0.1 m (−0.15)). Ground-role pieces then go on
+      the adapter's **`WalkableLayer`**, whole hierarchy (none when it is −1), so the game
+      finds floors with a ray against that layer alone ([floor heights](heights-and-levels-plan.md), H1).
    4. Blockers only, before the piece hook: every solid collider (enabled, not a
       trigger) that reaches past the footprint inset by 0.1 m is fitted. Axis-aligned
       boxes are shrunk as below. Other shapes (Synty's mesh colliders, rotated boxes) are
@@ -256,6 +259,24 @@ a wall or window and a diagonal past a corner where one meets (even without the 
 `DiffOccupancy` adds `WALL_MISSING`, `WALL_EXTRA`, `WALL_KIND` and `WALL_COVER`. An outline whose
 size differs from the footprint is `OUTLINE_SIZE`. Without `SideWalls` a walled card builds as a
 solid blocker. Reachability goes through doors with no extra code.
+
+**Floor heights** (plan [H1](heights-and-levels-plan.md)). A walled building whose card has a
+`floorHeight` gets a `Floor Collider` child on the adapter's `WalkableLayer`: one 5 cm box per run
+of interior cells in a row (`WallOutline.InteriorCells`: frame cells not reached from outside
+through open sides; walls, windows and doors all close the interior), top at `floorHeight` above
+the base the piece stands on (its root less the card's lift, so the board floor when applied),
+and a `FLOOR_BOX` note. A card without `floorHeight` gets none and a `NO_FLOOR_HEIGHT` note. The
+building's own colliders keep their layer. `LayoutApplier.ApplyFloors(scene)` does both (ground
+layer, floor boxes) in place for a scene applied before, through the baker's anchors and turns.
+
+`LayoutSceneValidator` puts the adapter's `FloorHeights(scene, board)` (world Y per cell, the way
+the game's runtime samples them) on the grid before reachability and the metrics. With
+`GridRules.MaxStepHeight` above 0 (NK: 0.5 m), `CanStep` treats a side between floors more than
+that apart (5 mm slack) like a wall, for movement only, so the corner rule seals diagonals past it,
+and a diagonal's own rise counts too. `ROUTES`, `COVER_SPACING` and the other metrics follow it.
+**`STEP_TOO_HIGH`** (error, at the lower cell) is each pair of open straight neighbours with such
+a step and no wall between: a kerb or slab too tall for the kit, or a building whose
+`floorHeight` is off. Layout JSON stores no heights; they come from the scene.
 
 Apply and bake (Phase W3):
 - **Placement.** Every card piece is placed so its bounds centre sits `footprintOffset` from its
@@ -418,6 +439,12 @@ game's occupancy bake of a scene (scene tier), so hand-made scenes like NK's Gri
   rotation with door points, JSON), the step and corner rule, wall cover, diffs and the double-resolution
   map, building claims and rotated walls in `Build`, reachability through a door, and the overrides and
   card fields. `Tests/Editor/WallOutlineSuggesterTests.cs`: the suggester on a box-built room.
+- `Tests/Editor/FloorHeightTests.cs`: floor heights (pure): interior cells, the step rule on straight
+  and diagonal steps (sight unaffected), `STEP_TOO_HIGH` and its exceptions, floors through `ForGrid`
+  and `Validate`, and the `floorHeight` override on walled building cards. In `LayoutApplierCardTests`:
+  ground pieces on the walkable layer, a turned building's floor boxes (cells, height, an outside
+  cell left out), `ApplyFloors` on a moved building, no floor without a layer or a `floorHeight`, and
+  the scene validators using the adapter's floors.
 - `Tests/Editor/LayoutValidatorTests.cs`: deliberately broken layouts, each with the
   exact report line it must produce, plus corner-rule sealing, report capping and the
   map, and the consistency check. Run them through `TestProject`:

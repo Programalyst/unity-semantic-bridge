@@ -38,6 +38,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         private readonly SideState[,,] _sides;
         // Walled pieces claim their frame without blocking it, so two buildings can't share cells.
         private readonly string[,] _claims;
+        // World Y of each cell's floor (plan H1); null when the grid has none.
+        private float[,] _floors;
 
         public int Width { get; }
         public int Height { get; }
@@ -85,6 +87,41 @@ namespace Gamenami.UnitySemanticBridge.Layout
             if (kind != SideKind.Open) HasWalls = true;
         }
 
+        /// <summary>True once floor heights are set (SetFloors).</summary>
+        public bool HasFloors => _floors != null;
+
+        /// <summary>
+        /// Per-cell floor heights, world Y, indexed [x, y] (IGridRulesAdapter.FloorHeights); null clears them. With
+        /// GridRules.MaxStepHeight above 0, a step between neighbours whose floors differ by more is closed to movement.
+        /// </summary>
+        public void SetFloors(float[,] floors)
+        {
+            if (floors != null && (floors.GetLength(0) != Width || floors.GetLength(1) != Height))
+                throw new ArgumentException($"Floor heights are {floors.GetLength(0)}x{floors.GetLength(1)}; the board is {Width}x{Height}.", nameof(floors));
+            _floors = floors;
+        }
+
+        /// <summary>A cell's floor height (world Y); 0 without floor heights or off the board.</summary>
+        public float FloorAt(Cell cell) => _floors != null && Contains(cell) ? _floors[cell.X, cell.Y] : 0f;
+
+        /// <summary>The floor step across a side of a cell, meters (absolute); 0 without floors or towards off the board.</summary>
+        public float StepAcross(Cell cell, GridSide side)
+        {
+            var neighbour = cell + GridSides.Step(side);
+            if (_floors == null || !Contains(cell) || !Contains(neighbour)) return 0f;
+            return Math.Abs(_floors[neighbour.X, neighbour.Y] - _floors[cell.X, cell.Y]);
+        }
+
+        /// <summary>Whether the step rule (GridRules.MaxStepHeight) closes a side of a cell to movement.</summary>
+        public bool IsStepClosed(Cell cell, GridSide side) =>
+            Rules.MaxStepHeight > 0f && StepAcross(cell, side) > Rules.MaxStepHeight + StepTolerance;
+
+        /// <summary>Slack on the step rule, meters, so a measured 0.5004 m step is still 0.5 m.</summary>
+        public const float StepTolerance = 0.005f;
+
+        // A side movement may not cross: a wall or window, or a step that is too high.
+        private bool IsMoveClosed(Cell cell, GridSide side) => IsWalled(cell, side) || IsStepClosed(cell, side);
+
         /// <summary>The walled piece whose frame covers a cell, or null.</summary>
         public string ClaimedBy(Cell cell) => Contains(cell) ? _claims[cell.X, cell.Y] : null;
 
@@ -129,7 +166,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// Whether a single step between adjacent cells is legal: the target is on the board
         /// and open, a straight step does not cross a walled side, and a diagonal does not cut
         /// past a blocked orthogonal neighbour (when the rules forbid that) nor pass a corner
-        /// where a walled side meets. Only blockers and walls count; units are not part of the layout.
+        /// where a walled side meets. A step too high for GridRules.MaxStepHeight counts as a wall
+        /// (movement only). Only blockers and walls count; units are not part of the layout.
         /// </summary>
         public bool CanStep(Cell from, Cell to)
         {
@@ -137,14 +175,16 @@ namespace Gamenami.UnitySemanticBridge.Layout
             var dy = to.Y - from.Y;
             if (Math.Abs(dx) > 1 || Math.Abs(dy) > 1 || (dx == 0 && dy == 0)) return false;
             if (!Contains(to) || IsBlocked(to)) return false;
-            if (dx == 0 || dy == 0) return !IsWalled(from, dx > 0 ? GridSide.PlusX : dx < 0 ? GridSide.MinusX : dy > 0 ? GridSide.PlusY : GridSide.MinusY);
+            if (dx == 0 || dy == 0) return !IsMoveClosed(from, dx > 0 ? GridSide.PlusX : dx < 0 ? GridSide.MinusX : dy > 0 ? GridSide.PlusY : GridSide.MinusY);
             if (!Rules.DiagonalMoves) return false;
             // Walls seal at their corners whatever the corner-cutting rule says.
             var xSide = dx > 0 ? GridSide.PlusX : GridSide.MinusX;
             var ySide = dy > 0 ? GridSide.PlusY : GridSide.MinusY;
             var besideX = new Cell(from.X + dx, from.Y);
             var besideY = new Cell(from.X, from.Y + dy);
-            if (IsWalled(from, xSide) || IsWalled(from, ySide) || IsWalled(besideX, ySide) || IsWalled(besideY, xSide)) return false;
+            if (IsMoveClosed(from, xSide) || IsMoveClosed(from, ySide) || IsMoveClosed(besideX, ySide) || IsMoveClosed(besideY, xSide)) return false;
+            // A too-high step closes its corners like a wall; the diagonal's own rise counts too.
+            if (Rules.MaxStepHeight > 0f && Math.Abs(FloorAt(to) - FloorAt(from)) > Rules.MaxStepHeight + StepTolerance) return false;
             if (!Rules.NoCornerCutting) return true;
             return !IsBlocked(besideX) && !IsBlocked(besideY);
         }

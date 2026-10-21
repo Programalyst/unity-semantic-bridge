@@ -53,6 +53,20 @@ namespace Gamenami.UnitySemanticBridge.Layout
         float GroundLift { get; }
 
         /// <summary>
+        /// Floor heights (plan H1): the physics layer units stand on. The applier puts ground-role pieces on it and
+        /// builds a walled building's floor box (card floorHeight) on it, so the game can find each cell's floor with a
+        /// ray against this layer alone. -1 (the default) leaves layers alone and builds no floor boxes.
+        /// </summary>
+        int WalkableLayer => -1;
+
+        /// <summary>
+        /// Floor heights (plan H1): each cell's floor in <paramref name="scene"/> as the game's runtime would find it,
+        /// world Y, indexed [x, y] over the board; null (the default) when the game has no per-cell floors. The scene
+        /// validators put them on the grid for the step rule (GridRules.MaxStepHeight) and STEP_TOO_HIGH.
+        /// </summary>
+        float[,] FloorHeights(Scene scene, GridBoard board) => null;
+
+        /// <summary>
         /// Layers whose colliders the game's line-of-sight test hits. Only for a game whose sight is physics
         /// (Rules.GridSight false): the physics-tier sight checks (SIGHT_NO_OBSTACLE, WALL_SIGHT_GAP,
         /// DOOR_COLLIDER) probe them. A grid-sight game need not implement it.

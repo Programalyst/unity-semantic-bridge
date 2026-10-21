@@ -128,6 +128,44 @@ namespace Gamenami.UnitySemanticBridge.Layout
             return SideKind.Open;
         }
 
+        /// <summary>
+        /// Frame cells inside the walls (plan H1a, the building's floor): those not reached from outside the frame
+        /// through open sides alone. Walls, windows and doors all close the interior; a frame cell behind an open
+        /// outer side (an open porch inside the frame) is outside. Rows from y = 0, each from x = 0.
+        /// </summary>
+        public List<Cell> InteriorCells()
+        {
+            var outside = new bool[Width, Height];
+            var pending = new Queue<Cell>();
+            void Reach(Cell cell)
+            {
+                if (outside[cell.X, cell.Y]) return;
+                outside[cell.X, cell.Y] = true;
+                pending.Enqueue(cell);
+            }
+            for (var y = 0; y < Height; y++)
+                for (var x = 0; x < Width; x++)
+                {
+                    var cell = new Cell(x, y);
+                    foreach (var side in GridSides.All)
+                        if (!Contains(cell + GridSides.Step(side)) && KindAt(cell, side) == SideKind.Open) Reach(cell);
+                }
+            while (pending.Count > 0)
+            {
+                var cell = pending.Dequeue();
+                foreach (var side in GridSides.All)
+                {
+                    var next = cell + GridSides.Step(side);
+                    if (Contains(next) && KindAt(cell, side) == SideKind.Open) Reach(next);
+                }
+            }
+            var interior = new List<Cell>();
+            for (var y = 0; y < Height; y++)
+                for (var x = 0; x < Width; x++)
+                    if (!outside[x, y]) interior.Add(new Cell(x, y));
+            return interior;
+        }
+
         public CoverLevel CoverFor(SideKind kind) =>
             kind == SideKind.Wall ? WallCover : kind == SideKind.Window ? WindowCover : CoverLevel.None;
 

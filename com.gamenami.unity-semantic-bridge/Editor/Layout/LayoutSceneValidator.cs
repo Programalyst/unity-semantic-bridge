@@ -14,7 +14,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
     /// (IGridRulesAdapter.SightLayers, IgnoredBySight). With grid sight, colliders decide no sight, so those
     /// checks (SIGHT_NO_OBSTACLE, WALL_SIGHT_GAP, DOOR_COLLIDER) do not run. Pieces with a
     /// level catalog card also get the scale and plausibility checks (heights against the game's
-    /// GridRules.CoverHeights, ground runs, building fronts).
+    /// GridRules.CoverHeights, ground runs, building fronts). A game with per-cell floor heights
+    /// (IGridRulesAdapter.FloorHeights) gets the step rule in reachability and the metrics, and STEP_TOO_HIGH.
     /// </summary>
     public static class LayoutSceneValidator
     {
@@ -32,7 +33,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             adapter ??= LayoutAdapters.Find();
             var board = RequireBoard(scene, adapter);
             var report = LayoutValidator.Validate(document,
-                p => applied.Specs.TryGetValue(p.LocalId, out var s) ? s : (PieceSpec?)null, adapter.Rules);
+                p => applied.Specs.TryGetValue(p.LocalId, out var s) ? s : (PieceSpec?)null, adapter.Rules, Floors(scene, board, adapter));
             report.Issues.InsertRange(0, applied.PlacementIssues.Select(line => LayoutIssue.FromLine(line)));
             report.Issues.AddRange(LayoutValidator.Scale(applied.Cards, adapter.Rules.CoverHeights));
             report.Issues.AddRange(LayoutValidator.Plausibility(report.Grid, applied.Cards));
@@ -54,6 +55,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             adapter ??= LayoutAdapters.Find();
             var board = RequireBoard(scene, adapter);
             bake ??= LayoutBaker.Bake(scene, adapter);
+            bake.Physics.SetFloors(Floors(scene, board, adapter));
 
             var report = LayoutValidator.ForGrid(bake.Physics, bake.Document.Deploy, bake.Document.Enemies);
             var readIssues = new List<string>(bake.Issues);
@@ -171,6 +173,16 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
             const float reach = 0.6f;
             return Physics.RaycastAll(point - normal * reach, normal, reach * 2f, adapter.SightLayers, QueryTriggerInteraction.Ignore)
                 .Any(hit => !adapter.IgnoredBySight(hit.collider));
+        }
+
+        // The game's per-cell floor heights (plan H1), checked against the board; null when it has none.
+        private static float[,] Floors(Scene scene, GridBoard board, IGridRulesAdapter adapter)
+        {
+            Physics.SyncTransforms();
+            var floors = adapter.FloorHeights(scene, board);
+            if (floors != null && (floors.GetLength(0) != board.Width || floors.GetLength(1) != board.Height))
+                throw new BridgeToolException($"The adapter's floor heights are {floors.GetLength(0)}x{floors.GetLength(1)}; the board is {board.Width}x{board.Height}.");
+            return floors;
         }
 
         private static GridBoard RequireBoard(Scene scene, IGridRulesAdapter adapter)
