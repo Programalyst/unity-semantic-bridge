@@ -172,8 +172,8 @@ the 0.5 m step, about 0.6 m) so it never meets a roof first.
 
 ## H2: grid levels (draft plan, 2026-10-21)
 
-Builds on the H2 outline (D6-D8) and on H1. **H2a (the model) is built (2026-10-21); the rest is
-not.** Owner decisions of 2026-10-21:
+Builds on the H2 outline (D6-D8) and on H1. **H2a (the model) and H2b (authoring) are built
+(2026-10-21); the rest is not.** Owner decisions of 2026-10-21:
 
 | # | Decision |
 |---|---|
@@ -295,6 +295,35 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
   Range, Attack Alerts, Layout Round Trip and Reports unchanged; USB `GridLevelTests`.
 - **For the owner:** only Mega Mutant Heavy is set not to climb. War Robot, BR Base, Rook, Spitter Bug and
   Plasma Stalker climb by default until told otherwise.
+
+### H2b as built (2026-10-21)
+
+- **Card.** A walled building's `walls` object takes `levels` (`[{"height": m, "cells": [[x0, y0, x1, y1]]}]`,
+  level 1 first, height above the base the building stands on, cells inside the frame) and `ladders`
+  (`[[x, y, level, x, y, level]]`, frame coordinates; a ground end may be outside the frame; the ends are the
+  same cell or straight neighbours; an upper end must be a cell of its level). They rotate with the outline
+  (`WallOutline.Levels`, `Ladders`, `WithLevels`) and so reach `PieceSpec.Outline`, `ConfigureWalls`,
+  `TryReadWalls` and the baker unchanged. Parapets on an upper level are not modelled yet.
+- **USB.** `LayoutGrid.Build` declares each level's cells (floor = its height) and the ladders (`LADDER_OFF_BOARD`
+  when an end is off the board). The applier's `Floor Collider` gets one set of boxes per level, top at the
+  base plus the level's height (`FLOOR_BOX ... level N` notes). The baker's `WALLS_DIFF` compares levels (cells,
+  height within 1 cm) and ladders. `describe_level_cards` adds `measuredRoof`: the highest surface over each frame
+  cell, from above the whole building.
+- **NK.** `GridWalls` stores the levels and ladders in frame cells (`WallLevel`, `WallLadder`, `BaseY`);
+  `NkGridRules.ConfigureWalls` writes them and `TryReadWalls` reads them back. `GridManager.RegisterWalls` then
+  registers them (`RegisterLevels`: each level cell's floor from the H1 probe started at the level's nominal
+  height, so it meets the level's floor box; then the ladders). The step rule now runs after the walls, so it
+  covers the upper levels too.
+- **Shop roof** (NK overrides, pending owner approval): level 1 at 5.157 m (`measuredRoof` median), 27 of its 32
+  cells (the clutter cells (0,0), (1,0) at 6.07 m, (7,0), (0,3) and (7,3) left out), and one ladder up the back
+  wall from (5,-1) to (5,0).
+- **Verification.** NK *Validate Grid Levels* now 51 checks: CatalogTest applied in a temporary scene, the shop's
+  `GridWalls` levels and roof floor boxes, registration on a `GridMap` (27 roof cells at the floor box's height, the
+  ladder from the ground behind the shop, a path onto the roof for a soldier and none for a mega mutant), USB's grid
+  and the baker reading the same. *Validate Floor Heights* tells ground floor boxes from roof boxes. USB tests:
+  levels and ladders through JSON, rotation and validation, `Build`, the applier's roof boxes and the bake.
+- **Scenes.** CatalogTest and RoadNetwork need the layout reapplied (or the shop replaced) before their shop has
+  a roof: `ApplyFloors` builds floor boxes but does not rewrite `GridWalls`.
 
 ### Phases
 

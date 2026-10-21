@@ -169,7 +169,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     ["approximate"] = footprint.Approximate,
                     ["overridden"] = footprint.Overridden,
                 };
-                if (card.Walls != null) json["measuredFloor"] = MeasureFloor(path, card, cellSize);
+                if (card.Walls != null)
+                {
+                    json["measuredFloor"] = MeasureFloor(path, card, cellSize);
+                    json["measuredRoof"] = MeasureFloor(path, card, cellSize, roof: true);
+                }
                 result[path] = json;
             }
             return result.ToString(Newtonsoft.Json.Formatting.None);
@@ -186,7 +190,11 @@ namespace Gamenami.UnitySemanticBridge.Editor
         /// from FloorProbeStart above the base against its visible meshes. Returns the median, range and per-cell
         /// heights (meters above the base), for the card's floorHeight override.
         /// </summary>
-        public static JObject MeasureFloor(string path, LevelCard card, double cellSize)
+        /// <param name="roof">
+        /// Grid levels (plan H2): probe every frame cell from above the whole building instead, for the highest surface
+        /// (a roof, or what stands on it), to fill in an upper level's height and cells.
+        /// </param>
+        public static JObject MeasureFloor(string path, LevelCard card, double cellSize, bool roof = false)
         {
             var contents = PrefabUtility.LoadPrefabContents(path);
             try
@@ -214,11 +222,15 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 var cells = new JArray();
                 var heights = new List<float>();
                 var misses = 0;
-                foreach (var cell in outline.InteriorCells())
+                var top = roof ? triangles.Select(t => Mathf.Max(t.a.y, Mathf.Max(t.b.y, t.c.y))).DefaultIfEmpty(0f).Max() + 1f : FloorProbeStart;
+                var probed = roof
+                    ? Enumerable.Range(0, outline.Height).SelectMany(y => Enumerable.Range(0, outline.Width).Select(x => new Cell(x, y))).ToList()
+                    : outline.InteriorCells();
+                foreach (var cell in probed)
                 {
                     var x = (float)((cell.X - (outline.Width - 1) * 0.5) * cellSize);
                     var z = (float)((cell.Y - (outline.Height - 1) * 0.5) * cellSize);
-                    var floor = ProbeDown(triangles, x, z, FloorProbeStart, -FloorProbeDepth);
+                    var floor = ProbeDown(triangles, x, z, top, roof ? FloorProbeStart : -FloorProbeDepth);
                     cells.Add(new JArray(cell.X, cell.Y, floor.HasValue ? Math.Round(floor.Value, 3) : (double?)null));
                     if (floor.HasValue) heights.Add(floor.Value); else misses++;
                 }
@@ -230,7 +242,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     ["max"] = heights.Count > 0 ? Math.Round(heights[heights.Count - 1], 3) : (double?)null,
                     ["misses"] = misses,
                     ["cells"] = cells,
-                    ["card"] = card.FloorHeight,
+                    ["card"] = roof ? (JToken)(card.Walls.Levels.Count > 0 ? card.Walls.Levels[0].Height : (double?)null) : card.FloorHeight,
                 };
             }
             finally

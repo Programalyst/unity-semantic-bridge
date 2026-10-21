@@ -276,6 +276,39 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.AreEqual(1, housePiece.Cast<Transform>().Count(t => t.name == LayoutApplier.FloorColliderName), "idempotent");
         }
 
+        // Grid levels (plan H2b): a roof level gets its own floor boxes at its height above the base, beside the ground floor's.
+        [Test]
+        public void UpperLevelsGetFloorBoxesAtTheirHeight()
+        {
+            adapter.WalkableLayer = 4;
+            adapter.Rules.SideWalls = true;
+            var house = MakeMeshProp("SM_Bld_Test_House", new Vector3(3.6f, 3f, 3.6f));
+            var cards = Cards($"\"{house}\":{{\"role\":\"building\",\"placementScale\":[1,1,1],\"footprint\":[4,4],\"lift\":0.1,\"floorHeight\":0.2," +
+                              "\"walls\":{\"outline\":[\"+-+D+\",\"|   |\",\"+ + +\",\"|   |\",\"+-+-+\"]," +
+                              "\"levels\":[{\"height\":3.1,\"cells\":[[0,0,1,0],[1,1,1,1]]}],\"ladders\":[[1,2,0,1,1,1]]}}");
+            var document = Doc($"[\"house\",\"{house}\",2,2,0]");
+
+            var result = LayoutApplier.Apply(document, scene, adapter, cards);
+            Assert.AreEqual(0, result.Issues.Count, string.Join("; ", result.Issues));
+            Physics.SyncTransforms();
+            var boxes = Piece(result, "house").Find(LayoutApplier.FloorColliderName).GetComponents<BoxCollider>();
+            var ground = boxes.Where(b => Mathf.Abs(b.bounds.max.y - 0.2f) < 1e-4f).ToList();
+            var roof = boxes.Where(b => Mathf.Abs(b.bounds.max.y - 3.1f) < 1e-4f).ToList();
+            Assert.AreEqual(ground.Count + roof.Count, boxes.Length, "every box is the ground floor's or the roof's");
+            Assert.AreEqual(4 * 4f, ground.Sum(b => b.bounds.size.x * b.bounds.size.z), 1e-3f, "four ground cells");
+            Assert.AreEqual(3 * 4f, roof.Sum(b => b.bounds.size.x * b.bounds.size.z), 1e-3f, "three roof cells");
+            Assert.IsTrue(roof.Any(b => b.bounds.Contains(new Vector3(7f, 3.08f, 7f))) && !roof.Any(b => b.bounds.Contains(new Vector3(5f, 3.08f, 7f))),
+                "the roof covers (3,3) but not (2,3)");
+            StringAssert.StartsWith("FLOOR_BOX 2,2 house level 1: 3 cells in 2 boxes, top 3.10 m", result.Notes.Single(n => n.Contains("level 1")));
+            Assert.AreEqual(1, adapter.Walls[Piece(result, "house").gameObject].outline.Levels.Count, "the game's hook gets the levels");
+
+            var bake = LayoutBaker.Bake(scene, adapter, cards);
+            Assert.IsEmpty(bake.Issues.Where(i => i.StartsWith("WALLS_")), "the bake reads the same levels and ladder");
+            var grid = LayoutSceneValidator.ValidateApplied(document, result, scene, adapter).Grid;
+            Assert.AreEqual(3, grid.UpperCells.Count());
+            Assert.IsTrue(grid.IsLadder(new LevelCell(3, 4), new LevelCell(3, 3, 1)));
+        }
+
         [Test]
         public void NoWalkableLayerOrFloorHeightBuildsNoFloor()
         {

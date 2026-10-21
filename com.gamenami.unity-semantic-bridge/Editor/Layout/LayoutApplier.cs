@@ -260,13 +260,11 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         {
             if (adapter.WalkableLayer < 0) return null;
             var where = $"{anchor} {localId}";
+            var outline = card.Walls.Rotate(rotation);
             if (!card.FloorHeight.HasValue)
-            {
                 result.Notes.Add($"NO_FLOOR_HEIGHT {where}: the card has no floorHeight, so no floor box; units inside stand on whatever is under the building");
-                return null;
-            }
-            var interior = card.Walls.Rotate(rotation).InteriorCells();
-            if (interior.Count == 0) return null;
+            var interior = card.FloorHeight.HasValue ? outline.InteriorCells() : new List<Cell>();
+            if (interior.Count == 0 && outline.Levels.Count == 0) return null;
 
             var holder = new GameObject(FloorColliderName);
             holder.layer = adapter.WalkableLayer;
@@ -277,12 +275,32 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 result.AddPlacementIssue($"FIT_UNSUPPORTED {where}: the piece's root is not turned in quarter turns, so no floor box could be built");
                 return null;
             }
-            var cellSize = adapter.Rules.CellSize;
             // Above the base the piece stands on: its root less the card's lift (the board floor when the applier placed
             // it; a hand-placed building may sit off its lift, and its floor moves with it).
-            var top = instance.transform.position.y - (float)card.Lift + (float)card.FloorHeight.Value;
+            var baseY = instance.transform.position.y - (float)card.Lift;
+            if (interior.Count > 0)
+            {
+                var top = baseY + (float)card.FloorHeight.Value;
+                var boxes = AddBoxes(holder, interior, top, anchor, board, adapter);
+                result.Notes.Add($"FLOOR_BOX {where}: {interior.Count} interior cells in {boxes} box{(boxes == 1 ? "" : "es")}, top {top:0.00} m");
+            }
+            // Grid levels (plan H2): each upper level's floor, at its height above the same base.
+            for (var i = 0; i < outline.Levels.Count; i++)
+            {
+                var cells = outline.Levels[i].Cells();
+                var top = baseY + (float)outline.Levels[i].Height;
+                var boxes = AddBoxes(holder, cells, top, anchor, board, adapter);
+                result.Notes.Add($"FLOOR_BOX {where} level {i + 1}: {cells.Count} cells in {boxes} box{(boxes == 1 ? "" : "es")}, top {top:0.00} m");
+            }
+            return holder;
+        }
+
+        // One FloorBoxThickness box per run of cells in a row, its top at top (world Y); returns how many.
+        private static int AddBoxes(GameObject holder, List<Cell> cells, float top, Cell anchor, GridBoard board, IGridRulesAdapter adapter)
+        {
+            var cellSize = adapter.Rules.CellSize;
             var boxes = 0;
-            foreach (var (first, last) in Runs(interior))
+            foreach (var (first, last) in Runs(cells))
             {
                 var min = adapter.CellToWorld(anchor + first, board) - new Vector3(cellSize, 0f, cellSize) * 0.5f;
                 var max = adapter.CellToWorld(anchor + last, board) + new Vector3(cellSize, 0f, cellSize) * 0.5f;
@@ -294,8 +312,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 box.size = localMax - localMin;
                 boxes++;
             }
-            result.Notes.Add($"FLOOR_BOX {where}: {interior.Count} interior cells in {boxes} box{(boxes == 1 ? "" : "es")}, top {top:0.00} m");
-            return holder;
+            return boxes;
         }
 
         /// <summary>

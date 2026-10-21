@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Gamenami.UnitySemanticBridge.Layout;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Gamenami.UnitySemanticBridge.Editor.Tests
@@ -75,6 +76,56 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.IsFalse(grid.CanStep(new LevelCell(0, 0, 1), new LevelCell(1, 0, 1)), "0.6 m up");
             Assert.IsTrue(grid.CanStep(new LevelCell(0, 0, 1), new LevelCell(0, 1, 1)), "0.5 m up");
             Assert.IsFalse(grid.CanStep(new LevelCell(0, 0, 1), new LevelCell(1, 1, 1)), "the diagonal passes the 0.6 m side");
+        }
+
+        // H2b: a walled building's card carries its levels and ladders in its walls object.
+        private const string RoofJson = "{\"outline\":[\"+-+-+-+\",\"|     |\",\"+ + + +\",\"|     |\",\"+-+D+-+\"]," +
+                                        "\"levels\":[{\"height\":3.5,\"cells\":[[0,0,2,0],[0,1,1,1]]}],\"ladders\":[[2,2,0,2,1,1]]}";
+
+        [Test]
+        public void WallsCarryLevelsAndLaddersThroughJsonAndRotation()
+        {
+            // The ladder's top (2,1) must be a level cell; this level leaves it out, so the parse fails.
+            var error = Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(RoofJson)));
+            StringAssert.Contains("is not a cell of level 1", error.Message);
+
+            var json = RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]");
+            var walls = WallOutline.FromJson(JToken.Parse(json));
+            Assert.AreEqual(1, walls.Levels.Count);
+            Assert.AreEqual(6, walls.Levels[0].Cells().Count);
+            Assert.AreEqual(3.5, walls.Levels[0].Height);
+            Assert.AreEqual(new LadderLink(new Cell(2, 2), 0, new Cell(2, 1), 1), walls.Ladders.Single());
+            Assert.IsTrue(JToken.DeepEquals(walls.ToJson(), WallOutline.FromJson(walls.ToJson()).ToJson()), "JSON round trip");
+
+            // Turned once clockwise in a 3 x 2 frame: (x, y) -> (y, 2 - x); the ladder foot outside the frame turns too.
+            var turned = walls.Rotate(1);
+            CollectionAssert.AreEquivalent(walls.Levels[0].Cells().Select(c => new Cell(c.Y, 2 - c.X)), turned.Levels[0].Cells());
+            Assert.AreEqual(new LadderLink(new Cell(2, 0), 0, new Cell(1, 0), 1), turned.Ladders.Single());
+            Assert.AreEqual(walls.Ladders.Single(), turned.Rotate(3).Ladders.Single(), "four turns come back");
+
+            Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(json.Replace("[[2,2,0,2,1,1]]", "[[2,3,0,2,1,1]]"))),
+                "ladder ends must be neighbours");
+            Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(json.Replace("[[2,2,0,2,1,1]]", "[[2,1,1,2,1,1]]"))),
+                "a ladder joins two levels");
+            Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(json.Replace("[0,0,2,0]", "[0,0,3,0]"))),
+                "level cells stay in the frame");
+            Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(json.Replace("\"height\":3.5", "\"height\":0"))));
+        }
+
+        [Test]
+        public void BuildPutsALevelAndItsLadderOnTheGrid()
+        {
+            var walls = WallOutline.FromJson(JToken.Parse(RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]")));
+            var document = LayoutJson.Parse("{\"v\":1,\"size\":[8,8],\"pieces\":[[\"shop\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",2,2,0]],\"deploy\":[[0,0]],\"decor\":[]}");
+            var rules = new GridRules { CellSize = 2f, SideWalls = true, LadderTiles = 2 };
+            var issues = new System.Collections.Generic.List<LayoutIssue>();
+            var grid = LayoutGrid.Build(document, _ => new PieceSpec(3, 2, CoverLevel.Full, walls), rules, issues);
+            CollectionAssert.IsEmpty(issues);
+            Assert.AreEqual(6, grid.UpperCells.Count());
+            Assert.IsTrue(grid.Exists(new LevelCell(2, 2, 1)) && grid.Exists(new LevelCell(4, 3, 1)));
+            Assert.AreEqual(3.5f, grid.FloorAt(new LevelCell(3, 3, 1)));
+            Assert.IsTrue(grid.IsLadder(new LevelCell(4, 4), new LevelCell(4, 3, 1)));
+            Assert.AreEqual(7, grid.StepsFrom(new[] { new LevelCell(4, 7) })[new LevelCell(2, 2, 1)], "3 to the ladder, 2 up, 2 across");
         }
     }
 }

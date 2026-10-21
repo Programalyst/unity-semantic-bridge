@@ -55,6 +55,58 @@ namespace Gamenami.UnitySemanticBridge.Layout
     }
 
     /// <summary>
+    /// An upper level of a walled building (plan H2): its floor height above the base the building stands on, and its
+    /// cells as inclusive rectangles in frame coordinates (inside the frame). Level numbers start at 1, in list order.
+    /// </summary>
+    public sealed class UpperLevel
+    {
+        public double Height { get; }
+        public IReadOnlyList<(Cell min, Cell max)> Rects { get; }
+
+        public UpperLevel(double height, IEnumerable<(Cell min, Cell max)> rects)
+        {
+            if (double.IsNaN(height) || double.IsInfinity(height) || height <= 0) throw new FormatException("a level's height must be positive");
+            Height = height;
+            Rects = rects.ToList();
+            if (Rects.Count == 0) throw new FormatException("a level needs at least one cell rectangle");
+            foreach (var (min, max) in Rects)
+                if (max.X < min.X || max.Y < min.Y) throw new FormatException("level rectangles go from min to max");
+        }
+
+        /// <summary>Every cell of the level, rows from y = 0, each from x = 0, once.</summary>
+        public List<Cell> Cells() => Rects
+            .SelectMany(r => Enumerable.Range(r.min.Y, r.max.Y - r.min.Y + 1)
+                .SelectMany(y => Enumerable.Range(r.min.X, r.max.X - r.min.X + 1).Select(x => new Cell(x, y))))
+            .Distinct().OrderBy(c => c.Y).ThenBy(c => c.X).ToList();
+    }
+
+    /// <summary>
+    /// A ladder between two levels of a walled building (plan H2): its ends in frame coordinates with their levels
+    /// (0 = the ground, which may be outside the frame). The ends are the same cell or straight neighbours.
+    /// </summary>
+    public readonly struct LadderLink : IEquatable<LadderLink>
+    {
+        public readonly Cell FromCell;
+        public readonly int FromLevel;
+        public readonly Cell ToCell;
+        public readonly int ToLevel;
+
+        public LadderLink(Cell fromCell, int fromLevel, Cell toCell, int toLevel)
+        {
+            FromCell = fromCell;
+            FromLevel = fromLevel;
+            ToCell = toCell;
+            ToLevel = toLevel;
+        }
+
+        public bool Equals(LadderLink other) => FromCell.Equals(other.FromCell) && FromLevel == other.FromLevel &&
+                                                ToCell.Equals(other.ToCell) && ToLevel == other.ToLevel;
+        public override bool Equals(object obj) => obj is LadderLink other && Equals(other);
+        public override int GetHashCode() => unchecked((FromCell.GetHashCode() * 31 + FromLevel) * 31 + ToCell.GetHashCode() * 7 + ToLevel);
+        public override string ToString() => $"{new LevelCell(FromCell, FromLevel)} - {new LevelCell(ToCell, ToLevel)}";
+    }
+
+    /// <summary>
     /// A building's walls on cell sides: a W x H frame of cells (its footprint, which stays walkable)
     /// and what sits on each side, at layout rotation 0. Written in the overrides file as an ASCII
     /// picture, top row = +y, 2H + 1 lines of 2W + 1 characters:
@@ -79,6 +131,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
         public double? CutHeight { get; }
         /// <summary>Roofed cells outside the frame (e.g. a porch row), as inclusive rectangles in frame coordinates.</summary>
         public IReadOnlyList<(Cell min, Cell max)> Roofed { get; }
+        /// <summary>Upper levels (plan H2): level 1 first. Empty for a one-level building.</summary>
+        public IReadOnlyList<UpperLevel> Levels { get; private set; } = new UpperLevel[0];
+        /// <summary>Ladders between the levels (plan H2).</summary>
+        public IReadOnlyList<LadderLink> Ladders { get; private set; } = new LadderLink[0];
 
         public WallOutline(int width, int height, IEnumerable<OutlineSide> sides, CoverLevel wallCover = CoverLevel.Full,
             CoverLevel windowCover = CoverLevel.Half, IEnumerable<DoorPoint> doorPoints = null,
@@ -118,6 +174,34 @@ namespace Gamenami.UnitySemanticBridge.Layout
         }
 
         public bool Contains(Cell cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
+
+        /// <summary>
+        /// This outline with upper levels and ladders (plan H2). Level cells must be inside the frame; a ladder joins two
+        /// different levels that exist, its upper ends on their level's cells, its ends the same cell or straight neighbours.
+        /// </summary>
+        public WallOutline WithLevels(IEnumerable<UpperLevel> levels, IEnumerable<LadderLink> ladders)
+        {
+            var copy = (WallOutline)MemberwiseClone();
+            copy.Levels = (levels ?? Enumerable.Empty<UpperLevel>()).ToList();
+            copy.Ladders = (ladders ?? Enumerable.Empty<LadderLink>()).ToList();
+            for (var i = 0; i < copy.Levels.Count; i++)
+                foreach (var cell in copy.Levels[i].Cells())
+                    if (!Contains(cell)) throw new FormatException($"level {i + 1} cell {cell} is outside the {Width}x{Height} frame");
+            foreach (var ladder in copy.Ladders)
+            {
+                if (ladder.FromLevel == ladder.ToLevel) throw new FormatException($"ladder {ladder} joins a level to itself");
+                foreach (var (cell, level) in new[] { (ladder.FromCell, ladder.FromLevel), (ladder.ToCell, ladder.ToLevel) })
+                {
+                    if (level < 0 || level > copy.Levels.Count) throw new FormatException($"ladder {ladder}: there is no level {level}");
+                    if (level > 0 && !copy.Levels[level - 1].Cells().Contains(cell))
+                        throw new FormatException($"ladder {ladder}: {cell} is not a cell of level {level}");
+                }
+                var dx = Math.Abs(ladder.ToCell.X - ladder.FromCell.X);
+                var dy = Math.Abs(ladder.ToCell.Y - ladder.FromCell.Y);
+                if (dx + dy > 1) throw new FormatException($"ladder {ladder}: its ends must be the same cell or straight neighbours");
+            }
+            return copy;
+        }
 
         /// <summary>What sits on a side of a frame cell (outer sides included); Open when nothing is listed.</summary>
         public SideKind KindAt(Cell cell, GridSide side)
@@ -226,8 +310,10 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 return new Cell(x, y);
             }
             return new WallOutline(odd ? Height : Width, odd ? Width : Height, sides, WallCover, WindowCover,
-                DoorPoints.Select(MapPoint), SightFill.Select(f => (Map(f.cell), GridSides.Rotate(f.side, turns))),
-                CutHeight, Roofed.Select(MapRect));
+                    DoorPoints.Select(MapPoint), SightFill.Select(f => (Map(f.cell), GridSides.Rotate(f.side, turns))),
+                    CutHeight, Roofed.Select(MapRect))
+                .WithLevels(Levels.Select(l => new UpperLevel(l.Height, l.Rects.Select(MapRect))),
+                    Ladders.Select(l => new LadderLink(MapAny(l.FromCell), l.FromLevel, MapAny(l.ToCell), l.ToLevel)));
         }
 
         /// <summary>The non-open sides on the board for a piece anchored (min corner) at <paramref name="anchor"/>.</summary>
@@ -348,7 +434,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         private static readonly HashSet<string> Keys = new HashSet<string>(StringComparer.Ordinal)
         {
-            "outline", "wallCover", "windowCover", "doorPoints", "sightFill", "cutHeight", "roofed",
+            "outline", "wallCover", "windowCover", "doorPoints", "sightFill", "cutHeight", "roofed", "levels", "ladders",
         };
 
         /// <summary>
@@ -399,7 +485,31 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     roofed.Add((new Cell(x0, y0), new Cell(x1, y1)));
                 }
             else if (json["roofed"] != null) throw new FormatException("roofed must be an array");
-            return FromLines(lines, wallCover, windowCover, doorPoints, fill, cut, roofed);
+            var levels = new List<UpperLevel>();
+            if (json["levels"] is JArray levelArray)
+                foreach (var l in levelArray)
+                {
+                    if (!(l is JObject level) || level["height"] == null || !(level["cells"] is JArray cells))
+                        throw new FormatException("each level is {\"height\": meters, \"cells\": [[x0, y0, x1, y1]]}");
+                    foreach (var property in level.Properties())
+                        if (property.Name != "height" && property.Name != "cells") throw new FormatException($"a level has unknown key '{property.Name}' (height, cells)");
+                    levels.Add(new UpperLevel((double)level["height"], cells.Select(c =>
+                    {
+                        if (!(c is JArray a) || a.Count != 4) throw new FormatException("each level rectangle is [x0, y0, x1, y1]");
+                        return (new Cell((int)a[0], (int)a[1]), new Cell((int)a[2], (int)a[3]));
+                    })));
+                }
+            else if (json["levels"] != null) throw new FormatException("levels must be an array");
+            var ladders = new List<LadderLink>();
+            if (json["ladders"] is JArray ladderArray)
+                foreach (var l in ladderArray)
+                {
+                    if (!(l is JArray a) || a.Count != 6) throw new FormatException("each ladder is [x, y, level, x, y, level]");
+                    ladders.Add(new LadderLink(new Cell((int)a[0], (int)a[1]), (int)a[2], new Cell((int)a[3], (int)a[4]), (int)a[5]));
+                }
+            else if (json["ladders"] != null) throw new FormatException("ladders must be an array");
+            var walls = FromLines(lines, wallCover, windowCover, doorPoints, fill, cut, roofed);
+            return levels.Count > 0 || ladders.Count > 0 ? walls.WithLevels(levels, ladders) : walls;
         }
 
         public JObject ToJson()
@@ -414,6 +524,14 @@ namespace Gamenami.UnitySemanticBridge.Layout
             if (CutHeight.HasValue) json["cutHeight"] = Math.Round(CutHeight.Value, 3);
             if (Roofed.Count > 0)
                 json["roofed"] = new JArray(Roofed.Select(r => new JArray(r.min.X, r.min.Y, r.max.X, r.max.Y)));
+            if (Levels.Count > 0)
+                json["levels"] = new JArray(Levels.Select(l => new JObject
+                {
+                    ["height"] = Math.Round(l.Height, 3),
+                    ["cells"] = new JArray(l.Rects.Select(r => new JArray(r.min.X, r.min.Y, r.max.X, r.max.Y))),
+                }));
+            if (Ladders.Count > 0)
+                json["ladders"] = new JArray(Ladders.Select(l => new JArray(l.FromCell.X, l.FromCell.Y, l.FromLevel, l.ToCell.X, l.ToCell.Y, l.ToLevel)));
             return json;
         }
 

@@ -232,6 +232,12 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
       from its midpoint (towards +x on a ±y side, towards +y on a ±x side), at most 0.9 m on 2 m cells.
     - `sightFill`: `[[x, y, side]]`, wall or window sides whose collision mesh lets sight through; apply adds a box.
     - `cutHeight` (meters, the cutaway) and `roofed` (`[[x0, y0, x1, y1]]`, roofed cells outside the footprint).
+    - `levels` (plan [H2](heights-and-levels-plan.md)): upper levels, level 1 first, each `{"height": meters above
+      the base with the lift applied, "cells": [[x0, y0, x1, y1]]}` (inclusive rectangles inside the frame). Measure
+      the height with `describe_level_cards`' `measuredRoof` (the highest surface over each frame cell) and leave out
+      cells with clutter on them.
+    - `ladders`: `[[x, y, level, x, y, level]]`, the two ends in frame coordinates (a ground end may be outside the
+      frame); the ends are the same cell or straight neighbours, and an upper end is a cell of its level.
     Example, SM_Bld_Building_08 at (1.15, 1, 1.15): `"footprint": [6, 6], "lift": -0.09, "walls": {"outline":
     ["+-+-+D+", "|     |", "+ + + +", "w     w", "+ + + +", "|     |", "+-+-+-+"], "doorPoints": [[2, 2, "+y", -0.45]]}`.
     Editor helper `WallOutlineSuggester.Suggest(prefabPath, cellSize)` proposes the entry (frame, offset,

@@ -261,9 +261,22 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                         differences.Add($"door point on {side.Cell} {GridSides.Name(side.Side)} at {got:0.00} m, card {want:0.00} m");
                 }
             }
+            // Grid levels (plan H2): same levels (cells, heights within LevelHeightTolerance) and the same ladders.
+            var levelsMatch = walls.Levels.Count == expected.Levels.Count && expected.Levels.Zip(walls.Levels, (e, w) =>
+                e.Cells().SequenceEqual(w.Cells()) && System.Math.Abs(e.Height - w.Height) <= LevelHeightTolerance).All(same => same);
+            if (!levelsMatch)
+                differences.Add($"levels [{Describe(walls.Levels)}], card [{Describe(expected.Levels)}]");
+            if (!new HashSet<LadderLink>(walls.Ladders).SetEquals(expected.Ladders))
+                differences.Add($"ladders [{string.Join(", ", walls.Ladders)}], card [{string.Join(", ", expected.Ladders)}]");
             if (differences.Count > 0)
                 result.Issues.Add($"WALLS_DIFF {anchor} {name}: {string.Join("; ", differences)}");
         }
+
+        /// <summary>How far a level's height in the scene may be from its card's, meters.</summary>
+        public const double LevelHeightTolerance = 0.01;
+
+        private static string Describe(IReadOnlyList<UpperLevel> levels) =>
+            string.Join(", ", levels.Select((l, i) => $"{i + 1}: {l.Cells().Count} cells at {l.Height:0.00} m"));
 
         // The min-corner cell of a footprint whose bounds centre sits at boundsCenter in the piece's frame.
         private static Cell AnchorOf(GameObject instance, Quaternion frame, Vector3 boundsCenter, Cell size, float cellSize,

@@ -596,6 +596,18 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 if (grid.Contains(cell) || grid.Contains(cell + GridSides.Step(side.Side)))
                     grid.SetSide(cell, side.Side, side.Kind, outline.CoverFor(side.Kind), piece.LocalId);
             }
+            // Grid levels (plan H2): each upper level's cells at its height above the board floor, and the ladders.
+            for (var i = 0; i < outline.Levels.Count; i++)
+                foreach (var cell in outline.Levels[i].Cells())
+                    if (grid.Contains(piece.Anchor + cell))
+                        grid.AddUpperCell(new LevelCell(piece.Anchor + cell, i + 1), (float)outline.Levels[i].Height);
+            foreach (var ladder in outline.Ladders)
+            {
+                var from = new LevelCell(piece.Anchor + ladder.FromCell, ladder.FromLevel);
+                var to = new LevelCell(piece.Anchor + ladder.ToCell, ladder.ToLevel);
+                if (grid.Exists(from) && grid.Exists(to)) grid.AddLadder(from, to);
+                else issues.Add(new LayoutIssue("LADDER_OFF_BOARD", piece.Anchor, $"{piece.LocalId}: ladder {from} - {to} has an end off the board"));
+            }
         }
 
         public static IEnumerable<Cell> Footprint(LayoutPiece piece, PieceSpec spec)
