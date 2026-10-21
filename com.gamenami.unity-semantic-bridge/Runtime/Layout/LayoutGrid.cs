@@ -198,6 +198,118 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 if (CanStep(cell, cell + offset)) yield return cell + offset;
         }
 
+        // ---- Grid levels (plan H2) ----
+
+        // Upper-level cells and their floor heights (world Y); level 0 is the board above.
+        private readonly Dictionary<LevelCell, float> _upper = new Dictionary<LevelCell, float>();
+        // Ladders, both directions, and as declared.
+        private readonly HashSet<(LevelCell, LevelCell)> _ladders = new HashSet<(LevelCell, LevelCell)>();
+        private readonly List<(LevelCell a, LevelCell b)> _declaredLadders = new List<(LevelCell, LevelCell)>();
+
+        /// <summary>Declared upper-level cells (level 1 and up).</summary>
+        public IEnumerable<LevelCell> UpperCells => _upper.Keys;
+
+        /// <summary>Ladders as declared, one direction each.</summary>
+        public IReadOnlyList<(LevelCell a, LevelCell b)> Ladders => _declaredLadders;
+
+        /// <summary>Declares a cell on an upper level (1 and up) with its floor height; its level's edge stays closed.</summary>
+        public void AddUpperCell(LevelCell cell, float floorY)
+        {
+            if (cell.Level < 1) throw new ArgumentOutOfRangeException(nameof(cell), cell, "Upper levels start at 1.");
+            if (!Contains(cell.Cell)) throw new ArgumentOutOfRangeException(nameof(cell), cell, "Cell is outside the board.");
+            _upper[cell] = floorY;
+        }
+
+        /// <summary>Whether a level cell exists: every board cell on level 0, declared cells above.</summary>
+        public bool Exists(LevelCell cell) => cell.Level == 0 ? Contains(cell.Cell) : _upper.ContainsKey(cell);
+
+        /// <summary>A level cell's floor height (world Y); level 0 reads FloorAt.</summary>
+        public float FloorAt(LevelCell cell) => cell.Level == 0 ? FloorAt(cell.Cell) : _upper.TryGetValue(cell, out var y) ? y : 0f;
+
+        /// <summary>A ladder between two existing cells on different levels; it costs GridRules.LadderTiles.</summary>
+        public void AddLadder(LevelCell a, LevelCell b)
+        {
+            if (a.Level == b.Level) throw new ArgumentException($"A ladder joins two levels; {a} and {b} are both on level {a.Level}.");
+            if (!Exists(a) || !Exists(b)) throw new ArgumentException($"Ladder {a} - {b}: both ends must exist.");
+            if (!_ladders.Add((a, b))) return;
+            _ladders.Add((b, a));
+            _declaredLadders.Add((a, b));
+        }
+
+        public bool IsLadder(LevelCell from, LevelCell to) => _ladders.Contains((from, to));
+
+        /// <summary>
+        /// A step between level cells: a ladder only with <paramref name="canUseLadder"/> (the moving unit's rule, D8), on the
+        /// board the 2D CanStep, and on an upper level a step to a declared neighbour (a diagonal needs both cells beside
+        /// it declared) within the step rule.
+        /// </summary>
+        public bool CanStep(LevelCell from, LevelCell to, bool canUseLadder = true)
+        {
+            if (IsLadder(from, to)) return canUseLadder;
+            if (from.Level != to.Level) return false;
+            if (from.Level == 0) return CanStep(from.Cell, to.Cell);
+            var dx = to.Cell.X - from.Cell.X;
+            var dy = to.Cell.Y - from.Cell.Y;
+            if (Math.Abs(dx) > 1 || Math.Abs(dy) > 1 || (dx == 0 && dy == 0) || !Exists(to)) return false;
+            if (dx != 0 && dy != 0)
+            {
+                if (!Rules.DiagonalMoves) return false;
+                var besideX = new LevelCell(from.Cell.X + dx, from.Cell.Y, from.Level);
+                var besideY = new LevelCell(from.Cell.X, from.Cell.Y + dy, from.Level);
+                if (!Exists(besideX) || !Exists(besideY) || TooHigh(from, besideX) || TooHigh(from, besideY) ||
+                    TooHigh(besideX, to) || TooHigh(besideY, to)) return false;
+            }
+            return !TooHigh(from, to);
+        }
+
+        private bool TooHigh(LevelCell a, LevelCell b) =>
+            Rules.MaxStepHeight > 0f && Math.Abs(FloorAt(a) - FloorAt(b)) > Rules.MaxStepHeight + StepTolerance;
+
+        /// <summary>Neighbours a unit can step to on any level, with the tiles each step costs (1, or GridRules.LadderTiles).</summary>
+        public IEnumerable<(LevelCell cell, int tiles)> Neighbours(LevelCell cell, bool canUseLadder = true)
+        {
+            for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    var next = new LevelCell(cell.Cell.X + dx, cell.Cell.Y + dy, cell.Level);
+                    if (CanStep(cell, next, canUseLadder)) yield return (next, 1);
+                }
+            foreach (var (a, b) in _ladders)
+                if (a.Equals(cell) && canUseLadder) yield return (b, Math.Max(1, Rules.LadderTiles));
+        }
+
+        /// <summary>
+        /// Entered tiles from the nearest of <paramref name="starts"/> to every level cell they connect to, ladders counted
+        /// at GridRules.LadderTiles, up to <paramref name="maxSteps"/>. Unreached cells are absent.
+        /// </summary>
+        public Dictionary<LevelCell, int> StepsFrom(IEnumerable<LevelCell> starts, bool canUseLadder = true, int maxSteps = int.MaxValue)
+        {
+            var best = new Dictionary<LevelCell, int>();
+            var buckets = new List<Queue<LevelCell>> { new Queue<LevelCell>() };
+            foreach (var start in starts)
+                if (Exists(start) && !(start.Level == 0 && IsBlocked(start.Cell)) && !best.ContainsKey(start))
+                {
+                    best[start] = 0;
+                    buckets[0].Enqueue(start);
+                }
+            for (var steps = 0; steps < buckets.Count; steps++)
+                while (buckets[steps].Count > 0)
+                {
+                    var cell = buckets[steps].Dequeue();
+                    if (best[cell] != steps || steps >= maxSteps) continue;
+                    foreach (var (next, tiles) in Neighbours(cell, canUseLadder))
+                    {
+                        var total = steps + tiles;
+                        if (total > maxSteps || (best.TryGetValue(next, out var known) && known <= total)) continue;
+                        best[next] = total;
+                        while (buckets.Count <= total) buckets.Add(new Queue<LevelCell>());
+                        buckets[total].Enqueue(next);
+                    }
+                }
+            return best;
+        }
+
         /// <summary>Cover a cell gets from its neighbour on one side; outside the board gives None.</summary>
         public CoverLevel CoverFrom(Cell neighbour) => IsBlocked(neighbour) ? this[neighbour].Cover : CoverLevel.None;
 

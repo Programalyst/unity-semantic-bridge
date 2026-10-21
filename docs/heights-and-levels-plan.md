@@ -170,40 +170,149 @@ the 0.5 m step, about 0.6 m) so it never meets a roof first.
   cursor 0.10; all 840 outline vertices at least 0.13 m above their floor. GridBattle's Play Mode check
   was not run (it would close RoadNetwork).
 
-## H2: grid levels (outline, needs its own plan)
+## H2: grid levels (draft plan, 2026-10-21)
 
-- **Model (D7):** level 0 is today's board. Upper levels are sparse grids that
-  exist only where a card declares one (a roof, an upper floor), each with its
-  own `FloorY` per cell from H1. Nodes are addressed by (x, y, level).
-- **Authoring:** a building card declares its levels next to `walls` (an ASCII
-  outline per level and its height; parapets as wall sides). Ladders are
-  transitions: a link between a cell on one level and a cell on another, either
-  on the building's card or as a separate ladder piece with two anchor points.
-- **Transitions:** graph edges with an AP cost and a climb animation. A unit
-  whose `CanUseLadder` is false never gets a ladder edge (D8):
-  `GridUnitInfo.canUseLadder` (true for soldiers and raiders, false for mega
-  mutants), and, like `CanCrouch` today, `GridUnit.CanUseLadder` is false while
-  power armor is equipped (the EVA suit is body armor with `isPowerArmor`, not a
-  unit type). Pathfinding, the movement range, AI firing positions and the hover
-  path preview all take the moving unit's ladder rule.
-- **Rules:** height bonus to hit only when the shooter's level is above the
-  target's (D6). Sight between levels needs a decision: e.g. whether a roof
-  observer sees over Half cover and low walls on the level below, and how a roof
-  edge blocks sight to cells right under it.
-- **Systems that change:** per-level tile instances and pointer picking (rays hit
-  the upper tiles first), fog per level, `BuildingCutaway` must not hide the roof
-  a unit stands on, the camera, overwatch and spotting across levels, saves of a
-  unit's level.
-- **Validators:** a transition whose ends are not walkable, an upper level with
-  no transition, a unit type that can reach an objective only by ladder.
-- **What H1 gives H2:** `FloorY` per node on every level, the step rule within a
-  level, ground-snap movement, the walkable layer and floor boxes.
+Builds on the H2 outline (D6-D8) and on H1. **H2a (the model) is built (2026-10-21); the rest is
+not.** Owner decisions of 2026-10-21:
+
+| # | Decision |
+|---|---|
+| D10 | A ladder costs the AP of **2 tiles** (4 AP for a soldier). |
+| D11 | A shooter on a higher level than the target gets **+20 aim and +3 vision range** (D6: never within a level). |
+| D12 | **Sight and cover between levels follow the ordinary ground rules**: no seeing over Half cover from above. Kept simple because a target inside a building may be hidden by the floor or roof above. |
+| D13 | **Overwatch fires only at the ladder ends** (the bottom and top cells), never mid-climb. |
+
+The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
+(`Assets/Animations/Humanoid/Characters@Climbing.fbx`, `Characters@Climbing Ladder.fbx`,
+`Characters@Climbing To Top.fbx`); how to use them is decided in H2c. No placeholder climb.
+
+### What exists to build on (survey, 2026-10-21)
+
+- **Geometry.** RoadNetwork's house (SM_Bld_Building_08, two storeys) has an upper
+  floor at about 3.09 m and its roof at about 6.0 m. The shop (one tall storey) has a roof at about
+  5.2-5.3 m. Measured with the H1 probe over the visible meshes.
+- **Content gaps.** No climb animation in any NK Animator controller. No ladder in the
+  Apocalypse packs; PolygonSciFiSpace has `SM_Prop_Ladder_01` and SciFiWorlds a crate-building ladder.
+- **One flat board everywhere.** `GridManager` holds one `GridMap` and one `GridTile[,]`. The
+  pointer (`ScreenToWorldClick`, `GridPathPreview`, `BuildingCutaway`) rays a click plane at Y = 0.
+  The fog texture (`GridFogOfWarMask`) is one byte per (x, y). Units store `GridPosition` as a
+  `PathNode` (13 files use it, 9 use `GetGridTile`).
+
+### Model (D7)
+
+- **One graph, levelled nodes.** `PathNode` gets `Level` (0 = today's board). `GridMap` keeps
+  level 0 dense and stores each upper level sparsely: only the cells a card declares. `GetNode(x, y,
+  level = 0)` keeps every current caller working on level 0.
+- **Neighbours.** Neighbours within a level follow today's rules plus H1's step rule. A level's
+  outer edge is closed unless the level says otherwise. A **transition** (ladder) adds an edge
+  between a cell on one level and a cell on another. `FindPath`, `GetReachableNodeSteps`,
+  `GetStepDistancesFrom` and the AI planners already walk `NeighborNodes`, so they cross levels
+  without new search code.
+- **Cost.** A ladder edge costs 2 entered tiles of AP (D10). A* adds the same cost to `GCost`,
+  and `GridMovement` charges it on reaching the top or bottom.
+- **Ladder rule (D8).** `GridUnitInfo.canUseLadder` (soldiers and raiders true, mega mutants
+  false). `GridUnit.CanUseLadder` is false while power armor is equipped, like `CanCrouch`. Path
+  and reach take the moving unit, so a ladder edge is skipped for a unit that can't climb. The
+  movement outline, path preview and AI firing positions use the same call.
+- **USB.** `LayoutGrid` gets the same model (levels, transitions, `CanStep` across a transition
+  only with the unit's ladder rule), so reachability, metrics and validators see it.
+
+### Authoring
+
+- **Card.** A walled building's overrides entry gets `levels`: per upper level, its height above
+  the base (like `floorHeight`), an ASCII outline in the `walls` format (parapets and roof edges
+  as wall sides) and its cell rectangle in frame coordinates. A `ladders` list gives
+  `[[x, y, level], [x, y, level], side]`: the two ends and the wall side the ladder stands on.
+  Ladder ends may be outside the frame (a ladder up the outside wall).
+- **Apply.** Per level, the applier builds a floor box on `Walkable`, as for H1's ground floor,
+  and places the ladder model (a catalog piece named by the card, or a placeholder box) on its side.
+  `GridLevels` (NK, next to `GridWalls`) records the levels and ladders for `GridManager`. The
+  baker reads them back.
+- **First content.** The shop roof (level 1) with one ladder up the back wall. The house's upper
+  floor would need stairs, which wait for the stairs discussion.
+
+### Presentation
+
+- **Tiles.** Upper-level tiles are created only for the declared cells. Their Canvas, cover
+  ground quad and cover icons sit on their own floor.
+- **Picking.** The pointer rays the `Walkable` layer first: a hit on an upper level's floor box
+  picks that level's cell. Otherwise it falls back to the click plane, as now. H1's floor boxes are
+  the picking surfaces.
+- **Cutaway.** `BuildingCutaway` does not hide a roof that a unit stands on or that the cursor is
+  over.
+- **Outlines.** One region per level, each at its own floor, as in H1.
+- **Climb.** The unit faces the wall and climbs between the ladder ends with the owner's climb
+  clips (above); the sequence (loop, climb to top, getting on at the top for a descent) is decided in H2c.
+- **Camera.** It follows a climbing unit like a walking one.
+
+### Rules
+
+- **Height bonus (D6, D11).** Only when the shooter's level is above the target's: +20 aim, and
+  +3 vision range for the observer on the higher level.
+- **Sight between levels (D12).** The ordinary grid sight and cover rules, on the 2D line between the
+  two cells, whatever their levels. One addition, so floors and roofs hide what is under them: a
+  cell inside a building's frame on a lower level and a cell on that building's upper level (or
+  roof) never see each other.
+- **Fog.** Per level: one fog texture per level, or a revealed flag per upper node with only
+  level 0 drawn as fog. Proposed: fog draws level 0; an upper node counts as revealed for spotting
+  only.
+- **Overwatch on ladders (D13).** The ladder ends are ordinary cells, so overwatch fires at the
+  bottom or top cell, never mid-climb.
+- **AI.** Enemies can climb when their unit type can (D8). Firing positions across levels use
+  the level-aware sight rule.
+- **Saves.** A unit's level is stored with its cell.
+
+### Validators
+
+- `TRANSITION_NOT_WALKABLE`: a ladder end on a blocked, missing or off-level cell (error).
+- `LEVEL_UNREACHABLE`: an upper level no ladder reaches (warning).
+- `LADDER_ONLY`: an enemy or objective that a non-climbing unit type can reach only by
+  ladder (warning).
+- `STEP_TOO_HIGH` per level.
+
+### H2a as built (2026-10-21)
+
+- **NK `GridMap`:** `PathNode.Level`; `AddUpperCell(x, y, level, floorY)` declares an upper cell, joined to
+  the declared cells around it; `AddLadder(a, b)` with `IsLadder` and `StepTiles` (`LadderTiles` = 2);
+  `GetNode(x, y, level)` (`GetNode(x, y)` is level 0, so existing callers are unchanged); `AllNodes`,
+  `UpperNodes`. `CanStep(from, to, canUseLadder)` allows a ladder only with the rule, keeps other steps on
+  one level, and refuses a diagonal past a missing cell at an upper level's edge. `FindPath`,
+  `GetReachableNodeSteps` (now a bucket search, still in nondecreasing order), `GetStepDistances` (every
+  level; `GetStepDistancesFrom` keeps its level-0 array) and `FindClosestReachableNode` take
+  `canUseLadder`. The step rule and `BlockSide` cover upper levels.
+- **NK units:** `GridUnitInfo.canUseLadder` (default true; Mega Mutant Heavy false) and
+  `GridUnit.CanUseLadder` (`CanUseLadderWith`: the type's rule, never in power armor). Movement, the
+  movement outline, the path preview and the enemy planners pass it.
+- **NK `GridManager`:** `GetNodeFromWorldPos` picks the level whose floor is nearest the position's Y;
+  `GetWorldPosition(PathNode)`; path points on each node's own floor. The movement outline still shows
+  only the start's level (H2c), and nothing declares upper levels in a scene yet (H2b).
+- **USB `LayoutGrid`:** `LevelCell`, `AddUpperCell`, `AddLadder`, `Exists`, `FloorAt(LevelCell)`,
+  `CanStep(LevelCell, LevelCell, canUseLadder)`, `Neighbours` with tile costs and a weighted `StepsFrom`;
+  `GridRules.LadderTiles` (NK 2). The validators don't use levels yet (H2e).
+- **Verification:** NK *Validate Grid Levels* (40 checks: model, ladder paths and costs, reach, approach,
+  the upper step rule, the unit rule with real unit and armor assets, and `LayoutGrid` agreeing with
+  `GridMap`); Paths, Action Points, Grid Outlines, Grid Sight, Floor Heights, Firing Positions, Bug Attack
+  Range, Attack Alerts, Layout Round Trip and Reports unchanged; USB `GridLevelTests`.
+- **For the owner:** only Mega Mutant Heavy is set not to climb. War Robot, BR Base, Rook, Spitter Bug and
+  Plasma Stalker climb by default until told otherwise.
+
+### Phases
+
+1. **H2a, model:** `PathNode.Level`, sparse upper levels, ladder edges with cost and the
+   ladder rule, in `GridMap` and USB's `LayoutGrid`. Harness: paths over a ladder, cost, a
+   mega mutant and power armor refused.
+2. **H2b, authoring:** card `levels` and `ladders`, applier floor boxes and ladder pieces,
+   `GridLevels`, baker. USB tests and the shop-roof card.
+3. **H2c, presentation:** upper tiles, picking, cutaway, outlines, the climb placeholder.
+   RoadNetwork Play Mode: a soldier climbs to the shop roof; Bishop armor cannot.
+4. **H2d, rules:** height bonus, level-aware sight and fog, overwatch, AI and saves.
+5. **H2e, validators and docs.**
 
 ## Open questions
 
 - **H1:** the exact overlay offset above the floor (outlines use 0.13 m).
 - **H1:** whether the grenade's arc, which starts from Y = 0 today, should start
   and land on floor heights or only land on them.
-- **H2:** sight rules between levels; AP cost of a ladder; whether a unit on a
-  ladder can be shot or interrupted (overwatch); whether some power armor (not
-  the EVA suit) may climb, which would move the ladder rule onto the armor item.
+- **H2:** how the three climb clips make a climb up and down (H2c). Also whether some
+  power armor (not the EVA suit) may climb, which would move the ladder rule onto
+  the armor item.

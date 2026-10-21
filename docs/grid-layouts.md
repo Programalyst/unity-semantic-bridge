@@ -278,6 +278,13 @@ and a diagonal's own rise counts too. `ROUTES`, `COVER_SPACING` and the other me
 a step and no wall between: a kerb or slab too tall for the kit, or a building whose
 `floorHeight` is off. Layout JSON stores no heights; they come from the scene.
 
+**Grid levels** (plan [H2a](heights-and-levels-plan.md)). `LayoutGrid` also holds upper levels: `AddUpperCell`
+declares a `LevelCell` (cell and level, `x,y@level` in reports) with its floor height, and `AddLadder` joins
+cells on two levels. `CanStep(LevelCell, LevelCell, canUseLadder)` crosses a ladder only with the moving unit's
+rule, keeps other steps on one level (closed at a level's edge, the step rule within it), and `StepsFrom` counts
+a ladder as `GridRules.LadderTiles` entered tiles. Nothing builds levels from cards yet (H2b), and the
+validators and metrics still walk level 0 (H2e).
+
 Apply and bake (Phase W3):
 - **Placement.** Every card piece is placed so its bounds centre sits `footprintOffset` from its
   footprint centre.

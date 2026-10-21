@@ -39,6 +39,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// LayoutGrid that has floor heights (LayoutGrid.SetFloors). 0 for no step rule.
         /// </summary>
         public float MaxStepHeight;
+        /// <summary>Grid levels (plan H2): entered tiles a ladder between levels costs (NK: 2, D10).</summary>
+        public int LadderTiles = 1;
         /// <summary>Target heights per cover class (catalog role detection and the scale validator).</summary>
         public CoverHeightBands CoverHeights = new CoverHeightBands();
         /// <summary>Numbers and targets for the level metrics (plan Phase 6, LayoutMetrics).</summary>
