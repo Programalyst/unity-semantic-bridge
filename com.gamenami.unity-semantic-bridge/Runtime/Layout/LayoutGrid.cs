@@ -324,18 +324,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
         }
 
         /// <summary>
-        /// Grid sight (plan Phase S, D13): HasClearLine, or with Rules.StepOut (S5) a clear line between any viewpoint
-        /// of each cell (Viewpoints). Symmetric; range is the caller's. Units are not part of the layout, so only
+        /// Grid sight (plan Phase S, D13): HasClearLine, or with Rules.StepOut (S5) a clear line from any viewpoint of
+        /// <paramref name="from"/> (Viewpoints) to <paramref name="to"/>'s own cell. One-way (owner, 2026-10-22): the
+        /// looker peeks, the cell looked at doesn't. Range is the caller's. Units are not part of the layout, so only
         /// blockers and walls refuse a step-out here.
         /// </summary>
         public bool CanSee(Cell from, Cell to)
         {
             if (HasClearLine(from, to)) return true;
             if (!Rules.StepOut) return false;
-            var toViews = Viewpoints(to);
             foreach (var a in Viewpoints(from))
-                foreach (var b in toViews)
-                    if ((a != from || b != to) && HasClearLine(a, b)) return true;
+                if (a != from && HasClearLine(a, to)) return true;
             return false;
         }
 

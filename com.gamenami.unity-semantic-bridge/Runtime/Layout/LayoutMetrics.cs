@@ -230,7 +230,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 if (c == target) return false;
                 if (exposed.TryGetValue(c, out var e)) return e;
                 var side = SideFacing(c, towards);
-                e = Euclid(c, target) <= s.VisionRange + 1e-9 && grid.CanSee(c, target) &&
+                e = Euclid(c, target) <= s.VisionRange + 1e-9 && grid.CanSee(target, c) &&
                     (!side.HasValue || grid.CoverOn(c, side.Value) == CoverLevel.None);
                 exposed[c] = e;
                 return e;
@@ -304,7 +304,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     if (d > reach + 1e-9) continue;
                     var band = Math.Min(bands - 1, (int)((Math.Ceiling(d - 1e-9) - 1) / 3));
                     total[band]++;
-                    if (!grid.CanSee(cells[i], cells[j])) continue;
+                    // A sightline either way (sight is one-way with step-out).
+                    if (!grid.CanSee(cells[i], cells[j]) && !grid.CanSee(cells[j], cells[i])) continue;
                     seen[band]++;
                     if (d <= s.VisionRange + 1e-9) { exposure[i]++; exposure[j]++; }
                 }
