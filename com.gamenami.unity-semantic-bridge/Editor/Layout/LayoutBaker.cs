@@ -261,9 +261,10 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                         differences.Add($"door point on {side.Cell} {GridSides.Name(side.Side)} at {got:0.00} m, card {want:0.00} m");
                 }
             }
-            // Grid levels (plan H2): same levels (cells, heights within LevelHeightTolerance) and the same ladders.
+            // Grid levels (plan H2): same levels (cells, heights and rims within LevelHeightTolerance) and the same ladders.
             var levelsMatch = walls.Levels.Count == expected.Levels.Count && expected.Levels.Zip(walls.Levels, (e, w) =>
-                e.Cells().SequenceEqual(w.Cells()) && System.Math.Abs(e.Height - w.Height) <= LevelHeightTolerance).All(same => same);
+                e.Cells().SequenceEqual(w.Cells()) && System.Math.Abs(e.Height - w.Height) <= LevelHeightTolerance &&
+                GridSides.All.All(side => System.Math.Abs(e.RimOn(side) - w.RimOn(side)) <= LevelHeightTolerance)).All(same => same);
             if (!levelsMatch)
                 differences.Add($"levels [{Describe(walls.Levels)}], card [{Describe(expected.Levels)}]");
             if (!new HashSet<LadderLink>(walls.Ladders).SetEquals(expected.Ladders))
@@ -276,7 +277,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
         public const double LevelHeightTolerance = 0.01;
 
         private static string Describe(IReadOnlyList<UpperLevel> levels) =>
-            string.Join(", ", levels.Select((l, i) => $"{i + 1}: {l.Cells().Count} cells at {l.Height:0.00} m"));
+            string.Join(", ", levels.Select((l, i) => $"{i + 1}: {l.Cells().Count} cells at {l.Height:0.00} m" +
+                (l.Rim.Count > 0 ? " rim " + string.Join(" ", GridSides.All.Where(l.Rim.ContainsKey).Select(side => $"{GridSides.Name(side)} {l.Rim[side]:0.00}")) : "")));
 
         // The min-corner cell of a footprint whose bounds centre sits at boundsCenter in the piece's frame.
         private static Cell AnchorOf(GameObject instance, Quaternion frame, Vector3 boundsCenter, Cell size, float cellSize,

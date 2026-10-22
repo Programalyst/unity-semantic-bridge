@@ -450,6 +450,44 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
   floor, the ladder, the foot reported, no step or unreachable level). Layout Round Trip 4110, Grid Levels 76, Paths 2956,
   Grid Sight 6436, Hit Chance 190, Action Points 80 pass.
 
+### Sight by height (owner, 2026-10-22)
+
+- **Why.** After H2d a unit on a roof still saw (and was shot from) the ground right below the building's edge: the D12 rule
+  ignored the walls under the roof but never asked whether the line passed through the roof itself, so shots cut through
+  it. Option A (a grid rule) was chosen over raycasts between levels, which grid sight replaced (Phase S).
+- **Rule.** Between levels the line runs eye to eye: from each unit's standing head point above its cell's floor
+  (`GridUnit.EyeHeight`: the Head Target Point with body scale, never the crouched one; `GridMap.StandardEyeHeight` 1.65 m
+  for fog cells and where no unit is known). It may not cross the height of a **roof slab** over any cell it passes:
+  a level's floor over its building's whole frame, walkable cells at their own floor and the rest (roof clutter) at the
+  level's height (`GridMap.AddSlab`, `HasSlab`; `GridManager.RegisterLevels` adds them), and where it leaves the frame it
+  must clear the roof's **curb** (`rim` on the card's level, per side). Both by `GridMap.SightClearance`, 0.3 m: "sees"
+  means head and shoulders show. Leaning over an edge is not modelled (later, like the corner hug). D12's "under a roof
+  never sees it" and "walls under a roof don't block a line from it" now use the slabs too, so clutter cells count as roof.
+- **The curb (owner, 2026-10-22).** The owner's first try: Elena on the shop's edge cell (11,13) was shot by raider3 at
+  (13,16), though from either unit's eyes neither showed. Without a curb the rule let the line through 0.4 m above the
+  roof floor. Probing the shop's colliders at load was tried and dropped: its collider follows the side curbs but not the
+  back one, and the roof's overgrowth (`SM_Bld_Shop_Medium_02_Overgrowth_01`, active, no colliders) makes the "clutter"
+  corners. The owner chose the building's own curb, from its mesh, not the plants, plus the clearance: the card level's
+  `rim` (USB `UpperLevel.Rim`, JSON `"rim": {"+x": m, ...}`, turned with the outline, compared by the baker), measured
+  by `describe_level_cards` (`measuredRoof.rim`: per side the median over its cells of the highest surface across the wall
+  line, prefab root mesh only). The shop: +x 0.286, -x 0.286, +y 0.096, -y 0.286 m (two 0.61 m posts per long side left out
+  by the median), pending approval. NK `WallLevel.rimPlusX` ... `rimMinusY` carry it (`ConfigureWalls`, `TryReadWalls`).
+  The Asset Preview copy of the overrides is older (no floor or roof entries) and was left alone.
+- **Plumbing.** `GridMap.HasClearLine`, `CanSee` and `GetSightOrigins` take the two eye heights; `ISightGrid.TryCanSee`,
+  `GetSightOrigins` and `GridVisibility.HasClearSight` pass them; `CanSeeUnit`, `RangedAccuracy.HasLineOfFire` and the cover
+  origins use the units' eyes; `GridManager.CollectVisibleNodes` the observer's.
+- **USB.** `LayoutGrid` sight has no levels yet (its metrics walk level 0, where the rule never applies); add it with
+  levels in the metrics. `FloorHeights.SampleTop` (the climb's ledge probe, moved out of `GridMovement`) is unchanged.
+- **Verification.** *Validate Grid Levels* 81: from 4 tiles off the roof's edge is seen and its far side is not (both ways);
+  the fog from the roof's edge reveals 6 tiles out but not the cell under its edge, nor the far roof cell (2,4); CatalogTest's
+  shop roof has slabs on its five clutter cells and none outside the frame, its east cells carry the card's curb and the
+  middle none, raider3 at (13,16) is hidden from the edge cell (11,13) both ways and from (10,13), and the edge cell sees the
+  ground 5 cells out but not under the wall. *Validate Hit Chance* 191: the roof's middle doesn't see (3,0), its edge cell
+  does; the roof shooter moved to the edge cell, the target 4 tiles off. Grid Sight 6436, Paths 2956, Action Points 80,
+  Firing Positions 31, Attack Alerts 24, Illumination 22, Bug Attack Range 24, Floor Heights 450, Layout Round Trip 4110,
+  Layout Reports 106, Layout Baker 21, Grid Outlines 43 pass; USB 331 passed (rims through JSON and rotation). Not yet seen
+  in Play Mode with the curb.
+
 ### Phases
 
 1. **H2a, model:** `PathNode.Level`, sparse upper levels, ladder edges with cost and the
@@ -473,6 +511,8 @@ Worked through one at a time:
   *Done 2026-10-22 (NK `5d6533dd`): Cover Idle (the peek of Stand Cover To Look looked unnatural after a few loops),
   slid 0.8 m along the wall to the corner; aiming round a corner steps out at once, and overwatch steps straight out of
   the hug (NK level-rules.md, Line of sight).*
+- **Sight by height** (raised 2026-10-22 after a raider shot Elena through the shop's roof): *done 2026-10-22, "Sight by
+  height" above.*
 - **Aim view toggle:** a button while aiming that switches to the shoulder Aim Camera for a better look at the target,
   for any weapon (rather than tying the aim view to the sniper rifle).
 - **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors.

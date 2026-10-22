@@ -183,6 +183,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
         public const float FloorProbeStart = 1.0f;
         /// <summary>Lowest floor the probe looks for below the base, meters.</summary>
         public const float FloorProbeDepth = 0.5f;
+        /// <summary>Where the rim probe looks, meters inside the wall line (negative: outside it); it takes the highest.</summary>
+        public static readonly float[] RimInsets = { -0.05f, 0.05f, 0.15f, 0.25f, 0.35f, 0.45f };
+        /// <summary>The highest rim measured above a level; taller is a sign or a wall, left out.</summary>
+        public const float MaxRim = 1.5f;
 
         /// <summary>
         /// Floor heights (plan H1a): a walled building placed as a layout would (placementScale, lift, footprint
@@ -192,7 +196,10 @@ namespace Gamenami.UnitySemanticBridge.Editor
         /// </summary>
         /// <param name="roof">
         /// Grid levels (plan H2): probe every frame cell from above the whole building instead, for the highest surface
-        /// (a roof, or what stands on it), to fill in an upper level's height and cells.
+        /// (a roof, or what stands on it), to fill in an upper level's height and cells. Also each side's rim (curb) above the
+        /// first level, from the prefab root's own mesh only (props on the roof, such as overgrowth, don't count; owner,
+        /// 2026-10-22): the highest surface across the wall line (RimInsets) at each cell along that side, the median
+        /// meters above the level, for the level's "rim" override (sight between levels).
         /// </param>
         public static JObject MeasureFloor(string path, LevelCard card, double cellSize, bool roof = false)
         {
@@ -206,6 +213,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                 root.position = new Vector3(-((float)centre.X - offset.x), (float)card.Lift, -((float)centre.Z - offset.z));
 
                 var triangles = new List<(Vector3 a, Vector3 b, Vector3 c)>();
+                var rootTriangles = new List<(Vector3 a, Vector3 b, Vector3 c)>();
                 foreach (var filter in contents.GetComponentsInChildren<MeshFilter>(false))
                 {
                     if (filter.sharedMesh == null || !filter.TryGetComponent(out MeshRenderer renderer) || !renderer.enabled) continue;
@@ -214,8 +222,12 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     var vertices = mesh.vertices;
                     var indices = mesh.triangles;
                     for (var i = 0; i + 2 < indices.Length; i += 3)
-                        triangles.Add((toWorld.MultiplyPoint3x4(vertices[indices[i]]), toWorld.MultiplyPoint3x4(vertices[indices[i + 1]]),
-                            toWorld.MultiplyPoint3x4(vertices[indices[i + 2]])));
+                    {
+                        var triangle = (toWorld.MultiplyPoint3x4(vertices[indices[i]]), toWorld.MultiplyPoint3x4(vertices[indices[i + 1]]),
+                            toWorld.MultiplyPoint3x4(vertices[indices[i + 2]]));
+                        triangles.Add(triangle);
+                        if (filter.gameObject == contents) rootTriangles.Add(triangle);
+                    }
                 }
 
                 var outline = card.Walls;
@@ -235,7 +247,7 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     if (floor.HasValue) heights.Add(floor.Value); else misses++;
                 }
                 heights.Sort();
-                return new JObject
+                var json = new JObject
                 {
                     ["median"] = heights.Count > 0 ? Math.Round(heights[heights.Count / 2], 3) : (double?)null,
                     ["min"] = heights.Count > 0 ? Math.Round(heights[0], 3) : (double?)null,
@@ -244,6 +256,37 @@ namespace Gamenami.UnitySemanticBridge.Editor
                     ["cells"] = cells,
                     ["card"] = roof ? (JToken)(card.Walls.Levels.Count > 0 ? card.Walls.Levels[0].Height : (double?)null) : card.FloorHeight,
                 };
+                if (roof && outline.Levels.Count > 0)
+                {
+                    var level = (float)outline.Levels[0].Height;
+                    var rim = new JObject();
+                    var rimCells = new JObject();
+                    foreach (var side in GridSides.All)
+                    {
+                        var step = GridSides.Step(side);
+                        var along = Enumerable.Range(0, outline.Height).SelectMany(y => Enumerable.Range(0, outline.Width).Select(x => new Cell(x, y)))
+                            .Where(c => !outline.Contains(c + step)).ToList();
+                        var values = along.Select(c =>
+                        {
+                            var top = level;
+                            foreach (var inset in RimInsets)
+                            {
+                                var x = (float)((c.X - (outline.Width - 1) * 0.5) * cellSize + step.X * (cellSize * 0.5 - inset));
+                                var z = (float)((c.Y - (outline.Height - 1) * 0.5) * cellSize + step.Y * (cellSize * 0.5 - inset));
+                                if (ProbeDown(rootTriangles, x, z, level + MaxRim, level - 0.05f) is float hit) top = Mathf.Max(top, hit);
+                            }
+                            return Math.Round(top - level, 3);
+                        }).ToList();
+                        var sorted = values.OrderBy(v => v).ToList();
+                        rim[GridSides.Name(side)] = sorted.Count > 0 ? sorted[sorted.Count / 2] : 0;
+                        rimCells[GridSides.Name(side)] = new JArray(values);
+                    }
+                    json["rim"] = rim;
+                    json["rimCells"] = rimCells;
+                    json["cardRim"] = outline.Levels[0].Rim.Count > 0
+                        ? new JObject(outline.Levels[0].Rim.Select(r => new JProperty(GridSides.Name(r.Key), r.Value))) : null;
+                }
+                return json;
             }
             finally
             {

@@ -57,16 +57,22 @@ namespace Gamenami.UnitySemanticBridge.Layout
     /// <summary>
     /// An upper level of a walled building (plan H2): its floor height above the base the building stands on, and its
     /// cells as inclusive rectangles in frame coordinates (inside the frame). Level numbers start at 1, in list order.
+    /// <see cref="Rim"/>: the curb around the level on each outer side of the frame, meters above its floor (none where
+    /// absent), which sight between levels must clear.
     /// </summary>
     public sealed class UpperLevel
     {
         public double Height { get; }
         public IReadOnlyList<(Cell min, Cell max)> Rects { get; }
+        public IReadOnlyDictionary<GridSide, double> Rim { get; }
 
-        public UpperLevel(double height, IEnumerable<(Cell min, Cell max)> rects)
+        public UpperLevel(double height, IEnumerable<(Cell min, Cell max)> rects, IReadOnlyDictionary<GridSide, double> rim = null)
         {
             if (double.IsNaN(height) || double.IsInfinity(height) || height <= 0) throw new FormatException("a level's height must be positive");
             Height = height;
+            Rim = rim == null ? new Dictionary<GridSide, double>() : new Dictionary<GridSide, double>(rim);
+            foreach (var value in Rim.Values)
+                if (double.IsNaN(value) || value < 0 || value > 5) throw new FormatException("a level's rim is 0-5 m above its floor");
             Rects = rects.ToList();
             if (Rects.Count == 0) throw new FormatException("a level needs at least one cell rectangle");
             foreach (var (min, max) in Rects)
@@ -78,6 +84,9 @@ namespace Gamenami.UnitySemanticBridge.Layout
             .SelectMany(r => Enumerable.Range(r.min.Y, r.max.Y - r.min.Y + 1)
                 .SelectMany(y => Enumerable.Range(r.min.X, r.max.X - r.min.X + 1).Select(x => new Cell(x, y))))
             .Distinct().OrderBy(c => c.Y).ThenBy(c => c.X).ToList();
+
+        /// <summary>The rim on an outer side of the frame, meters above the floor; 0 where there is none.</summary>
+        public double RimOn(GridSide side) => Rim.TryGetValue(side, out var rim) ? rim : 0;
     }
 
     /// <summary>
@@ -329,7 +338,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
             return new WallOutline(odd ? Height : Width, odd ? Width : Height, sides, WallCover, WindowCover,
                     DoorPoints.Select(MapPoint), SightFill.Select(f => (Map(f.cell), GridSides.Rotate(f.side, turns))),
                     CutHeight, Roofed.Select(MapRect))
-                .WithLevels(Levels.Select(l => new UpperLevel(l.Height, l.Rects.Select(MapRect))),
+                .WithLevels(Levels.Select(l => new UpperLevel(l.Height, l.Rects.Select(MapRect),
+                        l.Rim.ToDictionary(r => GridSides.Rotate(r.Key, turns), r => r.Value))),
                     Ladders.Select(l => new LadderLink(MapAny(l.FromCell), l.FromLevel, MapAny(l.ToCell), l.ToLevel,
                         l.Side.HasValue ? l.Offset * AlongSign(l.Side.Value, turns) : l.Offset)));
         }
@@ -519,12 +529,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     if (!(l is JObject level) || level["height"] == null || !(level["cells"] is JArray cells))
                         throw new FormatException("each level is {\"height\": meters, \"cells\": [[x0, y0, x1, y1]]}");
                     foreach (var property in level.Properties())
-                        if (property.Name != "height" && property.Name != "cells") throw new FormatException($"a level has unknown key '{property.Name}' (height, cells)");
+                        if (property.Name != "height" && property.Name != "cells" && property.Name != "rim")
+                            throw new FormatException($"a level has unknown key '{property.Name}' (height, cells, rim)");
+                    var rim = new Dictionary<GridSide, double>();
+                    if (level["rim"] is JObject rimSides)
+                        foreach (var side in rimSides.Properties()) rim[GridSides.Parse(side.Name)] = (double)side.Value;
+                    else if (level["rim"] != null) throw new FormatException("a level's rim is {\"+x\": meters, ...}");
                     levels.Add(new UpperLevel((double)level["height"], cells.Select(c =>
                     {
                         if (!(c is JArray a) || a.Count != 4) throw new FormatException("each level rectangle is [x0, y0, x1, y1]");
                         return (new Cell((int)a[0], (int)a[1]), new Cell((int)a[2], (int)a[3]));
-                    })));
+                    }), rim));
                 }
             else if (json["levels"] != null) throw new FormatException("levels must be an array");
             var ladders = new List<LadderLink>();
@@ -555,10 +570,17 @@ namespace Gamenami.UnitySemanticBridge.Layout
             if (Roofed.Count > 0)
                 json["roofed"] = new JArray(Roofed.Select(r => new JArray(r.min.X, r.min.Y, r.max.X, r.max.Y)));
             if (Levels.Count > 0)
-                json["levels"] = new JArray(Levels.Select(l => new JObject
+                json["levels"] = new JArray(Levels.Select(l =>
                 {
-                    ["height"] = Math.Round(l.Height, 3),
-                    ["cells"] = new JArray(l.Rects.Select(r => new JArray(r.min.X, r.min.Y, r.max.X, r.max.Y))),
+                    var level = new JObject
+                    {
+                        ["height"] = Math.Round(l.Height, 3),
+                        ["cells"] = new JArray(l.Rects.Select(r => new JArray(r.min.X, r.min.Y, r.max.X, r.max.Y))),
+                    };
+                    if (l.Rim.Count > 0)
+                        level["rim"] = new JObject(GridSides.All.Where(l.Rim.ContainsKey)
+                            .Select(side => new JProperty(GridSides.Name(side), Math.Round(l.Rim[side], 3))));
+                    return level;
                 }));
             if (Ladders.Count > 0)
                 json["ladders"] = new JArray(Ladders.Select(l => l.Offset != 0

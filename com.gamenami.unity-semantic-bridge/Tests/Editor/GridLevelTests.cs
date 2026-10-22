@@ -113,6 +113,24 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         }
 
         [Test]
+        public void LevelRimsRoundTripAndTurnWithTheOutline()
+        {
+            var json = RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]").Replace("\"height\":3.5,", "\"height\":3.5,\"rim\":{\"+x\":0.3,\"-y\":0.1},");
+            var walls = WallOutline.FromJson(JToken.Parse(json));
+            var level = walls.Levels.Single();
+            Assert.AreEqual(0.3, level.RimOn(GridSide.PlusX));
+            Assert.AreEqual(0.1, level.RimOn(GridSide.MinusY));
+            Assert.AreEqual(0, level.RimOn(GridSide.PlusY), "no rim where none is given");
+            Assert.IsTrue(JToken.DeepEquals(walls.ToJson(), WallOutline.FromJson(walls.ToJson()).ToJson()), "JSON round trip");
+            var turned = walls.Rotate(1).Levels.Single();
+            Assert.AreEqual(0.3, turned.RimOn(GridSides.Rotate(GridSide.PlusX, 1)));
+            Assert.AreEqual(0.1, turned.RimOn(GridSides.Rotate(GridSide.MinusY, 1)));
+            Assert.AreEqual(2, turned.Rim.Count);
+            Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(json.Replace("0.3", "-0.3"))), "a rim is not negative");
+            Assert.Throws<FormatException>(() => WallOutline.FromJson(JToken.Parse(json.Replace("\"+x\"", "\"up\""))), "rim sides are +x, -x, +y, -y");
+        }
+
+        [Test]
         public void LadderOffsetsRoundTripAndTurnLikeDoorPoints()
         {
             var walls = WallOutline.FromJson(JToken.Parse(RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]").Replace("[[2,2,0,2,1,1]]", "[[2,2,0,2,1,1,0.4]]")));

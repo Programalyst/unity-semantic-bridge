@@ -235,7 +235,10 @@ roles or covers, non-positive scales and bad JSON are errors that name the entry
     - `levels` (plan [H2](heights-and-levels-plan.md)): upper levels, level 1 first, each `{"height": meters above
       the base with the lift applied, "cells": [[x0, y0, x1, y1]]}` (inclusive rectangles inside the frame). Measure
       the height with `describe_level_cards`' `measuredRoof` (the highest surface over each frame cell) and leave out
-      cells with clutter on them.
+      cells with clutter on them. Optional `"rim": {"+x": m, "-x": m, "+y": m, "-y": m}`: the curb on each outer side of
+      the frame above the level's floor (sides without one left out), which sight between levels must clear; take it from
+      `measuredRoof`'s `rim` (per side, the median over its cells of the highest surface across the wall line, from the
+      prefab root's own mesh only, so props on the roof such as overgrowth don't count; `rimCells` lists each cell).
     - `ladders`: `[[x, y, level, x, y, level]]` or `[[x, y, level, x, y, level, offset]]`, the two ends in frame
       coordinates (a ground end may be outside the frame); the ends are the same cell or straight neighbours, and an
       upper end is a cell of its level. The offset (meters, like a door point's) puts the climb on the building's
