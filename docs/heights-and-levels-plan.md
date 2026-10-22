@@ -437,11 +437,34 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 4. **H2d, rules:** height bonus, level-aware sight and fog, overwatch, AI and saves.
 5. **H2e, validators and docs.**
 
+### Remaining work (owner, 2026-10-22)
+
+Worked through one at a time:
+
+- **H2e validators:** `TRANSITION_NOT_WALKABLE`, `LEVEL_UNREACHABLE`, `LADDER_ONLY`, `STEP_TOO_HIGH` per level; then
+  the docs pass that closes H2.
+- **Corner wall hugging** (after the step-out shot, NK `e3c3c44e`): an idle unit at a corner it can peek round leans
+  on the wall, showing that it can step out. Clips: *Stand Cover To Look* first, *Cover Idle* as the alternative.
+  *Built 2026-10-22 with Stand Cover To Look, waiting for the owner's look (NK level-rules.md, Line of sight).*
+- **Aim view toggle:** a button while aiming that switches to the shoulder Aim Camera for a better look at the target,
+  for any weapon (rather than tying the aim view to the sniper rifle).
+- **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors.
+- **Live checks still owed:** an overwatch shot at a unit on a ladder; a step-out to the left (the mirrored clip).
+- **Later:** the AI valuing height for its own sake; the sniper rifle and Heavy Laser aiming at the planned point
+  rather than the target's live one; stairs for the house's upper floor.
+
+### Decisions (owner, 2026-10-22)
+
+- **No power armor climbs ladders.** A jetpack power armor is planned instead; it will jet up to and down from roofs
+  rather than climb, so the ladder rule stays on the unit type and power armor (`GridUnit.CanUseLadderWith`).
+- **Parapets give no cover against shots from below.** They are rare on the current buildings; revisit if levels with
+  many parapets appear.
+
 ## Open questions
 
-- **H1:** the exact overlay offset above the floor (outlines use 0.13 m).
+- ~~**H1:** the exact overlay offset above the floor~~ answered in H1 as built: the overlays keep the offsets they
+  were tuned at (outlines 0.13 m above the floor).
 - **H1:** whether the grenade's arc, which starts from Y = 0 today, should start
   and land on floor heights or only land on them.
-- **H2:** how the three climb clips make a climb up and down (H2c). Also whether some
-  power armor (not the EVA suit) may climb, which would move the ladder rule onto
-  the armor item.
+- ~~**H2:** how the climb clips make a climb, and whether some power armor may climb~~ answered: H2c as built, and
+  no power armor climbs (owner, 2026-10-22; a jetpack armor will jet instead).
