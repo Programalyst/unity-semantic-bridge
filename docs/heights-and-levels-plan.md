@@ -445,7 +445,9 @@ Worked through one at a time:
   the docs pass that closes H2.
 - **Corner wall hugging** (after the step-out shot, NK `e3c3c44e`): an idle unit at a corner it can peek round leans
   on the wall, showing that it can step out. Clips: *Stand Cover To Look* first, *Cover Idle* as the alternative.
-  *Built 2026-10-22 with Stand Cover To Look, waiting for the owner's look (NK level-rules.md, Line of sight).*
+  *Done 2026-10-22 (NK `5d6533dd`): Cover Idle (the peek of Stand Cover To Look looked unnatural after a few loops),
+  slid 0.8 m along the wall to the corner; aiming round a corner steps out at once, and overwatch steps straight out of
+  the hug (NK level-rules.md, Line of sight).*
 - **Aim view toggle:** a button while aiming that switches to the shoulder Aim Camera for a better look at the target,
   for any weapon (rather than tying the aim view to the sniper rifle).
 - **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors.
