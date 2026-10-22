@@ -136,8 +136,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         }
 
         /// <summary>
-        /// Encounter, step and reachability checks on an occupancy grid (e.g. the game's own bake of a scene); the
-        /// step check runs only when the grid has floor heights.
+        /// Encounter, step, level and reachability checks on an occupancy grid (e.g. the game's own bake of a scene); the
+        /// board's step check runs only when the grid has floor heights.
         /// </summary>
         public static LayoutReport ForGrid(LayoutGrid grid, IReadOnlyList<Cell> deploy, IReadOnlyList<LayoutEnemySpawn> enemies)
         {
@@ -146,6 +146,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
             report.Enemies.AddRange(enemies);
             report.Issues.AddRange(Encounter(grid, deploy, enemies));
             report.Issues.AddRange(Steps(grid));
+            report.Issues.AddRange(Transitions(grid));
+            report.Issues.AddRange(Levels(grid));
             report.Issues.AddRange(Reachability(grid, deploy, enemies, report.Unreachable));
             return report;
         }
@@ -247,12 +249,24 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// Floor heights (plan H1, D3): two open neighbours whose floors differ by more than GridRules.MaxStepHeight with
         /// no wall or window between them (STEP_TOO_HIGH, an error, at the lower cell). Units cannot cross there, so it
         /// is a kerb or slab too tall for the kit, or a building whose floorHeight is off. One line per pair of cells,
-        /// straight neighbours only. Nothing without floor heights or a step rule.
+        /// straight neighbours only. Upper levels (plan H2) too: two declared neighbours on one level, the message
+        /// starting with the level. Nothing without a step rule; nothing on the board without floor heights.
         /// </summary>
         public static List<LayoutIssue> Steps(LayoutGrid grid)
         {
             var issues = new List<LayoutIssue>();
-            if (!grid.HasFloors || grid.Rules.MaxStepHeight <= 0f) return issues;
+            if (grid.Rules.MaxStepHeight <= 0f) return issues;
+            foreach (var cell in SortedUpperCells(grid))
+                foreach (var side in new[] { GridSide.PlusX, GridSide.PlusY })
+                {
+                    var neighbour = new LevelCell(cell.Cell + GridSides.Step(side), cell.Level);
+                    if (!grid.Exists(neighbour) || !grid.IsStepTooHigh(cell, neighbour)) continue;
+                    var (low, high) = grid.FloorAt(cell) <= grid.FloorAt(neighbour) ? (cell, neighbour) : (neighbour, cell);
+                    issues.Add(new LayoutIssue("STEP_TOO_HIGH", low.Cell,
+                        $"level {cell.Level}{Owner(grid, low.Cell)}: floor {Meters(grid.FloorAt(low))} m, {high.Cell} next to it {Meters(grid.FloorAt(high))} m: a " +
+                        $"{Meters(Math.Abs(grid.FloorAt(high) - grid.FloorAt(low)))} m step, more than {Meters(grid.Rules.MaxStepHeight)} m; units cannot cross"));
+                }
+            if (!grid.HasFloors) return issues;
             foreach (var cell in grid.AllCells())
             {
                 if (grid.IsBlocked(cell)) continue;
@@ -272,9 +286,69 @@ namespace Gamenami.UnitySemanticBridge.Layout
         private static string Meters(float value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
         /// <summary>
+        /// Ladders (plan H2): each end must be a cell a unit can stand on. A foot on a blocked board cell is a
+        /// TRANSITION_NOT_WALKABLE error (LayoutGrid.Build reports an end off the board, or not a cell of its level,
+        /// with the same code and leaves that ladder out).
+        /// </summary>
+        public static List<LayoutIssue> Transitions(LayoutGrid grid)
+        {
+            var issues = new List<LayoutIssue>();
+            foreach (var (a, b) in grid.Ladders)
+                foreach (var end in new[] { a, b })
+                    if (end.Level == 0 && grid.IsBlocked(end.Cell))
+                        issues.Add(new LayoutIssue("TRANSITION_NOT_WALKABLE", end.Cell,
+                            $"ladder {a} - {b}{Owner(grid, a.Level == 0 ? b.Cell : a.Cell)}: its foot is under {grid[end.Cell].Occupant}; keep that cell open"));
+            return issues;
+        }
+
+        /// <summary>
+        /// Upper levels (plan H2): every upper cell must be reachable from the ground, up a ladder from level 0 and on over
+        /// its level and further ladders. Each region of a level (its cells joined by steps on that level) that is not
+        /// is one LEVEL_UNREACHABLE warning at its lowest cell. A blocked ladder foot still counts as a way up here
+        /// (TRANSITION_NOT_WALKABLE reports it).
+        /// </summary>
+        public static List<LayoutIssue> Levels(LayoutGrid grid)
+        {
+            var issues = new List<LayoutIssue>();
+            var reached = new HashSet<LevelCell>(grid.Ladders.SelectMany(l => new[] { (l.a, l.b), (l.b, l.a) })
+                .Where(l => l.Item1.Level == 0).Select(l => l.Item2));
+            Spread(reached, cell => grid.Neighbours(cell).Select(n => n.cell).Where(n => n.Level > 0));
+            var seen = new HashSet<LevelCell>(reached);
+            foreach (var start in SortedUpperCells(grid))
+            {
+                if (!seen.Add(start)) continue;
+                var region = new HashSet<LevelCell> { start };
+                Spread(region, cell => grid.Neighbours(cell, canUseLadder: false).Select(n => n.cell));
+                seen.UnionWith(region);
+                issues.Add(new LayoutIssue("LEVEL_UNREACHABLE", start.Cell,
+                    $"level {start.Level}{Owner(grid, start.Cell)}: {region.Count} cell{(region.Count == 1 ? "" : "s")} no ladder from the ground reaches; " +
+                    "add a ladder or leave the cells out of the level", IssueSeverity.Warning));
+            }
+            return issues;
+        }
+
+        // Grows a set of cells by breadth-first search.
+        private static void Spread(HashSet<LevelCell> cells, Func<LevelCell, IEnumerable<LevelCell>> next)
+        {
+            var queue = new Queue<LevelCell>(cells);
+            while (queue.Count > 0)
+                foreach (var cell in next(queue.Dequeue()))
+                    if (cells.Add(cell))
+                        queue.Enqueue(cell);
+        }
+
+        // Upper-level cells by level, then lowest cell first.
+        private static IEnumerable<LevelCell> SortedUpperCells(LayoutGrid grid) =>
+            grid.UpperCells.OrderBy(c => c.Level).ThenBy(c => c.Cell.Y).ThenBy(c => c.Cell.X);
+
+        // " of <building>" for a cell a walled piece claims, else nothing.
+        private static string Owner(LayoutGrid grid, Cell cell) => grid.ClaimedBy(cell) is string owner ? " of " + owner : "";
+
+        /// <summary>
         /// Breadth-first search from the open deploy cells with the game's step rule
-        /// (LayoutGrid.CanStep: 8-way, no corner cutting). Every enemy on an open cell must be
-        /// reached (ENEMY_UNREACHABLE); each region of open cells no deploy cell reaches is one
+        /// (LayoutGrid.CanStep: 8-way, no corner cutting), over ladders and upper levels too (plan H2). Every enemy on
+        /// an open cell must be reached (ENEMY_UNREACHABLE); one reached only by ladder is a LADDER_ONLY warning, since
+        /// a unit type that cannot climb never gets there. Each region of open board cells no deploy cell reaches is one
         /// POCKET warning at its lowest cell. Unreached open cells are added to <paramref name="unreachable"/>.
         /// </summary>
         public static List<LayoutIssue> Reachability(LayoutGrid grid, IReadOnlyList<Cell> deploy, IReadOnlyList<LayoutEnemySpawn> enemies,
@@ -288,15 +362,23 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 return issues;
             }
 
-            var reached = Flood(grid, starts);
+            var reached = Flood(grid, starts, canUseLadder: true);
+            var walked = grid.Ladders.Count > 0 ? Flood(grid, starts, canUseLadder: false) : reached;
             foreach (var enemy in enemies)
-                if (grid.Contains(enemy.Cell) && !grid.IsBlocked(enemy.Cell) && !reached.Contains(enemy.Cell))
+            {
+                if (!grid.Contains(enemy.Cell) || grid.IsBlocked(enemy.Cell)) continue;
+                if (!reached.Contains(enemy.Cell))
                     issues.Add(new LayoutIssue("ENEMY_UNREACHABLE", enemy.Cell, $"enemy {enemy.LocalId} cannot be reached from the deploy cells"));
+                else if (!walked.Contains(enemy.Cell))
+                    issues.Add(new LayoutIssue("LADDER_ONLY", enemy.Cell,
+                        $"enemy {enemy.LocalId} can be reached from the deploy cells only by ladder, so a unit type that cannot climb never gets to it",
+                        IssueSeverity.Warning));
+            }
 
             foreach (var cell in grid.AllCells())
             {
                 if (grid.IsBlocked(cell) || reached.Contains(cell)) continue;
-                var pocket = Flood(grid, new[] { cell });
+                var pocket = Flood(grid, new[] { cell }, canUseLadder: true);
                 reached.UnionWith(pocket);
                 unreachable?.UnionWith(pocket);
                 var held = enemies.Where(e => pocket.Contains(e.Cell)).Select(e => e.LocalId).ToList();
@@ -532,8 +614,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         private static string M(double meters) => CoverHeightBands.Meters(meters);
 
-        private static HashSet<Cell> Flood(LayoutGrid grid, IEnumerable<Cell> starts)
+        // Board cells reached from the starts; with ladders, over them and the upper levels as well.
+        private static HashSet<Cell> Flood(LayoutGrid grid, IEnumerable<Cell> starts, bool canUseLadder)
         {
+            if (grid.Ladders.Count > 0)
+                return new HashSet<Cell>(grid.StepsFrom(starts.Select(c => new LevelCell(c)), canUseLadder).Keys
+                    .Where(c => c.Level == 0).Select(c => c.Cell));
             var seen = new HashSet<Cell>(starts);
             var queue = new Queue<Cell>(seen);
             while (queue.Count > 0)

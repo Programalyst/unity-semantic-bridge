@@ -173,7 +173,7 @@ the 0.5 m step, about 0.6 m) so it never meets a roof first.
 ## H2: grid levels (draft plan, 2026-10-21)
 
 Builds on the H2 outline (D6-D8) and on H1. **H2a (the model), H2b (authoring), H2c
-(presentation) and H2d (rules) are built (2026-10-21); H2e is not.** Owner decisions of 2026-10-21:
+(presentation) and H2d (rules) are built (2026-10-21), H2e (validators) on 2026-10-22.** Owner decisions of 2026-10-21:
 
 | # | Decision |
 |---|---|
@@ -290,7 +290,7 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
   only the start's level (H2c), and nothing declares upper levels in a scene yet (H2b).
 - **USB `LayoutGrid`:** `LevelCell`, `AddUpperCell`, `AddLadder`, `Exists`, `FloorAt(LevelCell)`,
   `CanStep(LevelCell, LevelCell, canUseLadder)`, `Neighbours` with tile costs and a weighted `StepsFrom`;
-  `GridRules.LadderTiles` (NK 2). The validators don't use levels yet (H2e).
+  `GridRules.LadderTiles` (NK 2). The validators use levels since H2e.
 - **Verification:** NK *Validate Grid Levels* (40 checks: model, ladder paths and costs, reach, approach,
   the upper step rule, the unit rule with real unit and armor assets, and `LayoutGrid` agreeing with
   `GridMap`); Paths, Action Points, Grid Outlines, Grid Sight, Floor Heights, Firing Positions, Bug Attack
@@ -307,7 +307,7 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
   (`WallOutline.Levels`, `Ladders`, `WithLevels`) and so reach `PieceSpec.Outline`, `ConfigureWalls`,
   `TryReadWalls` and the baker unchanged. Parapets on an upper level are not modelled yet.
 - **USB.** `LayoutGrid.Build` declares each level's cells (floor = its height) and the ladders (`LADDER_OFF_BOARD`
-  when an end is off the board). The applier's `Floor Collider` gets one set of boxes per level, top at the
+  when an end is off the board; `TRANSITION_NOT_WALKABLE` since H2e). The applier's `Floor Collider` gets one set of boxes per level, top at the
   base plus the level's height (`FLOOR_BOX ... level N` notes). The baker's `WALLS_DIFF` compares levels (cells,
   height within 1 cm) and ladders. `describe_level_cards` adds `measuredRoof`: the highest surface over each frame
   cell, from above the whole building.
@@ -425,6 +425,31 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 - **Not done.** The AI does not yet value height for its own sake (a roof wins only through the hit chance), and the
   overwatch rule was checked in the harness, not by a live reaction shot at a ladder.
 
+### H2e as built (2026-10-22)
+
+- **USB `LayoutValidator`.** `Transitions`: `TRANSITION_NOT_WALKABLE` (error) for a ladder foot on a blocked cell, at the
+  foot; `LayoutGrid.Build` reports an end off the board with the same code (was `LADDER_OFF_BOARD`) and leaves the
+  ladder out. `Levels`: `LEVEL_UNREACHABLE` (warning) for each region of an upper level (cells joined by steps on that
+  level) that is not reached up a ladder from level 0 and on over levels and further ladders; a ladder between two upper
+  levels alone does not count, and a blocked foot still does (its error says so). `Steps` adds `STEP_TOO_HIGH` between
+  straight neighbours on an upper level (`level N` first in the message), with or without board floors.
+  `Reachability` searches over ladders and upper levels (`LayoutGrid.StepsFrom`); an enemy reached only with ladders is
+  `LADDER_ONLY` (warning), not `ENEMY_UNREACHABLE`, and a pocket joined to the deploy cells over a roof is no pocket.
+  `LayoutGrid.IsStepTooHigh(LevelCell, LevelCell)` is public. `ForGrid` runs it all, so drafts and scene reports both do.
+- **Not covered: objectives.** Layouts have no objectives, and spawns have no level, so `LADDER_ONLY` checks enemies on
+  the ground (reached only over roofs); an enemy on a roof cannot be written in a layout yet.
+- **NK.** `NkGridRules.BakeOccupancy` declares each `GridWalls`' levels (each cell's floor probed from the level's
+  nominal height, as `GridManager.RegisterLevels` does) and ladders; an end that is not a cell is
+  `TRANSITION_NOT_WALKABLE`. So a scene's report (`validate_layout`, *Validate Layout Reports*' scene tier) checks levels,
+  and `STEP_TOO_HIGH` per level meets measured roofs rather than the card's one height.
+- **Verification.** USB tests (`GridLevelTests`): a blocked foot, a ladder off the board leaving its level unreachable,
+  regions with and without a way up (a level-2 ladder alone is not one), `LADDER_ONLY` and its `ENEMY_UNREACHABLE` and
+  `POCKET` without the way down, a 0.6 m step on a roof; 330 passed, 7 skipped. NK *Validate Layout Reports* 106 (was 95):
+  fixtures `ladder-blocked` (`TRANSITION_NOT_WALKABLE 12,6`) and `ladder-only` (two shops across a 16 x 12 board, the
+  second turned, their roofs meeting: `LADDER_ONLY 4,10`), and the scene bake of `ladder-blocked` (27 roof cells on one
+  floor, the ladder, the foot reported, no step or unreachable level). Layout Round Trip 4110, Grid Levels 76, Paths 2956,
+  Grid Sight 6436, Hit Chance 190, Action Points 80 pass.
+
 ### Phases
 
 1. **H2a, model:** `PathNode.Level`, sparse upper levels, ladder edges with cost and the
@@ -442,7 +467,7 @@ The climb: the owner added three Mixamo-style humanoid clips to NK on 2026-10-21
 Worked through one at a time:
 
 - **H2e validators:** `TRANSITION_NOT_WALKABLE`, `LEVEL_UNREACHABLE`, `LADDER_ONLY`, `STEP_TOO_HIGH` per level; then
-  the docs pass that closes H2.
+  the docs pass that closes H2. *Done 2026-10-22 (H2e as built).*
 - **Corner wall hugging** (after the step-out shot, NK `e3c3c44e`): an idle unit at a corner it can peek round leans
   on the wall, showing that it can step out. Clips: *Stand Cover To Look* first, *Cover Idle* as the alternative.
   *Done 2026-10-22 (NK `5d6533dd`): Cover Idle (the peek of Stand Cover To Look looked unnatural after a few loops),

@@ -284,9 +284,11 @@ cells on two levels. `CanStep(LevelCell, LevelCell, canUseLadder)` crosses a lad
 rule, keeps other steps on one level (closed at a level's edge, the step rule within it), and `StepsFrom` counts
 a ladder as `GridRules.LadderTiles` entered tiles. Since H2b a walled building's card
 declares them in its `walls` object (`levels`, `ladders`, [level catalog](level-catalog.md)): `Build` adds
-them (`LADDER_OFF_BOARD` for an end off the board), the applier builds each level's floor boxes in the same
-`Floor Collider` (`FLOOR_BOX ... level N`), and the baker's `WALLS_DIFF` compares them. The validators and metrics
-still walk level 0 (H2e).
+them (`TRANSITION_NOT_WALKABLE` for an end off the board, and the ladder is left out), the applier builds each
+level's floor boxes in the same `Floor Collider` (`FLOOR_BOX ... level N`), and the baker's `WALLS_DIFF` compares
+them. Since H2e the validators use the levels (`TRANSITION_NOT_WALKABLE`, `LEVEL_UNREACHABLE`, `LADDER_ONLY`,
+`STEP_TOO_HIGH` per level; the table below), and an adapter's `BakeOccupancy` may declare them too, so a scene
+report has them (NK does, with each upper cell's floor probed). The metrics still walk level 0.
 
 Apply and bake (Phase W3):
 - **Placement.** Every card piece is placed so its bounds centre sits `footprintOffset` from its
@@ -318,7 +320,8 @@ Wall validators (Phase W4):
 |---|---|---|
 | Structural | `OUT_OF_BOUNDS`, `OVERLAP` (one blocker per cell), `UNKNOWN_PIECE`, `DECOR_OUT_OF_BOUNDS` (warning); for scenes also the bake's `OFFGRID_*`, `OFF_BOARD`, `NOT_PREFAB` and the apply's `FIT_*`, `NO_BLOCKING_COLLIDER` | Document + footprints |
 | Encounter | `DEPLOY_`/`ENEMY_OUT_OF_BOUNDS`, `DEPLOY_`/`ENEMY_BLOCKED`, `CELL_SHARED`, `FACING_RANGE` (outside 0–359), `FACING_OFF_AXIS` (warning: not one of the eight grid directions) | Occupancy grid, deploy, spawns |
-| Reachability | `NO_DEPLOY`, `ENEMY_UNREACHABLE`, `POCKET` (warning, one per unreached region of open cells, at its lowest cell) | Breadth-first search from the open deploy cells with `LayoutGrid.CanStep` (the game's neighbour and corner rule) |
+| Reachability | `NO_DEPLOY`, `ENEMY_UNREACHABLE`, `POCKET` (warning, one per unreached region of open cells, at its lowest cell), `LADDER_ONLY` (warning: an enemy reached only over a ladder, so a unit type that cannot climb never gets there) | Breadth-first search from the open deploy cells with `LayoutGrid.CanStep` (the game's neighbour and corner rule), over ladders and upper levels too |
+| Levels (H2e) | `TRANSITION_NOT_WALKABLE` (error: a ladder foot under a blocker; from `Build`, an end off the board), `LEVEL_UNREACHABLE` (warning, one per region of an upper level that no ladder from the ground leads to, at its lowest cell), `STEP_TOO_HIGH` on an upper level (message starts `level N`) | The grid's upper cells and ladders |
 | Consistency | `MISSING_BLOCK` (a layout blocker without a game collider), `EXTRA_BLOCK`, `COVER`, `SIGHT_NO_OBSTACLE` (warning; physics sight only) | Layout grid, the game's occupancy bake, sight colliders |
 | Scale | `OFFGRID_SCALE` (a card piece in a scene at another scale than its card's `placementScale`, on its cell, with its height at both scales), `HEIGHT_BAND` (a blocker's card height outside the game's band for the cover it gives, with a suggested Y scale; a **note** when its role and scale are both owner-approved overrides) | Placed card pieces (`PlacedCard`), the adapter's `GridRules.CoverHeights` |
 | Walls (Phase W) | `WALL_CROSSES_PIECE`, `DOOR_POINT_RANGE` (errors); `DOOR_OFF_BOARD`, `DOOR_BLOCKED`, `BUILDING_SEALED` (warnings, replacing `BUILDING_FRONT` for walled buildings); physics tier `WALL_SIGHT_GAP`, `DOOR_COLLIDER` (warnings; physics sight only); apply/bake `OUTLINE_SIZE`, `WALLS_MISSING`, `WALLS_DIFF`, and `WALL_MISSING`/`WALL_EXTRA`/`WALL_KIND`/`WALL_COVER` in the occupancy diff | Walled cards, the layout grid's sides, sight colliders |

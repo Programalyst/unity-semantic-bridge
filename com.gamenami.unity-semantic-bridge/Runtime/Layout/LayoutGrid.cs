@@ -256,13 +256,14 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 if (!Rules.DiagonalMoves) return false;
                 var besideX = new LevelCell(from.Cell.X + dx, from.Cell.Y, from.Level);
                 var besideY = new LevelCell(from.Cell.X, from.Cell.Y + dy, from.Level);
-                if (!Exists(besideX) || !Exists(besideY) || TooHigh(from, besideX) || TooHigh(from, besideY) ||
-                    TooHigh(besideX, to) || TooHigh(besideY, to)) return false;
+                if (!Exists(besideX) || !Exists(besideY) || IsStepTooHigh(from, besideX) || IsStepTooHigh(from, besideY) ||
+                    IsStepTooHigh(besideX, to) || IsStepTooHigh(besideY, to)) return false;
             }
-            return !TooHigh(from, to);
+            return !IsStepTooHigh(from, to);
         }
 
-        private bool TooHigh(LevelCell a, LevelCell b) =>
+        /// <summary>Whether the step rule (GridRules.MaxStepHeight) closes the step between two level cells' floors.</summary>
+        public bool IsStepTooHigh(LevelCell a, LevelCell b) =>
             Rules.MaxStepHeight > 0f && Math.Abs(FloorAt(a) - FloorAt(b)) > Rules.MaxStepHeight + StepTolerance;
 
         /// <summary>Neighbours a unit can step to on any level, with the tiles each step costs (1, or GridRules.LadderTiles).</summary>
@@ -605,7 +606,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                 var from = new LevelCell(piece.Anchor + ladder.FromCell, ladder.FromLevel);
                 var to = new LevelCell(piece.Anchor + ladder.ToCell, ladder.ToLevel);
                 if (grid.Exists(from) && grid.Exists(to)) grid.AddLadder(from, to);
-                else issues.Add(new LayoutIssue("LADDER_OFF_BOARD", piece.Anchor, $"{piece.LocalId}: ladder {from} - {to} has an end off the board"));
+                else issues.Add(new LayoutIssue("TRANSITION_NOT_WALKABLE", piece.Anchor,
+                    $"{piece.LocalId}: ladder {from} - {to} has an end off the board; the ladder is left out"));
             }
         }
 

@@ -145,5 +145,102 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.IsTrue(grid.IsLadder(new LevelCell(4, 4), new LevelCell(4, 3, 1)));
             Assert.AreEqual(7, grid.StepsFrom(new[] { new LevelCell(4, 7) })[new LevelCell(2, 2, 1)], "3 to the ladder, 2 up, 2 across");
         }
+
+        // ---- Validators (plan H2e) ----
+
+        private static string[] Lines(System.Collections.Generic.IEnumerable<LayoutIssue> issues) => issues.Select(i => i.ToString()).ToArray();
+
+        [Test]
+        public void ALadderFootOnABlockerIsNotWalkable()
+        {
+            var grid = Roofed();
+            CollectionAssert.IsEmpty(LayoutValidator.Transitions(grid));
+            grid.Block(new Cell(3, 4), "crate", CoverLevel.Half);
+            CollectionAssert.AreEqual(new[] { "TRANSITION_NOT_WALKABLE 3,4 ladder 3,4 - 4,4@1: its foot is under crate; keep that cell open" },
+                Lines(LayoutValidator.Transitions(grid)));
+            Assert.AreEqual(IssueSeverity.Error, LayoutValidator.Transitions(grid).Single().Severity);
+        }
+
+        [Test]
+        public void BuildReportsALadderOffTheBoardAndItsLevelThenHasNoLadder()
+        {
+            // The frame's top row is the board's top row, so the ladder's foot, above the frame, is off the board.
+            var walls = WallOutline.FromJson(JToken.Parse(RoofJson.Replace("[0,1,1,1]", "[0,1,2,1]")));
+            var document = LayoutJson.Parse("{\"v\":1,\"size\":[8,8],\"pieces\":[[\"shop\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",2,6,0]],\"deploy\":[[0,0]],\"decor\":[]}");
+            var rules = new GridRules { CellSize = 2f, SideWalls = true, LadderTiles = 2, DiagonalMoves = true, NoCornerCutting = true };
+            var report = LayoutValidator.Validate(document, _ => new PieceSpec(3, 2, CoverLevel.Full, walls), rules);
+            CollectionAssert.AreEqual(new[]
+            {
+                "TRANSITION_NOT_WALKABLE 2,6 shop: ladder 4,8 - 4,7@1 has an end off the board; the ladder is left out",
+                "LEVEL_UNREACHABLE 2,6 level 1 of shop: 6 cells no ladder from the ground reaches; add a ladder or leave the cells out of the level",
+            }, Lines(report.Issues));
+            Assert.AreEqual(IssueSeverity.Warning, report.WithCode("LEVEL_UNREACHABLE").Single().Severity);
+        }
+
+        [Test]
+        public void EachUpperRegionNeedsALadder()
+        {
+            var grid = Roofed();
+            CollectionAssert.IsEmpty(LayoutValidator.Levels(grid));
+            grid.AddUpperCell(new LevelCell(0, 0, 1), 3f);
+            grid.AddUpperCell(new LevelCell(1, 0, 1), 3f);
+            grid.AddUpperCell(new LevelCell(1, 1, 2), 6f);
+            CollectionAssert.AreEqual(new[]
+            {
+                "LEVEL_UNREACHABLE 0,0 level 1: 2 cells no ladder from the ground reaches; add a ladder or leave the cells out of the level",
+                "LEVEL_UNREACHABLE 1,1 level 2: 1 cell no ladder from the ground reaches; add a ladder or leave the cells out of the level",
+            }, Lines(LayoutValidator.Levels(grid)));
+            grid.AddLadder(new LevelCell(1, 0, 1), new LevelCell(1, 1, 2));
+            Assert.AreEqual(2, LayoutValidator.Levels(grid).Count, "a ladder between two upper levels doesn't reach the ground");
+            grid.AddLadder(new LevelCell(0, 1), new LevelCell(0, 0, 1));
+            CollectionAssert.IsEmpty(LayoutValidator.Levels(grid), "up from the ground to level 1, then on to level 2");
+        }
+
+        // A wall of blockers across row 4 of an 8 x 8 board, a roof over it at (3, 3-5) with a ladder at each end.
+        private static LayoutGrid WalledOff(bool secondLadder)
+        {
+            var grid = new LayoutGrid(8, 8, Rules);
+            for (var x = 0; x < 8; x++) grid.Block(new Cell(x, 4), "wall", CoverLevel.Full);
+            for (var y = 3; y <= 5; y++) grid.AddUpperCell(new LevelCell(3, y, 1), 3f);
+            grid.AddLadder(new LevelCell(3, 2), new LevelCell(3, 3, 1));
+            if (secondLadder) grid.AddLadder(new LevelCell(3, 6), new LevelCell(3, 5, 1));
+            return grid;
+        }
+
+        [Test]
+        public void AnEnemyReachedOnlyByLadderIsLadderOnly()
+        {
+            var enemies = new[] { new LayoutEnemySpawn("raider1", null, null, new Cell(5, 6), 180f) };
+            var report = LayoutValidator.ForGrid(WalledOff(true), new[] { new Cell(0, 0) }, enemies);
+            CollectionAssert.AreEqual(new[]
+            {
+                "LADDER_ONLY 5,6 enemy raider1 can be reached from the deploy cells only by ladder, so a unit type that cannot climb never gets to it",
+            }, Lines(report.Issues));
+            Assert.AreEqual(IssueSeverity.Warning, report.Issues.Single().Severity);
+            CollectionAssert.IsEmpty(report.Unreachable, "the far side is reached over the roof");
+
+            report = LayoutValidator.ForGrid(WalledOff(false), new[] { new Cell(0, 0) }, enemies);
+            CollectionAssert.AreEqual(new[]
+            {
+                "ENEMY_UNREACHABLE 5,6 enemy raider1 cannot be reached from the deploy cells",
+                "POCKET 0,5 24 open cells unreachable from the deploy cells (holds raider1)",
+            }, Lines(report.Issues), "one way up and no way down");
+        }
+
+        [Test]
+        public void StepsTooHighAreReportedPerLevel()
+        {
+            var grid = new LayoutGrid(4, 4, Rules);
+            grid.AddUpperCell(new LevelCell(0, 0, 1), 3f);
+            grid.AddUpperCell(new LevelCell(1, 0, 1), 3.6f);
+            grid.AddUpperCell(new LevelCell(0, 1, 1), 3.5f);
+            grid.AddUpperCell(new LevelCell(1, 1, 1), 3.5f);
+            CollectionAssert.AreEqual(new[]
+            {
+                "STEP_TOO_HIGH 0,0 level 1: floor 3.00 m, 1,0 next to it 3.60 m: a 0.60 m step, more than 0.50 m; units cannot cross",
+            }, Lines(LayoutValidator.Steps(grid)), "the board has no floor heights; the level's are checked anyway");
+            grid.AddUpperCell(new LevelCell(1, 0, 1), 3.5f);
+            CollectionAssert.IsEmpty(LayoutValidator.Steps(grid));
+        }
     }
 }
