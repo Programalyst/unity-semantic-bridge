@@ -519,7 +519,8 @@ Worked through one at a time:
 - **Camera follow-ups (owner, 2026-10-23, later):** keep a cut-away building cut while the shot plays (a target found
   round a corner through the cutaway disappears when the building turns opaque at the shot), and frame the shooter and
   the target together with a target group.
-- **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors.
+- **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors. *Done 2026-10-23 (NK `c4ef13db`): roof,
+  rim, ladder and the two front doors; scene report clean; crate_a and crate_b back at their card's scale.*
 - **Live checks still owed:** an overwatch shot at a unit on a ladder; a step-out to the left (the mirrored clip).
 - **Later:** the AI valuing height for its own sake; the sniper rifle and Heavy Laser aiming at the planned point
   rather than the target's live one; stairs for the house's upper floor.
