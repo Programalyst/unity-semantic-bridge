@@ -514,7 +514,11 @@ Worked through one at a time:
 - **Sight by height** (raised 2026-10-22 after a raider shot Elena through the shop's roof): *done 2026-10-22, "Sight by
   height" above.*
 - **Aim view toggle:** a button while aiming that switches to the shoulder Aim Camera for a better look at the target,
-  for any weapon (rather than tying the aim view to the sniper rifle).
+  for any weapon (rather than tying the aim view to the sniper rifle). *Done 2026-10-23 (NK combat-flows.md, Aiming):
+  the Aim View Button left of Cancel and the V key; the choice holds for later aims.*
+- **Camera follow-ups (owner, 2026-10-23, later):** keep a cut-away building cut while the shot plays (a target found
+  round a corner through the cutaway disappears when the building turns opaque at the shot), and frame the shooter and
+  the target together with a target group.
 - **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors.
 - **Live checks still owed:** an overwatch shot at a unit on a ladder; a step-out to the left (the mirrored clip).
 - **Later:** the AI valuing height for its own sake; the sniper rifle and Heavy Laser aiming at the planned point
