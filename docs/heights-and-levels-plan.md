@@ -522,6 +522,14 @@ Worked through one at a time:
 - **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors. *Done 2026-10-23 (NK `c4ef13db`): roof,
   rim, ladder and the two front doors; scene report clean; crate_a and crate_b back at their card's scale.*
 - **Live checks still owed:** an overwatch shot at a unit on a ladder; a step-out to the left (the mirrored clip).
+  *Done 2026-10-23 in CatalogTest Play Mode (temporary probe, deleted).* **Overwatch:** raider1 on overwatch on the shop roof
+  at 4,13@1 (it sees the ladder's top, not the ground on the way); Elena moved 10,8 → 10,9 → 10,10 (unseen), climbed
+  (26 samples on the ladder, none allowed to react; in the last two she was already in sight at 5.15 m and still refused),
+  reached 10,11@1, and the overwatch shot fired there, off the ladder. **Mirrored hug:** at 11,10 (step-out 12,10) Cover Idle
+  with CoverMirror off, at 4,10 (step-out 3,10) Cover Idle with CoverMirror on. **Left-hand step-out:** from 4,10 at a raider
+  on 2,16 (blocked by the back wall from 4,10, clear from 3,10): eligible at 75% from the step-out 3,10, the strafe played
+  mirrored (StrafeMirror on) out and back, then the mirrored hug again; AP 20 → 13. How the mirrored clips look is the
+  owner's call in the game view (the probe's screenshots were too far off to judge).
 - **Later:** the AI valuing height for its own sake; the sniper rifle and Heavy Laser aiming at the planned point
   rather than the target's live one; stairs for the house's upper floor.
 
