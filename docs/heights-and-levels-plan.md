@@ -518,7 +518,9 @@ Worked through one at a time:
   the Aim View Button left of Cancel and the V key; the choice holds for later aims.*
 - **Camera follow-ups (owner, 2026-10-23, later):** keep a cut-away building cut while the shot plays (a target found
   round a corner through the cutaway disappears when the building turns opaque at the shot), and frame the shooter and
-  the target together with a target group.
+  the target together with a target group. *The first done 2026-10-23 (NK combat-flows.md, Aiming): player, enemy and
+  overwatch shots, shooter and target, held 0.75 s after the shot; CatalogTest probe: Elena at 11,10 on raider3 at 13,16,
+  the shop cut from the shot's start until 0.7 s after it ended.*
 - **RoadNetwork:** reapply its layout for the shop's roof, ladder and front doors. *Done 2026-10-23 (NK `c4ef13db`): roof,
   rim, ladder and the two front doors; scene report clean; crate_a and crate_b back at their card's scale.*
 - **Live checks still owed:** an overwatch shot at a unit on a ladder; a step-out to the left (the mirrored clip).
