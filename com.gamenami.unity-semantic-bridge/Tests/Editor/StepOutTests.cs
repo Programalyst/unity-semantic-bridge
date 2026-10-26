@@ -37,6 +37,8 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             Assert.IsFalse(grid.HasClearLine(new Cell(5, 5), new Cell(3, 0)), "the line is blocked by the wreck");
             Assert.IsTrue(Views(grid, new Cell(5, 5), new Cell(4, 5)), "the wreck's end steps out past it");
             Assert.IsTrue(OneWay(grid, new Cell(5, 5), new Cell(3, 0)), "so it sees the raider, which doesn't see it");
+            Assert.IsTrue(grid.CanSpot(new Cell(5, 5), new Cell(3, 0)) && grid.CanSpot(new Cell(3, 0), new Cell(5, 5)),
+                "spotting is two-way: the raider spots the unit that peeks at it");
             Assert.IsTrue(Views(grid, new Cell(6, 5)), "mid-cover gives no step-out");
             Assert.IsTrue(Neither(grid, new Cell(6, 5), new Cell(4, 0)));
             Assert.IsTrue(Views(grid, new Cell(5, 4)), "a blocked cell has no step-outs");
@@ -64,6 +66,20 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
             grid = Board();
             grid.SetSide(new Cell(5, 4), GridSide.PlusY, SideKind.Window, CoverLevel.Half, "w");
             Assert.IsTrue(Views(grid, new Cell(5, 4)), "a window is no Full cover, so no step-out");
+        }
+
+        [Test]
+        public void APeekingUnitIsSpottedBackButNotShotBack()
+        {
+            // RoadNetwork's burnt pumps (owner, 2026-10-26): a raider behind a one-cell Full pump peeks round it.
+            var grid = Board();
+            grid.Block(new Cell(5, 5), "pump", CoverLevel.Full);
+            Cell raider = new Cell(6, 5), squad = new Cell(1, 5);
+            Assert.IsTrue(OneWay(grid, raider, squad), "the raider's step-out sees the squad; the squad has no line to the raider's cell");
+            Assert.IsTrue(grid.CanSpot(squad, raider), "so the squad spots it back");
+            Assert.IsTrue(grid.CanSpot(raider, squad));
+            Assert.IsFalse(grid.CanSpot(new Cell(1, 4), new Cell(9, 6)) && !grid.CanSee(new Cell(1, 4), new Cell(9, 6)),
+                "without a peek either way, spotting is plain sight");
         }
 
         [Test]

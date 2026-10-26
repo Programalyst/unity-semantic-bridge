@@ -66,7 +66,7 @@ query_level_catalog(role=["cover_half"], max_cells=[2, 1], name="sandbag")
 - **Filters.** `role` (list), `cover`, `max_cells`/`min_cells` (`[w, h]` at rot 0; a card matches in either
   orientation), `name` (case-insensitive substring of the id); `cell_size` defaults to the game's.
 - **Rows.** TSV sorted by id, `limit` (50) per page with `offset`: GUID, role (`+walls` for an enterable
-  building), cover, cells, height in meters at `placementScale`, scale (`1` when unscaled), id, and the
+  building, `+roof` when its card has upper `levels`), cover, cells, height in meters at `placementScale`, scale (`1` when unscaled), id, and the
   prefab path for reviewed pieces. Use the GUID (or the path) in a layout; `describe_level_cards` has the
   full card.
 - **Problems.** Override entries that resolve to no prefab (`MISSING`) or to a prefab that is not a level

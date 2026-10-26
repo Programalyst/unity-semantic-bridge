@@ -105,7 +105,7 @@ namespace Gamenami.UnitySemanticBridge.Layout
             if (hidden > 0) builder.Append("... ").Append(hidden).Append(" more lines not shown (cap ").Append(maxLines).Append(")\n");
             if (ascii && Grid != null)
             {
-                builder.Append("Map (top row = highest y; # full, h half, o blocked, . open, A deploy, E enemy, ! unit on a blocker, - unreachable):\n");
+                builder.Append("Map (top row = highest y; # full, h half, o blocked, . open, A deploy, E enemy, ! unit on a blocker, L ladder foot, - unreachable, ^ under a roof or upper floor):\n");
                 builder.Append(Grid.ToAscii(Deploy, Enemies.Select(e => e.Cell), Unreachable));
             }
             return builder.ToString().TrimEnd('\n');

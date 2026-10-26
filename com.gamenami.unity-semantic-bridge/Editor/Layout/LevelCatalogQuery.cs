@@ -165,7 +165,7 @@ namespace Gamenami.UnitySemanticBridge.Editor.Layout
                 foreach (var (entry, footprint) in page)
                 {
                     var card = entry.Card;
-                    var role = LevelCards.RoleName(card.Role) + (card.Walls != null ? "+walls" : "");
+                    var role = LevelCards.RoleName(card.Role) + (card.Walls != null ? "+walls" : "") + (card.Walls?.Levels.Count > 0 ? "+roof" : "");
                     var row = string.Join("\t", card.Guid, role, card.Cover?.ToString() ?? "-",
                         $"{footprint.Width}x{footprint.Depth}", Num(footprint.Height), Scale(card.PlacementScale), card.Id);
                     if (withPaths) row += "\t" + (entry.Path ?? "-");

@@ -245,7 +245,7 @@ there are some). `LayoutReport.Format(maxLines = 40, ascii = false)` lists error
 then notes, caps
 the lines (`... N more lines not shown`), and on request appends the ASCII map
 (`#` full, `h` half, `o` blocked, `.` open, `A` deploy, `E` enemy, `!` a unit on a
-blocker, `-` open but unreachable). When the board has walls on cell sides the map is
+blocker, `L` a ladder's ground end, `-` open but unreachable, `^` open under a roof or upper floor). When the board has walls on cell sides the map is
 drawn at double resolution with the outline characters between cells (`-`/`|` wall,
 `w` window, `D` door, `+` where a wall meets a corner).
 

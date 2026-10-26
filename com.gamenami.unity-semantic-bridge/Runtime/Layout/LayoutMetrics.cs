@@ -304,8 +304,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
                     if (d > reach + 1e-9) continue;
                     var band = Math.Min(bands - 1, (int)((Math.Ceiling(d - 1e-9) - 1) / 3));
                     total[band]++;
-                    // A sightline either way (sight is one-way with step-out).
-                    if (!grid.CanSee(cells[i], cells[j]) && !grid.CanSee(cells[j], cells[i])) continue;
+                    // A sightline is spotting: either way (line of fire is one-way with step-out).
+                    if (!grid.CanSpot(cells[i], cells[j])) continue;
                     seen[band]++;
                     if (d <= s.VisionRange + 1e-9) { exposure[i]++; exposure[j]++; }
                 }

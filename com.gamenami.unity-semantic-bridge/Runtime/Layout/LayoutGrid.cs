@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace Gamenami.UnitySemanticBridge.Layout
@@ -340,6 +341,12 @@ namespace Gamenami.UnitySemanticBridge.Layout
         }
 
         /// <summary>
+        /// Spotting (owner, 2026-10-26; mirrors NK's GridMap.CanSpot): CanSee either way, so a unit that peeks round cover
+        /// is seen back by whoever it sees from its step-out. Fog and spotting use it; line of fire stays CanSee (one-way).
+        /// </summary>
+        public bool CanSpot(Cell a, Cell b) => CanSee(a, b) || CanSee(b, a);
+
+        /// <summary>
         /// A cell and its step-out cells (plan S5, mirrors NK's GridMap.GetViewpoints). For each side with Full sight
         /// cover (a Full blocker beside it, or a Full wall on that side), each sideways cell is a step-out when it is on
         /// the board, not blocked, not walled off from the cell (wall or window), and has no Full cover on that same
@@ -463,20 +470,24 @@ namespace Gamenami.UnitySemanticBridge.Layout
 
         /// <summary>
         /// ASCII map, top row = highest y: '#' full, 'h' half, 'o' blocked without cover, '.' open,
-        /// 'A' deploy, 'E' enemy, '!' a unit on a blocked cell, '-' open but unreachable.
+        /// 'A' deploy, 'E' enemy, '!' a unit on a blocked cell, 'L' a ladder's ground end, '-' open but unreachable,
+        /// '^' open under an upper level (a roof or upper floor, plan H2).
         /// </summary>
         public string ToAscii(IEnumerable<Cell> deploy = null, IEnumerable<Cell> enemies = null, IEnumerable<Cell> unreachable = null)
         {
             var deployCells = deploy == null ? new HashSet<Cell>() : new HashSet<Cell>(deploy);
             var enemyCells = enemies == null ? new HashSet<Cell>() : new HashSet<Cell>(enemies);
             var unreachableCells = unreachable == null ? new HashSet<Cell>() : new HashSet<Cell>(unreachable);
+            var upperCells = new HashSet<Cell>(_upper.Keys.Select(c => c.Cell));
+            var ladderFeet = new HashSet<Cell>(_declaredLadders.SelectMany(l => new[] { l.a, l.b }).Where(c => c.Level == 0).Select(c => c.Cell));
             char CellChar(Cell cell)
             {
                 var state = this[cell];
                 var unit = deployCells.Contains(cell) || enemyCells.Contains(cell);
                 return state.Blocked
                     ? unit ? '!' : state.Cover == CoverLevel.Full ? '#' : state.Cover == CoverLevel.Half ? 'h' : 'o'
-                    : deployCells.Contains(cell) ? 'A' : enemyCells.Contains(cell) ? 'E' : unreachableCells.Contains(cell) ? '-' : '.';
+                    : deployCells.Contains(cell) ? 'A' : enemyCells.Contains(cell) ? 'E' : ladderFeet.Contains(cell) ? 'L'
+                    : unreachableCells.Contains(cell) ? '-' : upperCells.Contains(cell) ? '^' : '.';
             }
             var builder = new StringBuilder();
             if (!HasWalls)

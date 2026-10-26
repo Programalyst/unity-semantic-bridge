@@ -331,7 +331,7 @@ def register_unity_tools(mcp):
         layout: Annotated[str | dict | None, "Inline layout JSON to check (tier 'grid'); prefab paths may stand for GUIDs."] = None,
         tier: Annotated[Literal["grid", "scene"], "'grid': the draft alone, without touching any open scene (pieces without a catalog card are measured on a hidden preview instance). 'scene': an open scene, hand-made or applied, against the game's own occupancy bake (Edit Mode)."] = "grid",
         scene: Annotated[str | None, "tier 'scene' only: project path of an open scene. Omit for the active scene."] = None,
-        ascii: Annotated[bool, "Append an ASCII map (# full, h half, o blocked, . open, A deploy, E enemy, - unreachable)."] = False,
+        ascii: Annotated[bool, "Append an ASCII map (# full, h half, o blocked, . open, A deploy, E enemy, L ladder foot, - unreachable, ^ under a roof)."] = False,
         max_lines: Annotated[int, "Issue lines to show (0 = all); also caps the metrics lines."] = 40,
         metrics: Annotated[bool, "Append level metrics (LAYOUT_METRICS): per enemy DISTANCE (turns), COVER_NEAR, ROUTES, OPEN_GROUND; COVER_NEAR_DEPLOY; SIGHTLINES over the engagement region. Judgement, not errors."] = False,
         metrics_only: Annotated[bool, "Metrics plus only the report's header line (implies metrics)."] = False,
@@ -443,9 +443,9 @@ def register_unity_tools(mcp):
         offset: Annotated[int, "Rows to skip (paging)."] = 0,
     ) -> str:
         """Find level pieces for a layout. Returns which file was read, how many cards match, and one
-        TSV row per card sorted by id: guid, role (+walls for enterable buildings), cover, cells at
-        rot 0 (WxH), height in meters at placementScale, scale, id (and the prefab path for reviewed
-        pieces). Use the guid (or path) in layout pieces; describe_level_cards has full card details.
+        TSV row per card sorted by id: guid, role (+walls for enterable buildings, +roof when a ladder
+        leads to its roof), cover, cells at rot 0 (WxH), height in meters at placementScale, scale, id
+        (and the prefab path for reviewed pieces). Use the guid (or path) in layout pieces; describe_level_cards has full card details.
         Read-only.
         """
         params: dict = {"source": source, "limit": limit, "offset": offset}

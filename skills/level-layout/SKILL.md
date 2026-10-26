@@ -37,7 +37,10 @@ they are.
   `name`. Each row: GUID, role, cover, cells at rot 0 (`WxH`), height, scale, id, prefab path.
   `MISSING` rows at the end are stale entries; don't use them.
 - `describe_level_cards(paths=[...])` gives a piece's full card when its footprint, front, door
-  or lift matters (buildings especially: `walls` outline, door sides, `front`).
+  or lift matters (buildings especially: `walls` outline, door sides, `front`, and for a `+roof`
+  building its `levels` and `ladders`).
+- The role column says `+walls` for a building you can enter and `+roof` when a ladder leads to its
+  roof (see *Heights, roofs and ladders* below).
 - **Enemies** are `[localId, profileGuid, visualGuid, x, y, facing]`. Take the profile and visual
   from an existing layout (`get_layout` on the template's layout file, which the game's rules doc
   names; NK: `Assets/Settings/Levels/CatalogTest.layout.json`) or the game's docs; asset paths are
@@ -51,7 +54,7 @@ they are.
 
 Draw the board before writing JSON, top row = highest y, x to the right, in the validators'
 legend: `#` full cover, `h` half, `o` movement-only blocker, `.` open, `A` deploy, `E` enemy,
-and for your plan only `=` road or other ground decor and `B` a building's frame (the
+`L` a ladder's foot, `^` open ground under a roof, and for your plan only `=` road or other ground decor and `B` a building's frame (the
 validators' map prints buildings with their walls at double resolution instead). Beside it, list each piece with its
 anchor and rotation. Check by eye: a way from the deploy cells to every enemy, cover within a
 move of where the squad will want to stop, no sealed pockets, buildings with their door or front
@@ -95,6 +98,10 @@ error. Every warning left must be one you intend and can explain. The ones that 
 | `BUILDING_FRONT` | a building faces the edge or only blockers | turn it towards open ground or a road |
 | `GROUND_RUN`, `GROUND_OVERLAP` | a road run stops mid-board, or tiles stack | run roads to the board edge; one ground tile per cell |
 | `HEIGHT_BAND` (error) | a piece's height is outside its cover band | use another piece, or raise it with the owner (card override) |
+| `STEP_TOO_HIGH` (error) | two walkable neighbours (on the ground or on one roof) differ by more than the game's step | a card's floor or roof height is off: report it |
+| `TRANSITION_NOT_WALKABLE` (error) | a ladder's foot is under a piece, or a ladder end is off the board | clear the `L` cell; move the building so its ladder stays on the board |
+| `LEVEL_UNREACHABLE` | a roof no ladder from the ground reaches | as above, or accept it and say so |
+| `LADDER_ONLY` | an enemy the squad reaches only over a roof | open a way on the ground; units that can't climb never get there |
 | `FACING_OFF_AXIS` | facing between grid directions | use a multiple of 45 |
 
 Notes are for the record (owner-approved content outside a rule); leave them.
@@ -110,11 +117,34 @@ map (`SIGHTLINES`). If the game sets targets, lines outside them come first: rev
 in your report what the numbers mean for the fight (e.g. "one route to the shop raider, through its back door"). Revise with
 `set_layout` again, or `validate_layout(path=...)` after editing the file yourself.
 
+## Heights, roofs and ladders
+
+Some buildings have a roof units can stand on, reached by a ladder (`+roof` in the catalog; NK: the
+shop, `SM_Bld_Shop_Medium_02`). The roof and its ladder come from the building's card: you place the
+building and the roof comes with it. The layout has no height fields.
+
+- **Where they land.** With `ascii=true` the report marks roof cells `^` (open ground under the roof)
+  and each ladder's foot `L`. Keep the `L` cell and a cell beside it open, and keep the foot on the
+  board. The foot is often outside the frame, behind the building.
+- **What a roof does in the fight** is the game's rule; read its rules doc. NK: a shooter on a higher
+  level gets +20 aim and +6 tiles of sight against targets below, and -10 aim per level when shooting
+  up; a ladder costs 2 tiles of movement; mega mutants and power armor can't climb, and the boost-jump
+  suit can jump onto a roof.
+- **The metrics don't see height.** `DISTANCE`, `ROUTES`, `COVER_SPACING` and `SIGHTLINES` are
+  measured on the ground only. Judge a roof yourself: what it overlooks within sight + 6, whether the
+  squad or the enemy will reach it first, and say so in your report.
+- **Enemies start on the ground.** Layout spawns have no level, so an enemy can't start on a roof
+  yet. Put enemies inside or around the building; one may climb up during the fight.
+- Units always stand on the floor under them: kerbs, sidewalks and building floors are handled by the
+  game. A step taller than the game allows is `STEP_TOO_HIGH`.
+
 ## 5. Build the level scene and apply
 
 - **A new level:** `create_layout_scene(template=<the game's template scene>, path="Assets/Scenes/<Name>.unity", size=[w, h])`.
   It copies the scene and its level asset and repoints the copy, so applying never rewrites the
-  template's level. Then `open_scene` it. It refuses while the active scene has unsaved changes:
+  template's level. It copies the template's file, so it refuses while the template is open with
+  unsaved changes (Unity often marks a scene dirty after Play Mode): ask the owner to save it, or use
+  another level scene that isn't open as the template. Then `open_scene` it. It refuses while the active scene has unsaved changes:
   if that is a scene you created and applied earlier, ask the owner whether to save it; otherwise
   tell the owner and wait. Never apply into the template itself or into a scene you did not create unless
   the owner asks.
@@ -149,7 +179,7 @@ uncertain. Keep it short; the render and the map carry most of it.
 - **"Move / add / remove this":** edit the JSON (`set_layout`), validate, reapply.
 - **The owner edited the scene:** `bake_layout(scene=..., path=...)` reads it back into the JSON;
   the scene wins. Off-grid or off-scale objects are reported, not snapped: ask before changing them.
-- **A rule seems wrong** (cover, sight, movement): it is the game's, in its adapter and rules doc.
+- **A rule seems wrong** (cover, sight, movement, heights): it is the game's, in its adapter and rules doc.
   Report it; don't work around it in the layout.
 
 ## Pitfalls seen so far

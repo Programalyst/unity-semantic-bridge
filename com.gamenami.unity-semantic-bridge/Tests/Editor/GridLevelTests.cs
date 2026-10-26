@@ -46,6 +46,22 @@ namespace Gamenami.UnitySemanticBridge.Editor.Tests
         }
 
         [Test]
+        public void TheMapMarksRoofsAndLadderFeet()
+        {
+            var grid = Roofed();
+            grid.Block(new Cell(5, 4), "crate", CoverLevel.Half);
+            Assert.AreEqual(
+                "........\n" +
+                "........\n" +
+                "....^^E.\n" +
+                "...L^h^.\n" +
+                "....^^^.\n" +
+                "........\n" +
+                "........\n" +
+                "........\n", grid.ToAscii(enemies: new[] { new Cell(6, 5) }));
+        }
+
+        [Test]
         public void StepsCrossLaddersAtTheirCostAndOnlyWithTheLadderRule()
         {
             var grid = Roofed();

@@ -31,7 +31,8 @@ namespace Gamenami.UnitySemanticBridge.Layout
         /// <summary>
         /// Step-out (plan S5, XCOM): with GridSight, a cell with Full cover on a side may also look from the sideways
         /// cell where that cover ends (LayoutGrid.Viewpoints): CanSee(from, to) is true when any viewpoint of from has a clear
-        /// line to to's own cell (one-way: the looker peeks).
+        /// line to to's own cell (one-way: the looker peeks; line of fire). Spotting is two-way (LayoutGrid.CanSpot, owner
+        /// 2026-10-26): a cell that peeks at another is seen back by it.
         /// </summary>
         public bool StepOut;
         /// <summary>
